@@ -28,3 +28,33 @@ only forth also definitions hidden also
 
 ' newfile alias sed             \ for compatibility with F-PC 2.25
 
+\ F-PC native port: each user's F-PC.CFG lives in USER-DIR (normally
+\ ~/.config/f-pc) and is loaded instead of the installed one.
+handle ucfghndl
+
+: copy-config   ( --- )         \ copy the F-PC.CFG in use to USER-DIR
+                cfghndl $file                   \ the installed (or local) one
+                if      ucfghndl hcreate abort" Can't create the config file"
+                        ucfghndl hclose drop exit       \ none: start empty
+                then
+                seqhandle endfile drop dup allocate abort" No memory"
+                0.0 seqhandle movepointer
+                2dup swap seqhandle hread drop  ( n buf )
+                ucfghndl hcreate abort" Can't create the config file"
+                2dup swap ucfghndl hwrite drop
+                ucfghndl hclose drop
+                free 2drop ;
+
+: edit-config   ( --- )         \ edit your own F-PC.CFG (in USER-DIR)
+                make-user-dir
+                cfghndl count user-file ucfghndl $>handle
+                ucfghndl hopen
+                if      copy-config             \ first time: start from
+                else    ucfghndl hclose drop    \ the installed one
+                then
+                ucfghndl $file ?open.error
+                cr ." Editing " ucfghndl count type
+                ."  (used at the next start)" 1 seconds
+                1 edit ;
+
+

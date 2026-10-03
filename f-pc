@@ -15,6 +15,13 @@ done
 root=$(cd "$(dirname "$self")" && pwd)
 fpc=$root/vm/fpc
 image=$root/F-PC.IMG
+build="make -C \"$root/vm\""              # how to (re)build: in the source tree
+if [ ! -d "$root/vm" ] && [ -d "$root/../lib/fpc" ]; then
+    lib=$(cd "$root/../lib/fpc" && pwd)       # installed: PREFIX/bin/f-pc
+    fpc=$lib/bin/fpc
+    image=$lib/F-PC.IMG
+    build=""
+fi
 
 fail() {
     printf 'f-pc: %s\n' "$1" >&2
@@ -22,6 +29,12 @@ fail() {
     for line in "$@"; do printf '      %s\n' "$line" >&2; done
     exit 1
 }
+
+if [ -z "$build" ] && { [ ! -x "$fpc" ] || [ ! -f "$image" ]; }; then
+    fail "the F-PC installation in $lib is incomplete ($fpc or $image is missing)." \
+         "Reinstall it from the F-PC source tree with:" \
+         "    make -C vm install PREFIX=$(dirname "$root")"
+fi
 
 # 1. the VM
 if [ ! -e "$fpc" ]; then
@@ -51,10 +64,17 @@ status=$?
 if [ $status -ne 0 ]; then
     case $check in
     *"different fpc"*)
+        [ -z "$build" ] && fail "the installed F-PC.IMG does not match the installed fpc." \
+             "Reinstall from the F-PC source tree with:" \
+             "    make -C vm install PREFIX=$(dirname "$root")"
         fail "F-PC.IMG was built by a different version of the VM (vm/fpc was rebuilt since)." \
              "Rebuild the image with:" \
              "    make -C \"$root/vm\" image" ;;
     *)
+        [ -z "$build" ] && fail "the installed fpc could not load $image (exit status $status):" \
+             "$(printf '%s' "$check" | tail -n 3)" \
+             "Reinstall from the F-PC source tree with:" \
+             "    make -C vm install PREFIX=$(dirname "$root")"
         fail "the VM could not load F-PC.IMG (exit status $status):" \
              "$(printf '%s' "$check" | tail -n 3)" \
              "Try rebuilding both with:" \
@@ -62,8 +82,10 @@ if [ $status -ne 0 ]; then
     esac
 fi
 
-# 4. warnings only: sources changed since the last build
-if [ -n "$(find "$root/vm" -maxdepth 1 \( -name '*.c' -o -name '*.h' -o -name '*.def' \) -newer "$fpc" 2>/dev/null | head -n 1)" ]; then
+# 4. warnings only (source tree): sources changed since the last build
+if [ -z "$build" ]; then
+    :
+elif [ -n "$(find "$root/vm" -maxdepth 1 \( -name '*.c' -o -name '*.h' -o -name '*.def' \) -newer "$fpc" 2>/dev/null | head -n 1)" ]; then
     printf 'f-pc: note: the VM sources have changed since vm/fpc was built;\n' >&2
     printf '      run  make -C "%s" image  to rebuild the VM and the image.\n' "$root/vm" >&2
 elif [ -n "$(find "$root/SRC" -maxdepth 1 -iname '*.seq' -newer "$image" 2>/dev/null | head -n 1)" ]; then

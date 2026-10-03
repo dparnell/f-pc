@@ -13,15 +13,20 @@ comment:
 
 comment;
 
-CREATE FPATH$     160 ALLOT     \ Room for a LOO..NG path.
-FPATH$ 160 ERASE                \ (the metacompiler built the kernel in zeroed memory)
+\ F-PC native port: host paths are long, so FPATH$ holds its length in a
+\ cell (not a byte), followed by up to 1024 characters.
+1024 CONSTANT FPATH-MAX
+CREATE FPATH$     FPATH-MAX CELL+ ALLOT
+FPATH$ FPATH-MAX CELL+ ERASE    \ (the metacompiler built the kernel in zeroed memory)
+
+: FPATH@        ( -- a n )      FPATH$ CELL+ FPATH$ @ ;
 CREATE PATHHNDL B/HCB ALLOT     \ A temporary handle
 PATHHNDL B/HCB ERASE
 0 VALUE PATHPTR                 \ A pointer into the string of paths
 0 VALUE PATHLEN
 
 : PATH1         ( --- A1 )      \ return the first path, always current dir
-                fpath$ count %!> pathlen        \ and length
+                fpath@       %!> pathlen        \ and length
                              %!> pathptr        \ Reset the path pointer
                 pathhndl dup>r clr-hcb          \ clear out the handle
                 r@ pathset drop r> ;            \ install current directory
@@ -42,15 +47,18 @@ PATHHNDL B/HCB ERASE
 : SKIP.BLANKS   ( --- )
                 source >in @ /string tuck bl skip nip - >in +! ;
 
+: FPATH-APPEND  ( a1 n1 -- )            \ append characters to FPATH$
+                tuck fpath@ + swap cmove  fpath$ +! ;
+
 : "FPATH+       ( a1 n1 -- )            \ append a path to current path
-                fpath$ c@ 159 <         \ max length less than 159 chars
-                if      fpath$ c@ 0>
-                        if      " ;" fpath$ +place      \ add a semicolon
-                        then
-                        2dup -trailing                  \ remove trailing bls
-                        2dup + 1- c@ ascii \ = +        \ remove trailing '\'
-                        fpath$ +place                   \ add to path
-                then    2drop ;
+                -trailing                       \ remove trailing bls
+                dup 0= if 2drop exit then
+                2dup + 1- c@ ascii \ = +        \ remove trailing '\'
+                dup fpath$ @ + 1+ fpath-max >   \ no room: leave it out
+                if      2drop exit
+                then    fpath$ @ 0>
+                if      " ;" fpath-append       \ add a semicolon
+                then    fpath-append ;          \ add to path
 
 : <FPATH+>      ( | <path> --- f1 )     \ f1 = true if null string
                 skip.blanks
@@ -71,7 +79,7 @@ PATHHNDL B/HCB ERASE
 
                 \ display the current library path
 : .FPATH        ( --- )
-                fpath$ count type space ;
+                fpath@ type space ;
 
                 \ prepend the path in hndl to name at a1
 : PREPEND.APATH ( a1 hndl --- a1 )

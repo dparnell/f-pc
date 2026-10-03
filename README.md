@@ -11,8 +11,14 @@ vm/fpc --sdl -i F-PC.IMG   # ... or in an SDL window
 vm/fpc - FLOAD MY.SEQ BYE  # scripted: the rest of the line is F-PC's command line
 make -C vm test            # regression tests; make -C vm test-ui needs pip install pyte
 make -C vm test-tools      # load each TOOLS/*.SEQ add-on
-make -C vm install PREFIX=~/.local   # then: f-pc (full system), fpc (bare kernel)
+make -C vm install PREFIX=~/.local   # then: f-pc (full system), fpc (bare kernel); make -C vm uninstall
 ```
+
+Configuration:
+- `F-PC.CFG` is Forth that runs at every start. It sets colours, `.BAK` backups (`BACKUPON`), `FPATH` and so on. The bare kernel reads `KERNEL.CFG` instead.
+- The copies next to the image (in the source tree, or `PREFIX/lib/fpc` when installed) are the defaults.
+- Your own copy goes in `~/.config/f-pc/` (or `$XDG_CONFIG_HOME/f-pc/`) and is used instead. `EDIT-CONFIG` copies the default there the first time and opens it in the editor.
+- The hypertext index `HYPER.NDX` works the same way: `FLOAD INDEX.SEQ BINDEX` writes your own index there.
 
 Things to try:
 - `WORDS`, and `SEE word` (the decompiler).

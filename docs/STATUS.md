@@ -14,7 +14,7 @@ vm/fpc              # bare kernel, loaded from SRC/KERNEL.SEQ (~6 ms)
 make -C vm test     # regression tests: from source, from an image, without JIT
 make -C vm test-ui  # UI scenarios in a pseudo-terminal (needs: pip install pyte)
 make -C vm test-tools  # load each of the 65 TOOLS/*.SEQ add-ons
-make -C vm install PREFIX=~/.local  # bin/f-pc (full system), bin/fpc; tree in lib/fpc
+make -C vm install PREFIX=~/.local  # bin/f-pc (full system), bin/fpc; tree in lib/fpc (uninstall too)
 ```
 
 Running `fpc`:
@@ -75,4 +75,5 @@ Running `fpc`:
 | DOS commands | Mapped to the host: `DIR`, `CD`, `DEL`, `COPY`, `REN`, shell escapes via `$SHELL` |
 | `F-PC.SES` | New, self-checking 32-bit format |
 | Line endings | `.SEQ` sources are LF; the reader and SED accept LF or CR LF, and SED saves a file with the endings it had |
+| Configuration | `F-PC.CFG`, `KERNEL.CFG` and `HYPER.NDX` are looked up in `~/.config/f-pc` (`$XDG_CONFIG_HOME/f-pc`) first, then the installation; `EDIT-CONFIG` makes your copy. `FPATH` is reset to the installation's directories at every start (set others in `F-PC.CFG`) and can be 1024 characters long |
 | Idle | Key waits nap on the host after 50 ms without input; `MS`, `TENTHS` and `SECONDS` sleep instead of spinning |

@@ -7,6 +7,50 @@ BUILTIN DOS-LINE        ( -- a1 )
 BUILTIN (FPC-HOME)      ( -- a1 )       \ counted: the installation directory
 : FPC-HOME      ( -- a n )      (FPC-HOME) COUNT ;
 
+\ Each user's own copies of F-PC.CFG, KERNEL.CFG and HYPER.NDX live in
+\ USER-DIR: $XDG_CONFIG_HOME/f-pc, normally ~/.config/f-pc. They are used
+\ in preference to the installation's copies (found through FPATH), and
+\ files F-PC writes for the user (HYPER.NDX) go there.
+CREATE USER-DIR$   256 ALLOT        \ counted strings
+CREATE USER-FILE$  384 ALLOT
+
+: USER-DIR      ( -- a n )      \ the user's F-PC directory (may not exist)
+                " XDG_CONFIG_HOME" GETENV OVER 0<> AND
+                IF      USER-DIR$ PLACE
+                ELSE    2DROP " HOME" GETENV OVER 0<> AND
+                        IF      USER-DIR$ PLACE " /.config" USER-DIR$ +PLACE
+                        ELSE    2DROP 0 USER-DIR$ C!    \ no home: none
+                        THEN
+                THEN    USER-DIR$ C@
+                IF      " /f-pc" USER-DIR$ +PLACE
+                THEN    USER-DIR$ COUNT ;
+
+: USER-FILE     ( a n -- a1 )   \ counted: file a n in USER-DIR
+                USER-DIR DUP
+                IF      USER-FILE$ PLACE " /" USER-FILE$ +PLACE
+                ELSE    2DROP 0 USER-FILE$ C!
+                THEN    USER-FILE$ +PLACE USER-FILE$ ;
+
+CREATE MKDIR$  260 ALLOT
+
+: MKDIR-PREFIX  ( a n -- )      \ make directory a n; errors are ignored
+                255 MIN DUP >R MKDIR$ SWAP CMOVE  0 MKDIR$ R> + C!
+                0 MKDIR$ $3900 HDOS1 2DROP ;
+
+: MAKE-USER-DIR ( -- )          \ create USER-DIR (and its parents)
+                USER-DIR DUP 0= IF 2DROP EXIT THEN
+                DUP 1 ?DO  OVER I + C@ ASCII / = IF OVER I MKDIR-PREFIX THEN
+                       LOOP
+                MKDIR-PREFIX ;
+
+: $USER-FLOAD   ( a1 -- f1 )    \ FLOAD counted name a1: the user's copy if
+                                \ there is one, else as usual; f1 true if
+                                \ neither opened
+                DUP COUNT USER-FILE $FLOAD
+                IF      $FLOAD
+                ELSE    DROP FALSE
+                THEN    ;
+
 : HOME-PATH+    ( a n -- )      \ add FPC-HOME\a n to the file search path
                 >R >R  FPC-HOME PAD PLACE  " \" PAD +PLACE
                 R> R> PAD +PLACE  PAD COUNT "FPATH+ ;
@@ -22,9 +66,11 @@ CFGHNDL COUNT + B/HCB ERASE
                 dos-line count dup #tib ! tib swap cmove >in off ;
 
 : HDEFAULT      ( -- )
-                fpath$ c@ 0= if  default-fpath  then
+                default-fpath   \ port: this installation's directories, at
+                                \ every start (the image may come from
+                                \ another); set others in F-PC.CFG
                 %off> ?loaded,          \ disable LOADED, this time ONLY
-                cfghndl $fload drop     \ we don't care if it exists
+                cfghndl $user-fload drop \ we don't care if it exists
                 seqhandle clr-hcb dos-line c@ 0<>
                 if      dos>tib                       \ move dosline to tib
                         bl word 1+ c@ ASCII - <>      \ is - in place of file

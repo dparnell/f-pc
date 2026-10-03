@@ -45,6 +45,8 @@ create crlf$ $0D c, $0A c,
                 if      " *.txt" ">$ $>tib
                         withname off
                 then
+                make-user-dir           \ port: the index goes in USER-DIR
+                " HYPER.NDX" user-file indexhndl $>handle
                 indexhndl hcreate abort" Couldn't make INDEX file."
                 ['] hyperdest >body 1 slook.buf place
                 ['] index.file fallof

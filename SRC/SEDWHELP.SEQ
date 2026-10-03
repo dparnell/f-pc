@@ -91,7 +91,9 @@ create helpbuf 32 allot
                 here count 29 min helpbuf place
                 $2020 helpbuf count + w!        \ two blanks (W! : 32-bit !
                                                 \ would run past HELPBUF)
-                " HYPER.NDX" ">$ $file 0=
+                " HYPER.NDX" user-file $file    \ port: the user's index,
+                if      " HYPER.NDX" ">$ $file  \ else the installed one
+                then    0=
                 if      IBRESET
                         0.0 seqhandle movepointer
                         0.0 filepointer 2!

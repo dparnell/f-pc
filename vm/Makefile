@@ -47,19 +47,30 @@ test: fpc
 
 # install under $(PREFIX): the tree goes to $(PREFIX)/lib/fpc (fpc finds
 # its sources in the directory above its executable); bin/fpc is the VM
-# (bare kernel by default), bin/f-pc starts the full system image
+# (bare kernel by default), bin/f-pc (the f-pc script) starts the full
+# system image. The installed F-PC.CFG, KERNEL.CFG and HYPER.NDX are the
+# defaults: each user's own copies go in ~/.config/f-pc (see EDIT-CONFIG).
 PREFIX ?= /usr/local
 LIBDIR  = $(PREFIX)/lib/fpc
+DATA    = F-PC.IMG F-PC.CFG KERNEL.CFG HYPER.NDX $(notdir $(wildcard ../FPC*.TXT))
 install: fpc image
 	mkdir -p $(DESTDIR)$(LIBDIR)/bin $(DESTDIR)$(PREFIX)/bin
 	cp fpc $(DESTDIR)$(LIBDIR)/bin/fpc
-	cp ../F-PC.IMG $(DESTDIR)$(LIBDIR)/
-	cp -r ../SRC ../HLP ../TOOLS $(DESTDIR)$(LIBDIR)/
+	cd .. && cp $(DATA) $(DESTDIR)$(LIBDIR)/
+	cd .. && for d in SRC HLP TOOLS; do \
+		rm -rf $(DESTDIR)$(LIBDIR)/$$d; mkdir -p $(DESTDIR)$(LIBDIR)/$$d; \
+		find $$d -maxdepth 1 -type f ! -name '*.BAK' ! -name '*.bak' -exec cp {} $(DESTDIR)$(LIBDIR)/$$d/ \; ; \
+	done
 	ln -sf ../lib/fpc/bin/fpc $(DESTDIR)$(PREFIX)/bin/fpc
-	printf '#!/bin/sh\nexec "%s/bin/fpc" -i "%s/F-PC.IMG" "$$@"\n' $(LIBDIR) $(LIBDIR) > $(DESTDIR)$(PREFIX)/bin/f-pc
+	cp ../f-pc $(DESTDIR)$(PREFIX)/bin/f-pc
 	chmod +x $(DESTDIR)$(PREFIX)/bin/f-pc
+
+# remove what install put in $(PREFIX); users' ~/.config/f-pc is left alone
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/fpc $(DESTDIR)$(PREFIX)/bin/f-pc
+	rm -rf $(DESTDIR)$(LIBDIR)
 
 clean:
 	rm -f fpc $(OBJS) test.img
 
-.PHONY: test test-ui clean image
+.PHONY: test test-ui test-tools clean image install uninstall
