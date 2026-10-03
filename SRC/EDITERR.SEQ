@@ -10,6 +10,7 @@ create msgsave  32 allot
 create wordsave 32 allot
 
 : (EDITERR)     ( a1 n1 --- )
+                batch? if (doerror) exit then   \ no editor in a script
                 31 min msgsave place
                 >in @ 1- here c@ - 0MAX =: screenchar
                 here count 31 min wordsave place

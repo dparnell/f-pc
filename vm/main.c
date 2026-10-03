@@ -121,7 +121,7 @@ static int run_forth(vm_t *vm)
         next = qerror;
     }
     vm->host->flush(vm->host);
-    return vm->exit_code;
+    return vm->exit_code ? vm->exit_code : vm->failed;
 }
 
 int main(int argc, char **argv)

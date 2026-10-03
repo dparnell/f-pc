@@ -150,7 +150,8 @@ $0A VALUE DEFBASE
                 dup ?base_restore
                 loading @
                 if
-                        if      2>R sp0 @ sp! printing off loading off
+                        if      batch? if failed then   \ a script's exit status
+                                2>R sp0 @ sp! printing off loading off
                                 ['] <run> is run errfix
                                 2R> doerror
                                 quit                    \ error from disk

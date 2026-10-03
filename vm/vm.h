@@ -175,6 +175,7 @@ struct vm {
     int      throw_code;
     int      bye;                      /* BYE executed                    */
     int      exit_code;
+    int      failed;            /* FAILED: exit status 1 unless BYE gives one */
 
     void    *seed;                     /* seed interpreter state           */
     ucell    heap_free;                /* allocator free list (dos.c)      */

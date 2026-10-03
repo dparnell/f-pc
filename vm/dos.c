@@ -572,6 +572,8 @@ void p_BATCHQ(vm_t *vm)                     /* ( -- f ) the plain stdin/stdout h
     push(vm, vm->host->eof ? TRUE_F : 0);
 }
 
+void p_FAILED(vm_t *vm) { vm->failed = 1; }   /* ( -- ) the session will exit 1 */
+
 void p_SHIFTSTATE(vm_t *vm)                 /* ( -- flags ) as INT 16h AH=2 */
 {
     push(vm, vm->host->shift ? (ucell)vm->host->shift(vm->host) : 0);

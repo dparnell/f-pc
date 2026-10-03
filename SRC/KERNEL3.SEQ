@@ -472,7 +472,8 @@ DEFER ERRFIX    ' NOOP IS ERRFIX
 DEFER QUIT                              \ resolved in KERNEL4
 
 : (?ERROR)      ( adr len f -- )
-                IF      ['] <RUN> IS RUN ERRFIX
+                IF      BATCH? IF FAILED THEN   \ a script's exit status
+                        ['] <RUN> IS RUN ERRFIX
                         2>R SP0 @ SP!   PRINTING OFF
                         2R> SPACE TYPE SPACE   QUIT
                 ELSE    2DROP  THEN  ;
