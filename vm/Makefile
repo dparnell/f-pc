@@ -2,7 +2,7 @@
 CC      ?= cc
 CFLAGS  ?= -O2 -g
 CFLAGS  += -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wno-format-truncation -rdynamic
-OBJS    = main.o vm.o seed.o dos.o screen.o image.o am.o jit.o float.o sljitLir.o host_batch.o host_tty.o host_sdl.o
+OBJS    = main.o vm.o seed.o dos.o screen.o image.o am.o jit.o float.o cp437.o sljitLir.o host_batch.o host_tty.o host_sdl.o
 
 # SDL window host (fpc --sdl), when SDL2 and zlib are available
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2 zlib 2>/dev/null)

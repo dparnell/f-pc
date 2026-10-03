@@ -16,7 +16,7 @@ make -C vm test-tools  # load each of the 65 TOOLS/*.SEQ add-ons
 ```
 
 Running `fpc`:
-- `--batch` gives plain stdin/stdout, with no screen control and no status line. A load error prints the file, line and a caret, and `fpc` exits with status 1.
+- `--batch` gives plain stdin/stdout, with no screen control and no status line. A load error prints the file, line and a caret, and `fpc` exits with status 1. CP437 characters are written as UTF-8 (`FPC_RAW=1` for the raw bytes).
 - The remaining arguments are F-PC's DOS command line, for example `vm/fpc - FLOAD MYFILE.SEQ BYE`.
 - Sources are found through `FPATH`, which defaults to the installation directory and its `SRC`, `HLP` and `TOOLS`, so `fpc` works from any directory.
 

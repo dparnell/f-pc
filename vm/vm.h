@@ -137,6 +137,8 @@ typedef struct host {
 } host_t;
 
 host_t *host_batch_new(void);
+extern const uint16_t cp437_unicode[256];      /* cp437.c */
+int   cp437_utf8(uint8_t c, char *out);
 host_t *host_tty_new(void);
 void    host_tty_attach(host_t *h, vm_t *vm);
 host_t *host_sdl_new(void);             /* NULL if unavailable */

@@ -8,8 +8,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static void b_emit(host_t *h, int c) { (void)h; if (c != '\r') putchar(c); }
-static void b_type(host_t *h, const uint8_t *s, size_t n) { (void)h; fwrite(s, 1, n, stdout); }
+/* Bytes 128-255 are CP437 characters (box drawing etc.): they are written
+ * as UTF-8, unless FPC_RAW is set. Control codes stay control codes. */
+static int raw = -1;
+static void out_byte(int c)
+{
+    if (raw < 0) raw = getenv("FPC_RAW") != NULL;
+    if (c < 128 || raw) { putchar(c); return; }
+    char u[3];
+    fwrite(u, 1, (size_t)cp437_utf8((uint8_t)c, u), stdout);
+}
+static void b_emit(host_t *h, int c) { (void)h; if (c != '\r') out_byte(c & 0xFF); }
+static void b_type(host_t *h, const uint8_t *s, size_t n) { (void)h; for (size_t i = 0; i < n; i++) out_byte(s[i]); }
 /* KEY? is true only when input is waiting; at end of input it stays false
  * and KEY-EOF? (host->eof) becomes true, so (KEY) stops waiting and KEY
  * ends the session. After 200 ms of polling without input, polls wait
