@@ -1,4 +1,4 @@
-\ ANSI.SEQ  Provide ANSI CORE and CORE EXT by U.Hoffmann
+\ ANSI.SEQ  Provide ANSI CORE and CORE EXT by U.Hoffmann   F-PC native port
 
 /*
 
@@ -63,6 +63,18 @@ This approach is hopefully open to a later addition of word lists.
 
 */
 
+\ F-PC native port:
+\  - This is the ANS Forth word set package, not a terminal driver.
+\  - TOKEN lays down a native colon definition: a CT-NEST code field and a
+\    body cell holding the (cell aligned) list address, as the kernel's (:)
+\    does. It made an 8086 JMP to >NEST and a list segment.
+\  - CELL+ CELLS ALIGN ALIGNED are the real 32-bit words (they were 2+ 2*
+\    and no-ops), LSHIFT RSHIFT and UNLOOP (UNDO) are VM built-ins (they
+\    were CODE words), and EVALUATE is the kernel's (NEEDS EVAL is gone).
+\  - MARKER steps through CONTEXT in cells.
+\  - UNUSED is the free code space (LIMIT HERE -); SP@ HERE - meant that in
+\    the 64K segment.
+
 Only Forth also Hidden also definitions   warning off
 
 : COMP:  \ Warn if word is used in compile state
@@ -78,9 +90,9 @@ Only Forth also Hidden also definitions   warning off
    \ but do not start to compile the body itself.
    \ Return the newly created execution token.
    \ Token is a factor of :NONAME and :
-   here
-   !CSP   233 c, ( jmp )  >nest here 2+ - ,
-   XHERE PARAGRAPH +  DUP XDPSEG !  XSEG @ - ,  XDP OFF ;
+   align here
+   !CSP   CT-NEST ,               \ port: code token, then the list address
+   XALIGN XHERE , ;
 
 : colon ( -- ) \ : without current @ context !
    HEADER  token  drop  !CSP HIDE (]) ;
@@ -150,8 +162,8 @@ Vocabulary CORE  ANSI CORE definitions
 ' ABORT         Alias ABORT             ( i*x -- ) ( R: j*x -- )
 ' ABORT"        Alias ABORT" immediate  ( C: "ccc<quote>" -- ) ( i*x flag -- i*x | ) ( R: j*x -- j*x | )
 : ACCEPT ( c-addr +n1 -- +n2 )  EXPECT  SPAN @ ;
-' NOOP          Alias ALIGN immediate   ( -- )
-' NOOP          Alias ALIGNED immediate ( -- )
+' ALIGN         Alias ALIGN             ( -- )
+' ALIGNED       Alias ALIGNED           ( addr -- a-addr )
 ' ALLOT         Alias ALLOT             ( n -- )
 ' AND           Alias AND               ( x1 x2 -- x3 )
 ' BASE          Alias BASE              ( -- a-addr )
@@ -160,8 +172,8 @@ Vocabulary CORE  ANSI CORE definitions
 ' C!            Alias C!                ( char c-addr -- )
 ' C,            Alias C,                ( char -- )
 ' C@            Alias C@                ( c-addr -- char )
-' 2+            Alias CELL+             ( a-addr1 -- a-addr2 )
-' 2*            Alias CELLS             ( n1 -- n2 )
+' CELL+         Alias CELL+             ( a-addr1 -- a-addr2 )
+' CELLS         Alias CELLS             ( n1 -- n2 )
 : CHAR ( "name" -- char )  BL WORD 1+ C@ ;
 ' 1+            Alias CHAR+             ( c-addr1 -- c-addr2 )
 ' NOOP          Alias CHARS immediate   ( n1 -- n2 )
@@ -182,11 +194,11 @@ Vocabulary CORE  ANSI CORE definitions
 ' EMIT          Alias EMIT              ( x -- )
 : ENVIRONMENT? ( x-addr u -- false | i*x true )   2DROP FALSE ;
 
-Only Forth also definitions  needs eval
+Only Forth also definitions  \ port: EVALUATE is in the kernel, no EVAL.SEQ
 
 Hidden also ANSI CORE definitions
 
-' EVAL Alias EVALUATE      ( i*x c-addr u -- j*x )
+' EVALUATE Alias EVALUATE  ( i*x c-addr u -- j*x )
 ' EXECUTE       Alias EXECUTE           ( i*x xt -- j*x )
 ' EXIT          Alias EXIT              ( -- ) ( R: nest-sys -- )
 ' FILL          Alias FILL              ( c-addr u char -- )
@@ -204,7 +216,8 @@ Hidden also ANSI CORE definitions
 ' LITERAL       Alias LITERAL immediate ( C: x -- ) ( -- x )
 ' LOOP          Alias LOOP immediate    ( C: do-sys -- ) ( -- ) ( R: loop-sys1 -- | loop-sys2 )
 \ : LSHIFT ( x1 u -- x2 )  16 umin 0 ?DO 2* LOOP ;
-CODE LSHIFT ( x1 u -- x2 ) POP CX   POP AX   SHL AX, CL   1PUSH end-code  \  courtesy akg
+\ CODE LSHIFT ( x1 u -- x2 ) POP CX   POP AX   SHL AX, CL   1PUSH end-code  \  courtesy akg
+' LSHIFT        Alias LSHIFT            ( x1 u -- x2 )  \ port: built-in
 ' *D            Alias M*                ( n1 n2 -- d )
 ' MAX           Alias MAX               ( n1 n2 -- n3 )
 ' MIN           Alias MIN               ( n1 n2 -- n3 )
@@ -226,7 +239,8 @@ CODE LSHIFT ( x1 u -- x2 ) POP CX   POP AX   SHL AX, CL   1PUSH end-code  \  cou
 ' REPEAT        Alias REPEAT immediate  ( C: orig dest -- ) ( -- )
 ' ROT           Alias ROT               ( x1 x2 x3 -- x2 x3 x1 )
 \ : RSHIFT ( x1 u -- x2 )  16 umin 0 ?DO u2/ LOOP ;
-CODE RSHIFT ( x1 u -- x2 )  POP CX   POP AX   SHR AX, CL  1PUSH end-code \ courtesy akg
+\ CODE RSHIFT ( x1 u -- x2 )  POP CX   POP AX   SHR AX, CL  1PUSH end-code \ courtesy akg
+' RSHIFT        Alias RSHIFT            ( x1 u -- x2 )  \ port: built-in
 ' "             Alias S" immediate      ( C: "ccc<quote>" -- ) ( -- c-addr u )
 ' S>D           Alias S>D               ( n -- d )
 ' SIGN          Alias SIGN              ( n -- )
@@ -247,7 +261,8 @@ CODE RSHIFT ( x1 u -- x2 )  POP CX   POP AX   SHR AX, CL  1PUSH end-code \ court
 ' U<            Alias U<                ( u1 u2 -- flag )
 ' UM*           Alias UM*               ( u1 u2 -- ud )
 ' UM/MOD        Alias UM/MOD            ( ud u1 -- u2 u3 )
-Code UNLOOP ( -- ) ( R: loop-sys -- )  ADD RP, # 6  NEXT   end-code
+\ Code UNLOOP ( -- ) ( R: loop-sys -- )  ADD RP, # 6  NEXT   end-code
+' UNDO          Alias UNLOOP            ( -- ) ( R: loop-sys -- ) \ port
 ' UNTIL         Alias UNTIL immediate   ( C: dest -- ) ( x -- )
 ' VARIABLE      Alias VARIABLE          ( "name" -- ) ( "name" Execution: -- a-addr )
 ' WHILE         Alias WHILE immediate   ( C: dest -- orig dest ) ( x -- )
@@ -288,9 +303,9 @@ Vocabulary EXT  EXT definitions
 
 : MARKER ( "name" -- )
     Create
-    context  #vocs 0 DO  dup @ , 2+ LOOP drop  current @ ,
+    context  #vocs 0 DO  dup @ , cell+ LOOP drop  current @ ,
   Does> ( -- )
-    dup  context  #vocs 0 DO  over @ over !  2+ swap 2+ swap LOOP drop
+    dup  context  #vocs 0 DO  over @ over !  cell+ swap cell+ swap LOOP drop
        @ current !
     body> dup >view (frget) ;
 
@@ -321,7 +336,7 @@ Vocabulary EXT  EXT definitions
 ' TUCK          Alias TUCK              ( x1 x2 -- x2 x1 x2 )
 ' U.R           Alias U.R               ( u n -- )
 ' U>            Alias U>                ( u1 u2 -- flag )
-: UNUSED ( -- u )   sp@ here - ;
+: UNUSED ( -- u )   limit here - ;     \ port: was sp@ here -
 ' VALUE         Alias VALUE
 : WITHIN ( n1|u2 n2|u2 n3|u3 -- flag )   over - >r - r> u< ;
 ' [COMPILE]     Alias [COMPILE] immediate ( "name" -- )

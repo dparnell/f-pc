@@ -1,4 +1,4 @@
-\ COLPLAY.SEQ  Testsource fr eine Farbauswahlbox  ms  12/18/92 10:16:49.66
+\ COLPLAY.SEQ  Testsource fr eine Farbauswahlbox  ms  12/18/92 10:16:49.66   F-PC native port
 comment:
           COLPLAY.SEQ enth„lt eine einfaches Farbwahltool fr die visuelle
         Farbselektion der F-PC Systemfarben. Das Wort SYSCOLORS zeigt die
@@ -20,6 +20,14 @@ comment:
         dabei COLOR durch %COLOR ersetzen.
 
 comment;
+
+\ F-PC native port: the COLORS table still has two bytes per entry, and the
+\ patch of >1BGFG..>8BGFG still works (@> and !> on a colon definition
+\ fetch and store its token list address). Cells are 32 bits now, so the
+\ colour being edited (an attribute byte in the table, or the low byte of
+\ NORMVAL/REVVAL) is fetched and stored with C@ and C!; @ and ! would have
+\ overwritten the next table entries. The boxes are fixed at CORGX,CORGY
+\ and are clipped on terminals smaller than about 75x21.
 
 ONLY FORTH ALSO HIDDEN ALSO FORTH DEFINITIONS
 
@@ -240,10 +248,10 @@ defer showcolor
 
 
 : newcolset     ( --- n1 f1 )   \ Rueckgabe: Farbwert f1=true fuer Speichern
-        showbox coloradr @ begin changecolor ?dup until 13 = ;
+        showbox coloradr c@ begin changecolor ?dup until 13 = ;   \ port: c@
 
 : <setcolor>    ( a1 --- )      \ a1=Adresse des zu aendernden Farbwertes
-        !> coloradr newcolset if coloradr ! else drop then >norm ;
+        !> coloradr newcolset if coloradr c! else drop then >norm ; \ port: c!
 
 : setcolor      ( a1 --- )      \
         savecursor savescr <setcolor> restscr restcursor >norm ;
@@ -270,7 +278,7 @@ defer syscolorbox
         2drop corgx corgy 12 6 d+ >norm
         at.color.dn >rev
         at.color.dn
-        9 1 do i colortbl @ attrib ! at.color.dn loop 2drop >norm
+        9 1 do i colortbl c@ attrib ! at.color.dn loop 2drop >norm \ port: c@
 \GR     corgx corgy 30 1 d+ 2dup at ." \8 Fertig = \1ESC\8\s09"
 \GR                      1+ 2dup at ." \8 Farbe „ndern = \1<ÄÙ\8\s03"
 \GR                      1+ 2dup at ." \8 vorige Farbe  = \1  \8  "

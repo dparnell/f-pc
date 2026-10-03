@@ -1,4 +1,4 @@
-\ FUNKEY.SEQ    Function key functions                  by Tom Zimmer
+\ FUNKEY.SEQ    Function key functions                  by Tom Zimmer   F-PC native port
 
 ?dark
 .comment:
@@ -23,6 +23,9 @@ temporarily when their operation is not desired.
 
 comment;
 
+\ F-PC native port: F#FUNCS is a table of cells (2* became CELLS). Keys
+\ that are not F1-F10, including K-RESIZE, pass through unchanged.
+
 
 create f#funcs ' noop dup , dup , dup , dup , dup ,
                       dup , dup , dup , dup ,     ,
@@ -36,7 +39,7 @@ variable funflg         funflg off
                 funflg @
                 if      funflg off
                         begin   defers key dup 187 dup 9 + between
-                                if      dup 187 - 2* f#funcs + @ dup
+                                if      dup 187 - cells f#funcs + @ dup
                                         ['] noop =
                                         if      drop        true
                                         else    nip execute 0
@@ -50,7 +53,7 @@ variable funflg         funflg off
 ' funkey is key
 
 : fn!           ( n1 | name --- )
-                1 max 10 min 1- 2* f#funcs + ' swap ! ;
+                1 max 10 min 1- cells f#funcs + ' swap ! ;
 
 : .fn           ( --- )
                 cr ." Function key assignments, Functions are "
@@ -58,7 +61,7 @@ variable funflg         funflg off
                 f#funcs 10 0
                 do      dup cr i 1+
                         0 <# #s 'F' hold #> 8 over - spaces type ."  = "
-                        i 2* + @ >name .id
+                        i cells + @ >name .id
                 loop    drop ;
 
 : myfunc        ( -- )

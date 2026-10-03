@@ -1,6 +1,22 @@
-\ WINDOW.SEQ    Window code for F83                     by Graig A. Lindley
+\ WINDOW.SEQ    Window code for F83                     by Graig A. Lindley   F-PC native port
 
-POSTFIX         \ Use the postfix assembler syntax.
+\ F-PC native port:
+\  - The CODE words are rewritten in high level Forth. The INT 10h calls
+\    go through BIOS-VIDEO, DOS memory allocation becomes ALLOCATE/FREE,
+\    the "extended memory" fetch and store are plain @ and !, and the
+\    screen <-> buffer moves copy to and from VIDEO-BUF.
+\  - The Window Control Block is an ALLOCATEd block of cells; WCBSEG holds
+\    its address (it held a segment). The screen buffer is ALLOCATEd too.
+\  - The size checks use COLS and ROWS, not 80x25. Drawing and the screen
+\    save/restore clip to the current screen, so a window that no longer
+\    fits after a terminal resize is cut off rather than written past the
+\    screen. (Open windows are not re-laid out on a resize.)
+\  - POSTFIX (assembler syntax), VSEG and the DOS SETBLOCK are gone; FREE
+\    is the system's FREE ( addr -- ior ), which has the same stack effect
+\    as the old one as used here (one value, dropped).
+\  - Like the original, this file redefines ATTRIB (as a WCB field offset),
+\    BELL, NORMAL and REVERSE in FORTH: load it last or in its own
+\    vocabulary.
 
 comment:
 
@@ -31,33 +47,32 @@ Dr. Dobbs #117 July 1986
 comment;
 
 \ write count # of chars with attrib at cursor position
+\ attrib is char + 256*attribute, as in AX for INT 10h AH=9.
 
-code chra ( attrib,count--)
-  cx pop ax pop ah bl mov
-  bh bh xor 9 # ah mov        \ char in al, func. code in ah
-  si push 16 int si pop       \ do video interrupt
-  next end-code
+: chra ( attrib,count--)
+  >r dup $FF and $0900 or               \ char in al, func. code in ah
+  swap flip $FF and                     \ attribute in bl, page 0
+  r> 0 bios-video 2drop 2drop ;         \ do video interrupt
 
 \ write 1 char with attrib at cursor - update cursor position
 
-code chra+ ( attrib--)
-  ax pop ah bl mov bh bh xor
-  1 # cx mov 9 # ah mov       \ char in al, func. code in ah
-  si push 16 int              \ count-1 write char/attrib
-  3 # ah mov 16 int dl inc 2 # ah mov 16 int
-  si pop                      \ inc cursor position
-  next end-code
+: chra+ ( attrib--)
+  1 chra                                \ write char/attrib
+  get-xy swap 1+ swap at-xy ;           \ inc cursor position
 
 \ read char and attrib at cursor position
 
-code rdchra  ( --attrib )
-  0 # bh mov 8 # ah mov        \ pg = 0  func. code = 8
-  si push 16 int si pop        \ do video interrupt
-  1push  end-code              \ attrib to stack
+: rdchra  ( --attrib )
+  $0800 0 0 0 bios-video 2drop drop ;   \ pg = 0  func. code = 8
+
+\ F-PC native port: is (x,y) on the screen? BIOS-VIDEO clamps the cursor
+\ to the screen, so off-screen writes are skipped here instead.
+: on-crt? ( x,y--f) rows u< swap cols u< and ;
 
 \ put char with attrib at x,y
 
-: putch ( x,y,attrib--) >r at r> 1 chra ;
+: putch ( x,y,attrib--) >r 2dup on-crt?
+  if at r> 1 chra else 2drop r>drop then ;
 
 \ get char with attrib at x,y
 
@@ -65,94 +80,54 @@ code rdchra  ( --attrib )
 
 \ draw count # of chars starting at x,y
 
-: drawrow ( x,y,attrib,count--) >r >r at r> r> chra ;
+: drawrow ( x,y,attrib,count--) >r >r 2dup on-crt?
+  if at r> r> chra else 2drop r> r> 2drop then ;
 
 \ scroll specified window up n lines
 
-code scrlup ( xul,yul,xlr,ylr,n,attrib--)
-  bx pop bl bh mov di pop
-  dx pop dl dh mov ax pop al dl mov  \ dx has lr x y
-  cx pop cl ch mov ax pop al cl mov  \ cx has ul x y
-  di ax mov si push bp push          \ save regs
-  6 # ah mov 16 int          \ ax # of lines func code ah
-  bp pop si pop              \ restore forth regs
-  next end-code
+: scrlup ( xul,yul,xlr,ylr,n,attrib--)
+  flip >r                               \ attribute in bh
+  $FF and $0600 or >r                   \ # of lines, func code ah
+  flip + >r                             \ dx has lr x y
+  flip +                                \ cx has ul x y
+  r> r> r> 2swap bios-video 2drop 2drop ;
 
-\ DOS memory management support
-\ tell DOS to allocate memory bytes
+\ memory management support
+\ allocate #bytes of memory
 
-code calloc ( #bytes--seg,? )
-  bx pop 4 # cl mov bx cl shr       \    -- maxp error code F
-  bx inc 72 # ah mov 33 int         \ func. code 48h, int 21h
-  u< if bx push ax push ax ax xor   \ if C then error
-     else ax push -1 # ax mov
-     then 1push end-code
+: calloc ( #bytes--addr,true | 0,false )
+  allocate if drop 0 false else true then ;
 
-\ tell DOS to free memory segment
+\ F-PC native port: the DOS FREE ( seg--? ) and SETBLOCK are gone; the
+\ system's FREE ( addr--ior ) is used.
 
-code free ( seg--? )
-  ax pop es push ax es mov          \ error code F
-  73 # ah mov 33 int                \ func code 4Ah, int 21h
-        es pop
-  u< if ax push ax ax xor           \ if C then error
-     else -1 # ax mov
-     then 1push end-code
+\ fetch cell from WCB memory
 
-\ tell DOS to shrink or expand allocated memory segment
+: e@ ( addr,offset--n) + @ ;
 
-code setblock ( #bytes--? )
-        bx pop es push
-        cs ax mov ax es mov           \ maxp error code F
-        4 # cl mov bx cl shr   \ bx has # of paragraphs
-        bx inc 74 # ah mov 33 int     \ func code 4Ah, int 21h
-        es pop
-     u< if bx push ax push ax ax xor   \ if C then error
-        else -1 # ax mov
-        then 1push end-code
+\ store cell in WCB memory
 
-\ fetch word from extended memory
-
-code e@ ( seg,addr--n)
-        bx pop ax pop           \ seg in es, addr in bx
-        es push ax es mov
-        es: 0 [bx] ax mov       \ get the data on stack
-        es pop
-        1push end-code
-
-\ store word in extended memory
-
-code e!  ( n,seg,addr--)
-        bx pop dx pop ax pop
-        es push dx es mov
-        ax es: 0 [bx] mov       \ store the data
-        es pop
-        next end-code
+: e!  ( n,addr,offset--) + ! ;
 
 \ read current cursor location
 
-code rdcur ( --x,y)
-  si push 0 # bh mov
-  3 # ah mov 16 int               \ func. code 3, int 10h
-  si pop ah ah xor
-  dl al mov ax push dh al mov
-  1push end-code
+: rdcur ( --x,y) get-xy ;
 
 \ Window Control Block (WCB) record layout            860704clz)
+\ F-PC native port: the fields are cells.
 
- 0 constant ulx      2 constant uly       \ upper left corner
- 4 constant width    6 constant height
- 8 constant curx    10 constant cury      \ current cursor pos
-12 constant oldx    14 constant oldy      \ old cursor pos
-16 constant bufseg  18 constant oldwcbseg \ seg storage
-20 constant attrib                        \ window attrib.
+ 0 cells constant ulx       1 cells constant uly        \ upper left corner
+ 2 cells constant width     3 cells constant height
+ 4 cells constant curx      5 cells constant cury       \ current cursor pos
+ 6 cells constant oldx      7 cells constant oldy       \ old cursor pos
+ 8 cells constant bufseg    9 cells constant oldwcbseg  \ buffer, prev WCB
+10 cells constant attrib                                \ window attrib.
 
-22 constant recordsize
+11 cells constant recordsize
 15 constant border                        \ border attribute
-HEX
-B000 constant vseg                        \ start video memory
-  \ B800 = color graphics adapter, B000 = monochrome monitor
-variable wcbseg                           \ current WCB seg
-DECIMAL
+\ F-PC native port: VSEG (video segment $B000/$B800) is gone: VIDEO-BUF.
+variable wcbseg                           \ current WCB address
+         wcbseg off
 
 \ WCB extended memory access
 
@@ -187,52 +162,32 @@ DECIMAL
   loop ;
 
 \ used by scn->buf and buf->scn
+\ F-PC native port: the screen is VIDEO-BUF; rows below the screen and
+\ columns right of it are skipped (the screen may have been resized).
 
-label saveh   nop nop         \ storage for height parameter
-label savew   nop nop         \             width parameter
-label saveptr nop nop         \             start pointer
-label savesi  nop nop         \             forth's IP reg
-label saveds  nop nop         \             current ds reg
+: scn>addr ( x,y--addr) cols * + 2* video-buf + ;
+
+: scn-len ( x,width--#bytes) swap cols swap - min 0max 2* ;
+
+0 value >scn?                   \ true: buffer to screen
+
+: scnmove ( x,y,width,height,buf--)
+  swap 0 ?do                                    \ x y w buf
+     2 pick i + rows <                          \ row on the screen?
+     if  3 pick 3 pick i + scn>addr             \ x y w buf scr
+         over 3 pick i * 2* +                   \ x y w buf scr bufline
+         >scn? if swap then
+         5 pick 4 pick scn-len cmove
+     then
+  loop 2drop 2drop ;
 
 \ move data from screen to memory buffer
 
-HEX
-
-code scn->buf ( x,y,width,height,seg--)
-  cld dx pop 0 # di mov saveh #) pop savew #) pop ax pop
-  A0 # bl mov bl mul bx pop bx shl bx ax add ax saveptr #) mov
-  si savesi #) mov ds ax mov ax saveds #) mov vseg # ax mov
-  es push dx es mov
-  ax ds mov cs: saveptr #) si mov cs: saveh #) cx mov
-  here cx push cs: savew #) cx mov rep movs
-       cs: saveptr #) si mov A0 # si add si cs: saveptr #) mov
-       cx pop
-  loop
-  cs: saveds #) ax mov ax ds mov
-  savesi #) si mov
-  es pop
-  next end-code
-
-DECIMAL
+: scn->buf ( x,y,width,height,buf--) false =: >scn? scnmove ;
 
 \ move data from memory buffer to screen
 
-HEX
-code buf->scn  ( seg,x,y,width,height--)
-  cld saveh #) pop savew #) pop ax pop A0 # bl mov
-  bl mul bx pop bx shl bx ax add ax saveptr #) mov
-  si savesi #) mov ds ax mov ax saveds #) mov ax pop ax ds mov
-  es push
-  vseg # ax mov ax es mov 0 # si mov cs: saveptr #) di mov
-  cs: saveh #) cx mov
-  here cx push cs: savew #) cx mov rep movs
-       cs: saveptr #) di mov A0 # di add di cs: saveptr #) mov
-       cx pop
-  loop
-  cs: saveds #) ax mov ax ds mov savesi #) si mov
-  es pop
-  next end-code
-DECIMAL
+: buf->scn  ( buf,x,y,width,height--) 4 roll true =: >scn? scnmove ;
 
 \ moves screen data to memory buffer
 \ and then draws the actual window frame
@@ -261,10 +216,11 @@ DECIMAL
              uly    wcbseg! ulx   wcbseg!    \ in new wcb
              rdcur oldy wcbseg! oldx wcbseg! \ get old cur pos
              wndw clearwindow true
-          else ." Buffer allocation failure." cr
-             wcbseg @ free drop drop 0
+          else drop ." Buffer allocation failure." cr
+             oldwcbseg wcbseg@               \ port: unlink the WCB
+             wcbseg @ free drop wcbseg ! 0
           then
-     else ." WCB allocation failure." abort ( drop drop 0 )
+     else ." WCB allocation failure." abort ( drop 0 )
      then ;
 
 \ window parameter checking
@@ -273,8 +229,8 @@ DECIMAL
 
 : openwindow ( x,y,width,height,attrib--? )
    depth 5 >=
-     if >r 4dup rot + 2+ 24 <=
-       if + 2+ 79 <=
+     if >r 4dup rot + 2+ rows 1- <=     \ port: was 24 and 79
+       if + 2+ cols 1- <=
          if r> window
          else cr ." ULX and/or WIDTH incorrect." wfit
          then
@@ -352,7 +308,8 @@ DECIMAL
        endcase
     else                             \ display character
       attrib wcbseg@ 256 * +         \ char now char/attrib
-      rdwcur rot chra+               \ output char & adv. cursor
+      rdwcur 2dup wat                \ port: TYPE may have moved the
+      rot chra+                      \ cursor; output char & adv. cursor
       drop dup width wcbseg@ 1- =    \ at end of line
         if drop lfout crout          \ if do lfcr
         else 1+ curx wcbseg!         \ store new x coordinate
@@ -407,9 +364,10 @@ comment;
 
 : msg3out ( --) 0 0 wat 80 0 do msg3 loop ;
 
-: fillscreen ( --) 0 0            \ fill with rev video A's
-    [ ascii A reverse 256 * + ]   \ calculate char/attrib code
-    literal 2048 drawrow ;
+: fillscreen ( --)                \ fill with rev video A's
+    rows 0 ?do 0 i                \ port: a row at a time (AH=9 doesn't
+    [ ascii A reverse 256 * + ]   \ wrap here); calculate char/attrib code
+    literal cols drawrow loop ;
 
 : wait ( --) 2 tenths ;
 

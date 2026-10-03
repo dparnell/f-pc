@@ -1,4 +1,8 @@
-\\
+\\ COLOURS.SEQ   Colour combination test scratch file      F-PC native port
+
+  F-PC native port: BIGCOLOURS splits the screen at COLS 2/ and ROWS 2/
+  (it assumed 80x20). TTBUTTON (used by T1) needs a mouse (MOUSEBUTTON),
+  which the VM doesn't report yet; T1 itself works from the keyboard.
 
 >bg
 ledbutton
@@ -16,18 +20,18 @@ ledbutton
         ;
 
 : .colours ( -- )
-        10 0 do at? ." this is a lot of text         " 1+ at  loop ;
+        rows 2/ 10 min 0 do at? ." this is a lot of text         " 1+ at  loop ;
 
 : bigcolours ( bg fg -- ) \
         8 mod swap 8 mod
         2dup     >bg     >fg
          0  0 at .colours
         2dup 8 + >bg     >fg
-        40  0 at .colours
+        cols 2/  0 at .colours
         2dup     >bg 8 + >fg
-         0 10 at .colours
+         0 rows 2/ at .colours
         2dup 8 + >bg 8 + >fg
-        40 10 at .colours
+        cols 2/ rows 2/ at .colours
         2drop
         ;
 

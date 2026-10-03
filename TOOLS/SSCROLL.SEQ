@@ -1,4 +1,4 @@
-\ SSCROLL.SEQ           Sample sub screen scrolling     by Tom Zimmer
+\ SSCROLL.SEQ           Sample sub screen scrolling     by Tom Zimmer   F-PC native port
 
 comment:
 
@@ -10,6 +10,9 @@ limited set of lines.  the file contains three user words as follows:
         SUB-OFF                 \ stop sub screen scrolling
 
 comment;
+
+\ F-PC native port: SUB-SET clips to ROWS (it assumed 25 lines). SUB-SCROLL
+\ already used ROWS and -LINE (BIOS-VIDEO scroll).
 
 0 value sub-line
 
@@ -24,7 +27,7 @@ comment;
 \ ******************* User words start here *******************
 
 : sub-set       ( n1 --- )      \ set the starting sub screen scroll line
-                1 max 23 min !> sub-line ;
+                1 max rows 2- min !> sub-line ;  \ port: was 23 min
 
 : sub-on        ( --- )         \ Turn on sub screen scrolling
                 ['] sub-scroll is cr ;

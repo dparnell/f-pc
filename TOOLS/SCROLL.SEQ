@@ -1,4 +1,4 @@
-\ SCROLL.SEQ    A sub screen scroll routine for F-PC    by Tom Zimmer
+\ SCROLL.SEQ    A sub screen scroll routine for F-PC    by Tom Zimmer   F-PC native port
 
 comment:
 
@@ -20,27 +20,21 @@ comment:
 
 comment;
 
-CODE SCROLL-UP  ( left upper right lower --- )  \ scroll window up one line
-                pop cx
-                pop dx                  \ dl = right column
-                mov dh, cl              \ dh = lower row
-                pop ax
-                pop cx                  \ cl = left column
-                mov ch, al              \ ch = upper row
-                mov bh, attrib          \ filler attribute
-                mov ax, # $0601         \ 06 = scroll, 01 = one line
-                int $10
-                next   end-code
+\ F-PC native port: the CODE words did INT 10h AH=6/7 and are now high
+\ level calls of BIOS-VIDEO, which clips the area to the current screen.
+\ The screen need not be 80x25: COLS 1- ROWS 1- is its bottom right corner,
+\ e.g.  0 ROWS 2/ COLS 1- ROWS 1- SCROLL-UP  scrolls the lower half.
 
-CODE SCROLL-DN  ( left upper right lower --- )  \ scroll window down one line
-                pop cx
-                pop dx                  \ dl = right column
-                mov dh, cl              \ dh = lower row
-                pop ax
-                pop cx                  \ cl = left column
-                mov ch, al              \ ch = upper row
-                mov bh, attrib          \ filler attribute
-                mov ax, # $0701         \ 06 = scroll, 01 = one line
-                int $10
-                next   end-code
+: SCROLL-UP     ( left upper right lower --- )  \ scroll window up one line
+                FLIP + >R               \ dh = lower row, dl = right column
+                FLIP + >R               \ ch = upper row, cl = left column
+                $0601                   \ 06 = scroll, 01 = one line
+                ATTRIB C@ FLIP          \ bh = filler attribute
+                R> R> BIOS-VIDEO 2DROP 2DROP ;
 
+: SCROLL-DN     ( left upper right lower --- )  \ scroll window down one line
+                FLIP + >R               \ dh = lower row, dl = right column
+                FLIP + >R               \ ch = upper row, cl = left column
+                $0701                   \ 07 = scroll down, 01 = one line
+                ATTRIB C@ FLIP          \ bh = filler attribute
+                R> R> BIOS-VIDEO 2DROP 2DROP ;

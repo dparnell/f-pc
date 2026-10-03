@@ -1,4 +1,4 @@
-\\ LISTED.SEQ   An execution list structure as suggested by J”rg Staben
+\\ LISTED.SEQ   An execution list structure as suggested by J”rg Staben   F-PC native port
 
   This file implements a list execution structure.  J”rg sent me a file
 that implements this same functionality, but in his design, the first
@@ -21,6 +21,9 @@ functions into the head of a DEFERed word chain.  So, I have added an
 additional function to his list, FIRST:, which is like ADD:, but prepends
 a new function rather than appending a function.
 
+  F-PC native port: a list node is two cells, the link and the CFA, so the
+CFA is at CELL+ (it was 2+).
+
 {
 
 : list:         ( -<name>- )    \ compile time: define a new list head name
@@ -41,7 +44,7 @@ a new function rather than appending a function.
 : kill:         ( lista -<name>- )      \ remove name from lista
                 ' >r
                 begin   ?dup
-                while   dup @ 2+ @ r@ =       \ if CFA matches
+                while   dup @ cell+ @ r@ =    \ if CFA matches
                         if      dup @ @ over !
                         else    @
                         then
@@ -50,13 +53,13 @@ a new function rather than appending a function.
 : show:         ( lista -- )            \ display a lista
                 @
                 begin ?dup
-                while   dup 2+ @ >name .id @
+                while   dup cell+ @ >name .id @
                 repeat  ;
 
 : do:           ( lista -- )            \ perform the lista
                 @
                 begin ?dup
-                while   dup 2+ perform @
+                while   dup cell+ perform @
                 repeat  ;
 
 \s      ****** Some example code to demonstrate how lists work ******

@@ -1,4 +1,4 @@
-\\ WINDEX.SEQ    Make an index of Forth words.           by Tom Zimmer
+\\ WINDEX.SEQ    Make an index of Forth words.           by Tom Zimmer   F-PC native port
 
 Displays a more or less alphabetized list of Forth words showing
 vocabulary and file where it was defined.
@@ -6,6 +6,12 @@ vocabulary and file where it was defined.
 Just type  "ALLWORDS <enter>"  to display an index of all forth words.
 
 Use  ">BROWSER ALLWORDS <enter>"  to create a printable file.
+
+F-PC native port: vocabulary threads and links are cells (#THREADS 2*
+became #THREADS CELLS, Y@ became @, YC@ became C@), and the source lines
+shown have their line end (CRLF or LF) stripped by -CRLF; it dropped two
+characters, which is wrong for LF-only host files. Kernel words have no
+FILES variable, so they show the file defined just before the word's code.
 
 {
 
@@ -15,11 +21,11 @@ VARIABLE WADDR
 0 value MAXNAME
 
 : files_set     ( --- )
-                ['] files >body here 500 + #threads 2* cmove ;
+                ['] files >body here 500 + #threads cells cmove ;
 
 : 1file         ( --- false | nfa )
                 here 500 + #threads largest dup
-                if      dup l>name >r y@ swap ! r>
+                if      dup l>name >r @ swap ! r>
                 else    nip
                 then    ;
 
@@ -32,7 +38,7 @@ VARIABLE WADDR
                                         dup name> =: maxcfa
                                 then
                         then    drop
-                repeat  drop r> >view y@
+                repeat  drop r> >view @
                 maxname name>pad ;
 
 : ?\comment     ( a1 n1 -- )    \ display if a comment line
@@ -41,8 +47,14 @@ VARIABLE WADDR
                 else    2drop
                 then    ;
 
+: -crlf         ( a1 n1 -- a1 n2 )      \ port: strip the line end
+                begin   dup
+                while   2dup + 1- c@ dup 10 = swap 13 = or
+                while   1-
+                repeat  then    ;
+
 : W.ANAME       ( NFA --- )
-                DUP 1+ YC@ 127 AND FIRSTLETTER =
+                DUP 1+ C@ 127 AND FIRSTLETTER =
                 IF      CR DUP  .ID                     24 sp>col
                         WADDR @ .ID                     36 sp>col
                         NAME> >wviewfile
@@ -51,26 +63,26 @@ VARIABLE WADDR
                         CR
                         $file 0=
                         if      1- 0max >line
-                                lineread count 2- 0max ?\comment
-                                lineread count 2- 0max          type    cr
-                                lineread count 2- 0max ?\comment
-                                lineread count 2- 0max ?\comment
+                                lineread count -crlf ?\comment
+                                lineread count -crlf            type    cr
+                                lineread count -crlf ?\comment
+                                lineread count -crlf ?\comment
                         else    drop
                         then
                 ELSE    DROP THEN    ;
 
 : .AVOCWORDS    ( A1 --- )      \ A1 = BODY of vocabulary
-                DUP HERE 1000 + #THREADS 2* CMOVE
+                DUP HERE 1000 + #THREADS CELLS CMOVE
                 BODY> >NAME WADDR !
                 BEGIN   HERE 1000 + #THREADS LARGEST DUP
                         ?KEYPAUSE
-                WHILE   DUP L>NAME W.ANAME Y@ SWAP !
+                WHILE   DUP L>NAME W.ANAME @ SWAP !
                 REPEAT  2DROP ;
 
 : <awords>      ( c1 --- )
                 =: firstletter
                 VOC-LINK @
-                BEGIN   DUP #THREADS 2* - .AVOCWORDS @ DUP 0=
+                BEGIN   DUP #THREADS CELLS - .AVOCWORDS @ DUP 0=
                 UNTIL   DROP ;
 
 : ALLWORDS      ( --- )

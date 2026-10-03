@@ -1,4 +1,4 @@
-\ SPREAD.SEQ            A Forth Spreadsheet             by Craig A. Lindley
+\ SPREAD.SEQ            A Forth Spreadsheet             by Craig A. Lindley   F-PC native port
 
 comment:
 
@@ -14,6 +14,31 @@ Changes are flaged with "**** change ****"
   Most but not all comments from the original listing have been typed into
 this listing, so please refer to the original article for further
 information.
+
+F-PC native port:
+
+  - Cells are 32 bits and doubles 64. A spreadsheet cell is now 3 CELLS: one
+    for the formula's execution token and two for the double value
+    (BYTES/CELL was 6). CELLS 2+ became CELL+.
+  - The cell array and the array defining word were renamed SS_CELL and
+    SS_ARRAY: their old names CELLS and ARRAY would have hidden the system's
+    CELLS and ARRAY from everything loaded afterwards.
+  - The layout follows the terminal size: #DROWS data rows (15 on 25 lines)
+    and #DCOLS data columns (4 on 80 columns) are computed from ROWS and COLS
+    by SS_LAYOUT, and the border, menu, status and command lines are placed
+    below and right of them. A terminal resize (K-RESIZE) re-lays out and
+    redraws the sheet. Very small terminals are clipped.
+  - The cursor movement tests use < rather than <> and SS_CLAMP keeps the
+    window and the marker inside the sheet, so that G)oto, R)ow and C)ol
+    can't move them past the last row or column (and so point outside the
+    cell array). Column letters typed are clamped to A..Z, and R)ow and
+    C)ol redraw the window at the starting row or column.
+  - D* D/ and DMOD, used by equations, are now true double by double
+    operations (they were double by single, so "1 A * 2 B" was wrong and MOD
+    returned the quotient). GET# passes doubles to them. Numbers typed in an
+    equation should be doubles too (with a "."), e.g.  0 A * 2.
+  - E)quation builds the definition in a buffer and EVALUATEs it, rather than
+    writing into TIB and calling INTERPRET.
 
 comment;
 
@@ -43,7 +68,7 @@ warning off
 17 constant row_name_len        \ maximum length of row    name
 21 constant col_org             \ column origin of data on display
  3 constant row_org             \ row    origin of data on display
- 6 constant bytes/cell          \ number of bytes per cell
+ 3 cells constant bytes/cell    \ number of bytes per cell (port: was 6)
 
 
 
@@ -63,14 +88,32 @@ variable cur_row                \ top left display row    number
 variable col_disp               \ column displacement from CUR_COL on display
 variable row_disp               \ row    displacement from CUR_ROW on display
 variable dict_mark              \ beginning of formula area
-variable op_stack 44 allot      \ operator stack for algebraic equation
-                                \ compilation
+variable op_stack 22 cells allot  \ operator stack for algebraic equation
+                                \ compilation (port: 11 two-cell entries)
+
+\ F-PC native port: the display layout, from the terminal size.
+15 value #drows                 \ number of data rows on display
+ 4 value #dcols                 \ number of data columns on display
+
+: ss_layout     ( -- )          \ size the display to the terminal
+                rows 10 - 1 max row_max min =: #drows
+                cols 28 - 13 / 1 max col_max min =: #dcols ;
+
+: ss_clamp      ( -- )          \ keep the display window inside the sheet
+                cur_row @ row_max #drows - min 0max cur_row !
+                cur_col @ col_max #dcols - min 0max cur_col !
+                row_disp @ #drows 1- min 0max row_disp !
+                col_disp @ #dcols 1- min 0max col_disp ! ;
+
+: border_row    ( -- row )      row_org #drows + ;      \ was 18
+: menu_col      ( -- col )      #dcols 13 * 22 + ;      \ was 74
+: stat_col      ( -- col )      cols 33 - 0max ;        \ was 47
 
 
 \ screen 5      spreadsheet - high level array definitions
 
 \ create 2D array depth bytes deep
-: array         ( #rows #cols depth -- )        \ compile time
+: ss_array      ( #rows #cols depth -- )        \ compile time
                 ( row# col# -- element_addr )   \ run     time
                 create 2dup swap c, c, * * dup here
                 swap erase allot
@@ -87,11 +130,11 @@ variable op_stack 44 allot      \ operator stack for algebraic equation
 \ screen 6      spreadsheet - array definitions
 
 \ define a 2D array for spreadsheet data structure
-\ each cell contains 6 bytes
-\ 2 for formula execution address (if any)
-\ 4 for double number value storage
+\ each cell contains 3 cells (port: was 6 bytes)
+\ 1 for formula execution address (if any)
+\ 2 for double number value storage
 
-row_max col_max bytes/cell array cells
+row_max col_max bytes/cell ss_array ss_cell
 
 \ define a string array for holding the row names
 row_max row_name_len $array row_names
@@ -123,10 +166,10 @@ col_max col_name_len $array col_names
 \ screen 8      spreadsheet - misc word definitions
 
 : pos1          ( -- )                  \ position cursor on command line one
-                0 21 2dup at eeol at ;  \ and erase line
+                0 border_row 3 + 2dup at eeol at ;  \ and erase line
 
 : pos2          ( -- )                  \ position cursor on command line two
-                0 22 2dup at eeol at ;  \ and erase line
+                0 border_row 4 + 2dup at eeol at ;  \ and erase line
 
 : y/n           ( -- bool )             \ bool = TRUE if yes, FALSE if no
                 pos1 ." Are You Sure ?: "       \ display message
@@ -144,7 +187,7 @@ col_max col_name_len $array col_names
 : cell_ptr      ( -- cell_addr )        \ return the address of the cell
                 cur_row @ row_disp @ +  \ pointed at by <   > display marker
                 cur_col @ col_disp @ +
-                cells ;
+                ss_cell ;
 
 : cal_cell_disp_loc     ( -- col row )  \ calculate location on display of
                 col_disp @ 13 * col_org +       \ cell display markers
@@ -184,13 +227,13 @@ col_max col_name_len $array col_names
 \ screen 11     spreadsheet - display word definitions
 
 : dis_data      ( -- )                  \ display all cell data for 4 columns
-                cur_col @ dup 4 + swap
+                cur_col @ dup #dcols + swap
                 do      i col_max = ?leave
-                        cur_row @ dup 15 + swap              \ and 15 rows
+                        cur_row @ dup #drows + swap          \ and 15 rows
                         do      i row_max = ?leave
                                 j cur_col @ - 13 * 22 +
                                 i cur_row @ -       3 + at
-                                i j cells 2+ 2@ format#
+                                i j ss_cell cell+ 2@ format#
                         loop
                 loop    ;
 
@@ -199,15 +242,15 @@ col_max col_name_len $array col_names
 \ display the spreadsheet border on the screen
 
 : dis_border    ( -- )                  \ display spreadsheet border
-                18 3
-                do      20 i at 4 0
+                border_row 3
+                do      20 i at #dcols 0
                         do      ." ³" 12 spaces
                         loop    ." ³"
                 loop
-                80 0
+                cols 0
                 do      i 2 at ascii - emit loop
-                80 0
-                do      i 18 at ascii - emit loop ;
+                cols 0
+                do      i border_row at ascii - emit loop ;
 
 
 
@@ -222,27 +265,31 @@ col_max col_name_len $array col_names
 
 \ display the spreadsheet menu of options on the right side of display
 
+: mat           ( row -- f )            \ port: at menu line, if it
+                menu_col swap 2dup at   \ fits above the border line
+                border_row < swap 6 + cols > 0= and ;
+
 : dis_menu      ( -- )                  \ display menu
-                74  3 at ." Menu:"
-                74  4 at ." C)ol"       74  5 at ." A)gain"
-                74  6 at ." D)ata"      74  7 at ." E)qu."
-                74  8 at ." F)orm"      74  9 at ." G)oto"
-                74 10 at ." M)ode"      74 11 at ." N)ew"
-                74 12 at ." O)rder"     74 13 at ." P)ref"
-                74 14 at ." Q)uit"      74 15 at ." R)ow" ;
+                 3 mat if ." Menu:"   then
+                 4 mat if ." C)ol"    then   5 mat if ." A)gain"  then
+                 6 mat if ." D)ata"   then   7 mat if ." E)qu."   then
+                 8 mat if ." F)orm"   then   9 mat if ." G)oto"   then
+                10 mat if ." M)ode"   then  11 mat if ." N)ew"    then
+                12 mat if ." O)rder"  then  13 mat if ." P)ref"   then
+                14 mat if ." Q)uit"   then  15 mat if ." R)ow"    then ;
 
 
 \ screen 14     spreadsheet - display word definitions
 
 : dis_row_labels        ( -- )          \ label the rows on display
-                cur_row @ dup 15 + swap
+                cur_row @ dup #drows + swap
                 do      i row_max = ?leave
                         18 i cur_row @ - 3 + at
                         i 2 .r
                 loop    ;
 
 : dis_row_names         ( -- )          \ display row names from array
-                cur_row @ dup 15 + swap
+                cur_row @ dup #drows + swap
                 do      i row_max = ?leave
                         0 i cur_row @ - 3 + at
                         i row_names row_name_len type
@@ -251,7 +298,7 @@ col_max col_name_len $array col_names
 \ screen 15     spreadsheet - display word definitions
 
 : dis_col_labels        ( -- )          \ label the columns on display
-                        cur_col @ dup 4 + swap
+                        cur_col @ dup #dcols + swap
                         do      i col_max = ?leave
                                 i cur_col @ - 13 * 27 + 2 at
                                 i ascii A + emit
@@ -259,7 +306,7 @@ col_max col_name_len $array col_names
 
 : dis_col_names         ( -- )          \ display column names
                         7 1 at ." Title"
-                        cur_col @ dup 4 + swap
+                        cur_col @ dup #dcols + swap
                         do      i col_max = ?leave
                                 i cur_col @ - 13 * 21 + 1 at
                                 i col_names col_name_len type
@@ -276,13 +323,13 @@ col_max col_name_len $array col_names
 \ screen 16     spreadsheet - display word definitions
 
 : dis_status    ( -- )                  \ display spreadsheet status
-                48 19 at ." Row: "
+                stat_col  1+ border_row 1+ at ." Row: "
                 cur_row @ row_disp @ + .
-                60 19 at ." Column: "
+                stat_col 13 + border_row 1+ at ." Column: "
                 cur_col @ col_disp @ + ascii A + emit
-                47 20 at ." Mode: " mode_flag @
+                stat_col      border_row 2+ at ." Mode: " mode_flag @
                 if      ." Auto  " else ." Normal" then
-                61 20 at ." Order: " order_flag @
+                stat_col 14 + border_row 2+ at ." Order: " order_flag @
                 if      ." C/R" else ." R/C" then
                 pos2
                 pos1 ." Command: "
@@ -304,7 +351,8 @@ col_max col_name_len $array col_names
 \ screen 18     spreadsheet - display word definitions
 
 : dis_screen    ( -- )                  \ display entire spreadsheet screen
-                dark 31 0 at
+                ss_layout ss_clamp      \ port: size to the terminal
+                dark cols 17 - 2/ 0 at
                 ." Forth Spreadsheet"   \ display title
                 dis_border              \ draw borders
                 dis_menu                \ display operation menu
@@ -336,14 +384,14 @@ col_max col_name_len $array col_names
 : calc_c/r      ( -- )                  \ calculate columns then rows
                 row_max 0
                 do      col_max 0
-                        do      j i cells calculate
+                        do      j i ss_cell calculate
                         loop
                 loop    ;
 
 : calc_r/c      ( -- )                  \ calculate rows then columns
                 col_max 0
                 do      row_max 0
-                        do      i j cells calculate
+                        do      i j ss_cell calculate
                         loop
                 loop    ;
 
@@ -386,8 +434,8 @@ col_max col_name_len $array col_names
 \ screen 22     spreadsheet - cellmarker positioning words
 
 : right_arrow   ( -- )                  \ move cell marker right one cell
-                col_disp @ 3 =
-                if      cur_col @ 4 + col_max <>
+                col_disp @ #dcols 1- =
+                if      cur_col @ #dcols + col_max <
                         if      1 cur_col +!
                                 dis_col_change
                         then
@@ -411,8 +459,8 @@ col_max col_name_len $array col_names
 \ screen 24     spreadsheet - cell marker positioning words
 
 : down_arrow    ( -- )                  \ move cell marker down one cell
-                row_disp @ 14 =
-                if      cur_row @ 15 + row_max <>
+                row_disp @ #drows 1- =
+                if      cur_row @ #drows + row_max <
                         if      1 cur_row +!
                                 dis_row_change
                         then
@@ -445,7 +493,7 @@ col_max col_name_len $array col_names
                 dis_col_change ;
 
 : last_col      ( -- )                  \ go to column W immediately
-                col_max 4 - cur_col !
+                col_max #dcols - cur_col !
                 dis_col_change ;
 
 : top_row       ( -- )                  \ go to row 0 immediately
@@ -453,7 +501,7 @@ col_max col_name_len $array col_names
                 dis_row_change ;
 
 : bottom_row    ( -- )                  \ go to row 11 immediately
-                row_max 15 - cur_row !
+                row_max #drows - cur_row !
                 dis_row_change ;
 
 \ screen 26     spreadsheet - cell marker positioning words
@@ -480,7 +528,7 @@ algebra also definitions
                 ( n1 | <name> -- )      \ compile time
                 ( n1 --- cell_value )   \ run     time
                 create ,
-                does> @ cells 2+ 2@ ;
+                does> @ ss_cell cell+ 2@ ;
 
 
 
@@ -512,11 +560,11 @@ assign_id  A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
                 op_stack dup @ + ;      \ first location is stack pointer
 
 : >op           ( cfa prec -- )         \ store CFA and precedence to
-                4 op_stack +! opp@ 2! ; \ top of operand stack
+                2 cells op_stack +! opp@ 2! ; \ top of operand stack
 
 : op>           ( -- )                  \ pop CFA and precedence off operand
                 opp@ 2@                 \ stack and compile into dictionary
-                -4 op_stack +!
+                -2 cells op_stack +!
                 drop x, ;               \ *** changed *** "," to "x,"
 
 : prec?         ( -- prec )             \ return precedence from top
@@ -540,14 +588,39 @@ assign_id  A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
                 while   >r >r op> r> r>
                 repeat  >op ;
 
+\ F-PC native port: these took a single as the second operand. They are
+\ now double by double, as the equations need.
+
 : d*            ( d1 d2 -- d3 )         \ double multiplication
-                dup rot * rot rot um* rot + ;
+                3 pick * >r             \ lo1*hi2
+                tuck * >r               \ hi1*lo2
+                um* r> + r> + ;
+
+2variable dvd   2variable dvs   2variable drem
+
+: ud/           ( ud1 ud2 -- ud3 )      \ unsigned double division
+                dvs 2! dvd 2! 0 0 drem 2! 0 0
+                64 0
+                do      2dup d+                         \ quotient * 2
+                        drem 2@ 2dup d+                 \ remainder * 2
+                        dvd 2@ nip 0< 1 and 0 d+ drem 2!  \ + next bit
+                        dvd 2@ 2dup d+ dvd 2!
+                        drem 2@ dvs 2@ du< 0=
+                        if      drem 2@ dvs 2@ d- drem 2!
+                                1 0 d+
+                        then
+                loop    ;
 
 : d/            ( d1 d2 -- d3 )         \ double division
-                swap over /mod >r swap um/mod swap drop r> ;
+                2dup or 0=              \ divide by zero gives zero
+                if      2drop 2drop 0 0 exit
+                then
+                dup 3 pick xor >r
+                dabs 2swap dabs 2swap ud/
+                r> 0< if dnegate then ;
 
 : dmod          ( d1 d2 -- d3 )         \ double modulus
-                d/ drop 0 ;
+                2over 2over d/ d* d- ;
 
 \ screen 31     spreadsheet - algebraic functions
 
@@ -576,7 +649,7 @@ assign_id  A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
                 while   op>
                 repeat                  \ left paren should have a precedence
                 1 prec? =               \ of one or error message results
-                if      -4 op_stack +!
+                if      -2 cells op_stack +!
                 else    true abort" Missing ("
                 then    ; immediate
 
@@ -589,16 +662,18 @@ forth definitions
 \ screen 33     spreadsheet - input words
 
 : input_row_names       ( -- )          \ input row names
-                pos1 ." Input Row Names"
-                pos2 ." Starting with Row: "
-                #in cur_row !
-                row_max cur_row @
+                erase_cell_marker       \ port: the marker, the start
+                pos1 ." Input Row Names" \ row and the window are kept
+                pos2 ." Starting with Row: " \ consistent (SS_CLAMP)
+                #in 0max row_max 1- min dup cur_row !
+                ss_clamp dis_row_change
+                row_max swap
                 do      pos2 ." Row " i 2 .r ." : "
                         i row_names row_name_len
                         2dup blank expect
                         span @ 0= ?leave
                         i 5 mod 0=
-                        if      i cur_row !
+                        if      i cur_row ! ss_clamp
                                 dis_row_change
                         else    dis_row_names
                         then
@@ -608,16 +683,18 @@ forth definitions
 \ screen 34     spreadsheet - input words
 
 : input_col_names       ( -- )          \ input column names
+                erase_cell_marker       \ port: as for rows
                 pos1 ." Input Col Names"
                 pos2 ." Starting with Col: "
-                key upc ascii A - cur_col !
-                col_max cur_col @
+                key upc ascii A - 0max col_max 1- min dup cur_col !
+                ss_clamp dis_col_change
+                col_max swap
                 do      pos2 ." Col " i ascii A + emit ." : "
                         i col_names col_name_len
                         2dup blank expect
                         span @ 0= ?leave
                         i 4 mod 0=
-                        if      i cur_col !
+                        if      i cur_col ! ss_clamp
                                 dis_col_change
                         else    dis_col_names
                         then
@@ -631,11 +708,11 @@ forth definitions
                 format_flag @
                 if      dpl @ 3 min
                         case
-                                -1 of 100 d*    endof
-                                 0 of 100 d*    endof
-                                 1 of  10 d*    endof
+                                -1 of 100 0 d*  endof
+                                 0 of 100 0 d*  endof
+                                 1 of  10 0 d*  endof
                                  2 of noop      endof
-                                 3 of 10 d/     endof
+                                 3 of 10 0 d/   endof
                                 drop
                         endcase
                 then    ;
@@ -645,7 +722,7 @@ forth definitions
 : input_cell_data       ( -- )          \ input data to cells
                 pos1 ." Input Cell Data"
                 pos2 ." Data: " get#
-                cell_ptr 2+ 2!
+                cell_ptr cell+ 2!
                 mode_flag @
                 if      pos2 ." Calculating"
                         calc_cells
@@ -661,19 +738,21 @@ forth definitions
 
 \ screen 37     spreadsheet - input words
 
+\ F-PC native port: the definition is built in EQU_BUF and EVALUATEd
+\ (it was built in TIB and INTERPRETed).
+create equ_buf 256 allot        \ the formula definition
+create equ_in  128 allot        \ the equation as typed
+
 : input_equ     ( -- )                  \ input equations into dictionary
                 pos1 ." Input Cell Equation"
                 pos2 ." Eqquation: "
-                tib 127 blank
-                " : formula a[ " tib swap cmove
-                tib 13 + dup 127 expect
-                span @ +
-                "  ]a [ cell_ptr 2+ ] literal 2! ; last @ name> cell_ptr !"
-                -rot swap rot cmove
-                span @ 70 + #tib !
-                >in off
+                equ_in 120 2dup blank expect
+                " : formula a[ " equ_buf place
+                equ_in span @ equ_buf +place
+                "  ]a [ cell_ptr cell+ ] literal 2! ; last @ name> cell_ptr !"
+                equ_buf +place
                 algebra
-                interpret
+                equ_buf count evaluate
                 forth ;
 
 
@@ -684,7 +763,7 @@ forth definitions
 
 : new           ( -- )                  \ clear existing spreadsheet
                 y/n
-                if      0 0 cells
+                if      0 0 ss_cell
                         row_max col_max bytes/cell * * erase
                         0 row_names row_max row_name_len * erase
                         0 col_names col_max col_name_len * erase
@@ -729,13 +808,13 @@ forth definitions
 \ screen 41     spreadsheet - high level commands
 
 : again_repl    ( -- )                  \ replicate column data
-                cell_ptr 2+ 2@
+                cell_ptr cell+ 2@
                 pos1 ." Column replicate cell data"
                 pos2 ." Number of columns: "
                 #in ?dup
                 if      0
                         do      right_arrow
-                                2dup cell_ptr 2+ 2!
+                                2dup cell_ptr cell+ 2!
                         loop
                         2drop
                         dis_data
@@ -747,15 +826,15 @@ forth definitions
 : go_to         ( -- )                  \ goto a specified row/col
                 pos1 ." Row(0-25): "
                 #in dup 0 row_max within
-                if      cur_row !
-                        pos2 ." Column(A-W): "
+                if      pos2 ." Column(A-Z): "
                         key upc ascii A - dup
-                        0 col_max 3 - within
-                        if      cur_col !
-                                0 col_disp !
-                                0 row_disp !
-                                dis_screen
-                        else    drop
+                        0 col_max within
+                        if      over cur_row ! dup cur_col !
+                                dis_screen      \ port: the window may
+                                erase_cell_marker \ stop short of the cell
+                                cur_col @ - col_disp !
+                                cur_row @ - row_disp !
+                        else    2drop
                         then
                 else    drop
                 then    ;
@@ -826,13 +905,17 @@ forth definitions
 \ screen 45     spreadsheet - main program
 
 : spreadsheet   ( -- )                  \ main program word
+                0 row_disp ! 0 col_disp !
                 dis_screen
                 begin   key             \ *** changed ***
                                         \ switched to F-PC's key, moved UPC
                                         \ to screen 43
-                        dup 198 >
-                        if      control_in
-                        else    command_in
+                        dup k-resize =  \ port: the terminal was resized,
+                        if      drop dis_screen \ lay out and redraw
+                        else    dup 198 >
+                                if      control_in
+                                else    command_in
+                                then
                         then
                         dis_status
                 again   ;

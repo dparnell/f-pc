@@ -1,4 +1,4 @@
-\\  MORE.SEQ        Screen update control for F-PC      by Tom Zimmer
+\\  MORE.SEQ        Screen update control for F-PC      by Tom Zimmer   F-PC native port
 
         This file adds four new words to F-PC;  PAGED, SLOWER, FASTER
         and NORMAL.  These words allow you to control the screen output
@@ -11,6 +11,10 @@
         Multiple executions of SLOWER or FASTER double or halve the delay
         for more precise control of the screen output.  NORMAL restores
         screen display speed to an undelayed or paged mode.
+
+        F-PC native port: unchanged. The words swap the token lists of
+        ?KEYPAUSE and %MORE / %SLOW with SWITCH_BODIES (MAKEDEF.SEQ); a
+        colon definition's body is the address of its token list.
 
 
 {

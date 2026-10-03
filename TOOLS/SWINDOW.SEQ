@@ -1,4 +1,4 @@
-\ SWINDOW.SEQ           A sample POPUP window           by Tom Zimmer
+\ SWINDOW.SEQ           A sample POPUP window           by Tom Zimmer   F-PC native port
 
 comment:
 
@@ -9,6 +9,9 @@ drawing the box and writing into it. After the user views the box and
 presses a key, we restore the things we saved.  Actally pretty simple.
 
 comment;
+
+\ F-PC native port: unchanged. BOX&FILL clips the box to the screen and
+\ SAVESCR/RESTSCR use VIDEO-BUF, so it works (cut off) on small terminals.
 
 : popup ( --- )
         #out @ #line @ 2>r      \ save cursor position for later

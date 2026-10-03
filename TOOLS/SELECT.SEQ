@@ -1,6 +1,18 @@
-\ SELECT.SEQ            Menu selection utility          by Tom Zimmer
+\ SELECT.SEQ            Menu selection utility          by Tom Zimmer   F-PC native port
 
 \ 05/10/91      Enhanced to include Mouse support. T. Zimmer
+
+\ F-PC native port:
+\  - The window record's pointer fields (WLINK, the xt fields and the text
+\    pointers) are cells; the line pointer table after the record is a
+\    table of cells. The byte fields are unchanged.
+\  - ?CS: \TYPEL and PRNTYPEL (segment, offset, length) became \TYPE and
+\    PRNTYPE.
+\  - The two blanks stored after the number field use W! (they were a
+\    16 bit store).
+\  - Windows keep the position and size they were defined with; on a
+\    smaller terminal BOX&FILL and the text output clip them. The
+\    comment->PRN box sits on the bottom lines of the screen (it was 21-23).
 
 only forth also definitions hidden also
 
@@ -26,7 +38,7 @@ anew selector
                 <# #s #> #buf place
                 on> autoclear
                 #buf 6 lineeditor >r
-                $2020 #buf count + !
+                $2020 #buf count + w!   \ port: two blanks (16 bits)
                 #buf count upper
                 #buf %number r> and
                 2r> at #buf count 5 min 5 over - spaces type space
@@ -50,7 +62,7 @@ anew selector
                 does> c@ curwin + ;
 
 0
-2 winitem wlink         \ previous window pointer link
+cell winitem wlink      \ previous window pointer link
 1 winitem worgx         \ window x origin
 1 winitem worgy         \ window y origin
 1 winitem wrows         \ window rows
@@ -62,15 +74,15 @@ anew selector
 1 winitem wbg           \ window background color
 1 winitem wfg           \ window forground color
 1 winitem wexitkey      \ window exit key       (defaults to ESC)
-2 winitem wexitfunc     \ window exit function  (defaults to NOOP)
-2 winitem wescfunc      \ window ESC key function IF NOT EXIT!
-2 winitem wshow         \ window additional display information
-2 winitem wintitle      \ window title line
-2 winitem winbottom     \ bottom of window message
-2 winitem wptr          \ window save pointer
-2 winitem wokey         \ function to do when other keys are pressed
-2 winitem f1key         \ function to do when F1 pressed
-2 winitem wbgstuff      \ window background operation
+cell winitem wexitfunc  \ window exit function  (defaults to NOOP)
+cell winitem wescfunc   \ window ESC key function IF NOT EXIT!
+cell winitem wshow      \ window additional display information
+cell winitem wintitle   \ window title line
+cell winitem winbottom  \ bottom of window message
+cell winitem wptr       \ window save pointer
+cell winitem wokey      \ function to do when other keys are pressed
+cell winitem f1key      \ function to do when F1 pressed
+cell winitem wbgstuff   \ window background operation
 1 winitem wshown        \ has window been shown?
 1 winitem whilite       \ hilited line number
 0 winitem winlines      \ start of text for window  ** MUST BE LAST ITEM **
@@ -94,7 +106,7 @@ value winrsize
                 ['] drop wokey !                \ default for other keys
                 ['] noop f1key !                \ default F1 help
                 ['] noop wbgstuff !             \ default background function
-                here wrows c@ 2* dup allot erase
+                here wrows c@ cells dup allot erase
                 off> winline#                   \ reset current line cnt
                 does>   !> curwin ;
 
@@ -113,7 +125,7 @@ value winrsize
 
 : dohilite      ( -- )                  \ perform function for hilited line
                 curwin >r
-                whilite c@ 2* winlines + @ 1+
+                whilite c@ cells winlines + @ 1+
                 count + @ execute
                 r> !> curwin ;
 
@@ -128,7 +140,7 @@ value winrsize
 : winline"      ( c1 | txt" func -- )   \ install text as line of window
                 winline#
                 dup wrows c@ >= abort" TOO MANY lines for this window!"
-                here swap 2* winlines + !       \ install pointer to text
+                here swap cells winlines + !    \ install pointer to text
                 c,                              \ activation key
                 ," ' ,                          \ compile in text to here
                 incr> winline# ;                \ bump to next line
@@ -162,13 +174,13 @@ value winrsize
 
 : .wintitle     ( -- )                  \ show window title bar message
                 wintitle @ 0= ?exit
-                ?cs: wintitle @ count
-                wcols c@ over - 0max 2/ worgx c@ + 1+ worgy c@ at \typeL ;
+                wintitle @ count
+                wcols c@ over - 0max 2/ worgx c@ + 1+ worgy c@ at \type ;
 
 : .winbottom    ( -- )                  \ show bottom of window message
                 winbottom @ 0= ?exit
                 worgx c@ 2+ worgy c@ wrows c@ + 1+ at
-                ?cs: winbottom @ count \typeL ;
+                winbottom @ count \type ;
 
 : .info         ( -- )
                 worgx c@ wcols c@ + 1+ worgy c@
@@ -194,7 +206,7 @@ value winrsize
 
 : whilite+      ( n1 -- )       \ increment hilited by signed n1
                 begin   whilite c@ over + wrows c@ mod whilite c!
-                        winlines whilite c@ 2* + @
+                        winlines whilite c@ cells + @
                         c@
                 until   drop ;
 
@@ -206,7 +218,7 @@ value winrsize
 
 : towend        ( -- )                  \ move to last leagal line of window
                 wrows c@ 1- whilite c!
-                winlines wrows c@ 1- 2* + @ c@ 0=
+                winlines wrows c@ 1- cells + @ c@ 0=
                 if      -1 whilite+
                 then    ;
 
@@ -214,14 +226,14 @@ value winrsize
                 save> attrib cyan >bg black >fg space
                 >r
                 over 1+ c@ '#' =                \ number edit?
-                if      winlines r@ 2* + @ 1+
+                if      winlines r@ cells + @ 1+
                         count + @
                         wbase c@ save!> base
                         >body @ @ 5 u.r 2 spaces
                         restore> base
                         8 /string
                 else    tuck '±' skip 2dup 2>r nip - >r
-                        winlines 3 rpick 2* + @ 1+
+                        winlines 3 rpick cells + @ 1+
                         count + @
                         >body @ count r> 2dup swap - 0max >r
                         min type ( \type ) r> spaces 2r>
@@ -240,7 +252,7 @@ value winrsize
  0 value curhi          \ hilighted line during current window show
 
 : windshow      ( -- )          \ show window contents
-                winlines whilite c@ 2* + @ c@ 0=
+                winlines whilite c@ cells + @ c@ 0=
                 if      1 whilite+
                 then    0 0 winat
                 wbg c@ >bg wfg c@ >fg
@@ -254,7 +266,7 @@ value winrsize
                                         attrib c!
                                         i !> curhi
                                 then
-                                2 spaces dup i 2* + @ 1+
+                                2 spaces dup i cells + @ 1+
                                 count i over >r wintype
                                 wcols c@ r> - 5 - 0max spaces
                         then    bcr
@@ -262,7 +274,7 @@ value winrsize
                 curhi !> prevhi ;
 
 \ : windshow      ( -- )          \ show window contents
-\                 winlines whilite c@ 2* + @ c@ 0=
+\                 winlines whilite c@ cells + @ c@ 0=
 \                 if      1 whilite+
 \                 then    0 0 winat
 \                 wbg c@ >bg wfg c@ >fg
@@ -270,7 +282,7 @@ value winrsize
 \                 ?do     over attrib ! space
 \                         whilite c@ i =
 \                         if attrib c@ $10 /mod swap $10 * + attrib c! then
-\                         2 spaces dup i 2* + @ 1+
+\                         2 spaces dup i cells + @ 1+
 \                         count i over >r wintype
 \                         wcols c@ r> - 5 - 0max spaces
 \                         bcr
@@ -284,7 +296,7 @@ value winrsize
 : dowinkey      ( c1 -- )       \ check & perform c1 function
                 ?upc winlines           \ for window mechanism to handle key
                 wrows c@ 0
-                ?do     2dup i 2* + @ c@ ?upc =
+                ?do     2dup i cells + @ c@ ?upc =
                                 if      i whilite c!
                                         windshow 50 ms
                                         dohilite
@@ -301,7 +313,7 @@ value winrsize
                 create , does>
                 save> base wbase c@ base !
                 @ dup @ >r                              \ s=a1  r=n1
-                winlines whilite c@ 2* + @ 1+
+                winlines whilite c@ cells + @ 1+
                 count                                   \ s=a1, n1
                     tuck '±' scan nip -                 \ s=offset
                 wx c@ 4 + + wy c@ whilite c@ +          \ s=x, y
@@ -316,7 +328,7 @@ value winrsize
                 savecursor cursor-on
                 cyan >bg black >fg ( fldcolor )
                 @ >r                                    \ r=a1
-                winlines whilite c@ 2* + @ 1+
+                winlines whilite c@ cells + @ 1+
                 count                                   \ s=a1, n1
                     tuck '±' scan 2dup 2>r nip -        \ s=offset
                 wx c@ 4 + + wy c@ whilite c@ +          \ s=x, y
@@ -349,7 +361,7 @@ blue value graybg
                 worgx c@ 1+ wcols c@ over + 2- between r> and
                 if      dup worgy c@ 1+ -          \ row in window
                         dup whilite c!
-                        winlines swap 2* + @ c@ 0= \ if invalid line
+                        winlines swap cells + @ c@ 0= \ if invalid line
                         if      1 whilite+         \ go to next line
                         else    hide.ms            \ hide mouse
                                 windshow           \ display window
@@ -414,13 +426,13 @@ blue value graybg
                 savescr savecursor
                 $0D pemit $0A pemit
                 $0D pemit $0A pemit
-                0 21 79 23 box&fill at?
+                0 rows 4 - cols 1- rows 2- box&fill at? \ port: was 0 21 79 23
                 begin   2dup at
                         pad off
                         off> stripping_bl's
-                        1 22 pad 78 lineeditor dup
+                        1 rows 3 - pad cols 2- lineeditor dup
                         if      $0D pemit $0A pemit
-                                ?cs: pad count prntypel
+                                pad count prntype
                         then    0=
                 until   2drop
                 $0D pemit $0A pemit 12 pemit

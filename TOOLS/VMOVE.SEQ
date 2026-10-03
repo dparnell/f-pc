@@ -1,4 +1,4 @@
-\\ VMOVE.SEQ            Vocabulary Word Move            by Dr. C. H. Ting
+\\ VMOVE.SEQ            Vocabulary Word Move            by Dr. C. H. Ting   F-PC native port
 
 Modified version of Dr. Ting's ZAP word, moves a word from the CONTEXT
 vocabulary (the search vocabulary) to the CURRENT vocabulary (the
@@ -8,13 +8,17 @@ Useful for moving words around in the Forth system between vocabularies.
 
                         Modiofications by Tom Zimmer 04/01/93
 
+  F-PC native port: heads are ordinary memory and links are cells, so the
+head segment words Y@ Y! YC@ became @ ! C@. The first test of NAME? reads
+the count byte and first character together with W@ (16 bits, as Y@ did).
+
 {
 
 root definitions
 
 I: name? ( yLink -- f, 0 if name does not match that in HERE )
         l>name                          \ from lfa to nfa
-        dup y@                          \ compare count and 1st byte
+        dup w@                          \ compare count and 1st byte
         here @ xor                      \   to that in HERE
         $7f1f and                       \ mask off irrelevant bits
         if drop 0 exit then             \ first test failed, exit
@@ -22,7 +26,7 @@ I: name? ( yLink -- f, 0 if name does not match that in HERE )
         if drop -1 exit then            \ short name match, exit with -1
         2+ here 2+                      \ long name, scan all chars
         here c@ 1- 0 do
-                over yc@ over c@        \ compare one byte at a time
+                over c@ over c@         \ compare one byte at a time
                 xor $7f and             \ mask off the terminating bit
                 if 2drop 0 undo exit then   \ mismatch, exit
                 1+ swap 1+ swap         \ go to the next byte
@@ -39,12 +43,12 @@ I: name? ( yLink -- f, 0 if name does not match that in HERE )
         context @ hash @                \ head of this thread in context voc
         dup name?                       \ is the word last in the tread?
         if                              \ last word need special care
-           dup >r y@                    \ lfa of next word in the thread
+           dup >r @                     \ lfa of next word in the thread
            here context @ hash !        \ delete this word from context voc
                                         \ by pointing context to next word
         else                            \ not last word, search thread
            begin                        \ save current link
-             dup y@                     \ get lfa of the next word
+             dup @                      \ get lfa of the next word
              dup 0=                     \ if 0, tread is exhausted
              if
                 here count type         \ print error message
@@ -52,13 +56,13 @@ I: name? ( yLink -- f, 0 if name does not match that in HERE )
                 2drop exit              \ and give up.
              then
              name? 0=                   \ Is next link the target word?
-           while y@   \ dup l>name .id  \ No yet. continue searching
+           while @    \ dup l>name .id  \ No yet. continue searching
            repeat                       \ tos is link prior to target word
-           dup y@ dup >r                \ save lfa of target word
-           y@ swap y!                   \ delete this word from thread
+           dup @ dup >r                 \ save lfa of target word
+           @ swap !                     \ delete this word from thread
         then
         here current @ hash             \ get target thread in current voc
-        dup @ r@ y!                     \ link this word to current voc
+        dup @ r@ !                      \ link this word to current voc
         r> swap !                       \ update thread in current vocabulary
         ;
 

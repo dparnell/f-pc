@@ -1,4 +1,4 @@
-\ WYSE50.BLK    A terminal emulator for the WYSE 50     by Tom Zimmer
+\ WYSE50.BLK    A terminal emulator for the WYSE 50     by Tom Zimmer   F-PC native port
 
 comment:
 
@@ -7,6 +7,13 @@ comment:
   This allows wyse escape sequences to be EMITed, and they will be
 interpreted properly.  In a limited manner, of course.  Only those
 implimented will be performed.
+
+  F-PC native port: W50-IBM installs W50-IBM.EMIT as EMIT. Plain characters
+go to (EMIT), cursor addressing and clear screen to IBM-AT / IBM-DARK
+(AT-XY and VIDEO-BUF), and the line delete to IBM--LINE (BIOS-VIDEO). The
+bottom line is ROWS 1- (it was 24). TYPE stays (TYPE), so escape sequences
+must be EMITted, as before. The R> DROP early exits still work: the
+return stack holds one cell per nesting level.
 
 comment;
 
@@ -54,7 +61,7 @@ VARIABLE ACCUM          VARIABLE ATFLG
 : <W50CR>       ( --- )
                 13 (CONSOLE) 10 (CONSOLE)
                 #OUT OFF
-                #LINE  DUP @ 1+ 24 MIN SWAP ! ;
+                #LINE  DUP @ 1+ ROWS 1- MIN SWAP ! ;    \ port: was 24
 
 DEFER W50CR     ' <W50CR> IS W50CR
 

@@ -1,4 +1,4 @@
-\ MIDNIGHT.SEQ  (C) Copyright 1979, 1989 Peter Midnight
+\ MIDNIGHT.SEQ  (C) Copyright 1979, 1989 Peter Midnight   F-PC native port
 
 comment:
 
@@ -21,6 +21,11 @@ I may never need another.   Peter Midnight
 
 comment;
 
+\ F-PC native port: NMAX is computed from the terminal size each time it is
+\ used (it was a VALUE set from COLS at load time) and also limited by ROWS
+\ and by the 13 byte RING array. As in the original, MOVE and TRAVERSE are
+\ redefined in FORTH, so load this file last.
+
 ONLY FORTH ALSO DEFINITIONS     DECIMAL
 
 : GOTOXY        ( row col --- ) \ position cursor
@@ -29,7 +34,8 @@ ONLY FORTH ALSO DEFINITIONS     DECIMAL
 : CLEARSCREEN   ( --- )         \ clear screen
         CLS ;
 
-COLS 3 - 6 / VALUE NMAX         \ maximum rings for display size
+: NMAX          ( --- n )       \ maximum rings for display size
+        COLS 3 - 6 /   ROWS 7 - MIN   12 MIN   1 MAX ;
 
 NMAX VALUE N                    \ number of rings
 
