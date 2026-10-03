@@ -1,0 +1,18 @@
+
+dot-quote: hello world
+quote: counted 7 counted
+fill: xxxxx   xx|
+cmove: abcdef aabbdd
+cmove>: aabcde
+erase: 0 0 
+-trailing: 3 
+compare: -1 1 0 
+word: foo 4 
+number: 123 -45 15 1 31 -127 
+upc: AZ
+emit: AB    C
+pictured: 12.34 -5
+hex pictured: 55
+scan/skip: 3 b 1 b
+ascii: 65 1 
+bl: 32 

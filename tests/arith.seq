@@ -1,0 +1,24 @@
+\ ARITH.SEQ  16-bit integer arithmetic semantics of the original kernel.
+DECIMAL
+CR .( add/sub/wrap: ) 1 2 + . 5 7 - . 32767 1+ . 32767 1+ U. -1 U. 0 1- .
+CR .( mul: ) 7 6 * . -7 6 * . 300 300 * . 256 256 * .
+CR .( div pos: ) 7 2 / . 7 2 MOD . 7 2 /MOD . .
+CR .( div neg: ) -7 2 / . -7 2 MOD . 7 -2 / . 7 -2 MOD . -7 -2 / . -7 -2 MOD .
+CR .( */: ) 1000 3 7 */ . -1000 3 7 */ . 30000 2 3 */ . 1000 3 7 */MOD . .
+CR .( um: ) 65535 65535 UM* U. U. 1000 1000 UM* D.
+CR .( um/mod: ) 0 1 7 UM/MOD . . 100000. 7 UM/MOD . .
+CR .( mu/mod: ) 100000. 7 MU/MOD D. .
+CR .( neg/abs: ) 5 NEGATE . -5 ABS . -32768 ABS . -32768 NEGATE .
+CR .( min/max: ) 3 5 MIN . 3 5 MAX . -1 1 MIN . -1 1 UMIN . -1 1 UMAX U.
+CR .( 2*: ) 3 2* . -3 2* . 7 2/ . -7 2/ . 16384 2* .
+CR .( logic: ) 12 10 AND . 12 10 OR . 12 10 XOR . 0 NOT . 5 NOT .
+CR .( cmp: ) 1 2 < . 2 1 < . -1 1 < . -1 1 U< . 3 3 = . 0 0= . 5 0= . -2 0< .
+CR .( cmp2: ) 2 1 > . 1 1 <> . 0 0> . 1 0> . -32768 32767 < . 5 3 7 BETWEEN .
+CR .( flip/split: ) HEX 1234 FLIP . 1234 SPLIT . . 34 12 JOIN . DECIMAL
+CR .( doubles: ) 1. D. -1. D. 100000. 200000. D+ D. 5. DNEGATE D. -5. DABS D.
+CR .( d-cmp: ) 1. 2. D< . 2. 1. D< . 5. 5. D= . 70000. D2* D. 70001. D2/ D.
+CR .( s>d: ) -5 S>D D. 5 S>D D. 70000. DROP .
+CR .( base: ) HEX 255 . -1 . DECIMAL 255 . 5 2 BASE ! . DECIMAL
+CR .( numbers: ) 10 5 .R 10 5 U.R -10 5 .R 1000000. 12 D.R
+CR .( literal: ) $FF . $-10 . 'A' .
+CR

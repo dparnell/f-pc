@@ -1,0 +1,13 @@
+\ STACK.SEQ  Stack manipulation words.
+DECIMAL
+CR .( basic: ) 1 2 SWAP . . 1 2 OVER . . . 1 DUP . . 1 2 DROP . 1 2 NIP .
+CR .( rot: ) 1 2 3 ROT . . . 1 2 3 -ROT . . . 1 2 TUCK . . .
+CR .( pick: ) 10 20 30 0 PICK . 2 PICK . DROP DROP DROP
+CR .( roll: ) 1 2 3 4 3 ROLL . . . .
+CR .( 2ops: ) 1 2 3 4 2SWAP . . . . 1 2 3 4 2OVER . . . . . . 1 2 2DUP . . . . 1 2 3 2DROP .
+CR .( depth: ) DEPTH . 1 2 3 DEPTH . DROP DROP DROP DEPTH .
+CR .( ?dup: ) 0 ?DUP . 5 ?DUP . .
+CR .( rstack: ) : RT 5 >R 6 >R R@ . R> . R> . ; RT
+CR .( 2r: ) : R2 1 2 2>R 2R@ . . 2R> . . ; R2
+CR .( sp: ) 1 2 SP@ SP0 @ - NEGATE . 2DROP
+CR

@@ -1,0 +1,20 @@
+\ DEFINE.SEQ  Defining words.
+DECIMAL
+CR .( constant: ) 42 CONSTANT K42 K42 . -1 CONSTANT KM1 KM1 .
+CR .( variable: ) VARIABLE V1 17 V1 ! V1 @ . 3 V1 +! V1 @ . V1 OFF V1 @ . V1 ON V1 @ .
+CR .( 2var: ) 2VARIABLE DV 100000. DV 2! DV 2@ D.
+CR .( create: ) CREATE TBL 10 , 20 , 30 , TBL 2+ @ . TBL 4 + @ .
+CR .( c,: ) CREATE BYTES 1 C, 2 C, 3 C, BYTES 1+ C@ .
+CR .( does: ) : MYARRAY CREATE 2* ALLOT DOES> SWAP 2* + ; 5 MYARRAY ARR 99 3 ARR ! 3 ARR @ .
+CR .( does2: ) : KONST CREATE , DOES> @ ; 77 KONST K77 K77 .
+CR .( defer: ) DEFER DD : D1 ." one " ; : D2 ." two " ; ' D1 IS DD DD ' D2 IS DD DD
+CR .( value: ) 5 VALUE VV VV . 9 !> VV VV . 3 +!> VV VV .
+
+CR .( ': ) ' K42 EXECUTE .
+CR .( immediate: ) : IMM ." [imm] " ; IMMEDIATE : USEIMM IMM ." run " ; USEIMM
+CR .( literal: ) : LIT1 [ 6 7 * ] LITERAL . ; LIT1
+CR .( postpone: ) : MYIF [COMPILE] IF ; IMMEDIATE : T MYIF ." t " ELSE ." f " THEN ; 1 T 0 T
+CR .( compile: ) : C1 COMPILE DUP ; IMMEDIATE : C2 C1 * ; 9 C2 .
+\ Must stay last: referencing a FORGOTTEN word is an error, which ends the test.
+CR .( forget: ) : GONE ; FORGET GONE ' GONE DROP
+CR

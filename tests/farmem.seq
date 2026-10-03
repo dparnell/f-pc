@@ -1,0 +1,15 @@
+\ FARMEM.SEQ  Segment (far memory) words, without printing any addresses.
+DECIMAL
+CREATE B1 32 ALLOT  CREATE B2 32 ALLOT
+CR .( @L !L: ) 1234 ?CS: B1 !L ?CS: B1 @L . B1 @ .
+CR .( C@L C!L: ) 77 ?CS: B1 3 + C!L ?CS: B1 3 + C@L . B1 3 + C@ .
+: T1 " segmove" B1 SWAP CMOVE ?CS: B1 ?CS: B2 7 CMOVEL B2 7 TYPE ;
+CR .( CMOVEL: ) T1
+CR .( LFILL: ) ?CS: B2 4 '#' LFILL B2 7 TYPE
+CR .( paragraph: ) 0 PARAGRAPH . 1 PARAGRAPH . 16 PARAGRAPH . 17 PARAGRAPH .
+: LS1 1 2 + ;
+\ A colon body lives in list space at paragraph XSEG + [CFA+3]; tokens are CFAs.
+: LS2 DUP + ;
+CR .( list space: ) ' LS2 >BODY @ +XSEG 0 @L ' DUP = . ' LS2 >BODY @ +XSEG 2 @L ' + = . ' LS2 >BODY @ +XSEG 4 @L ' EXIT = .
+CR .( runs: ) LS1 . 21 LS2 .
+CR

@@ -1,0 +1,17 @@
+
+constant: 42 -1 
+variable: 17 20 0 -1 
+2var: 100000 
+create: 20 30 
+c,: 2 
+does: 99 
+does2: 77 
+defer: one two 
+value: 5 9 12 
+': 42 
+immediate: [imm] run 
+literal: 42 
+postpone: t f 
+compile: 81 
+forget:  GONE
+*** ERROR at line 19 : GONE  <- What? 

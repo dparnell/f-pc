@@ -1,0 +1,36 @@
+\ STRINGS.SEQ  Strings, memory and parsing.
+\ In the bare kernel " and ." are compile-only, so tests live in definitions.
+\ F-PC's " leaves ( addr len ), not a counted string. COMPARE is ( a1 a2 n -- f ).
+\ CMOVE moves words, so an overlapping forward CMOVE is NOT a byte smear.
+DECIMAL
+CREATE BUF 64 ALLOT
+: T1 ." hello world" ;
+CR .( dot-quote: ) T1
+: T2 " counted" TYPE SPACE " counted" NIP . " counted" ">$ COUNT TYPE ;
+CR .( quote: ) T2
+: T3 BUF 5 'x' FILL BUF 5 TYPE BUF 3 BLANK BUF 5 TYPE ." |" ;
+CR .( fill: ) T3
+: T4 " abcdef" BUF SWAP CMOVE BUF 6 TYPE SPACE BUF BUF 1+ 5 CMOVE BUF 6 TYPE ;
+CR .( cmove: ) T4
+: T5 " abcdef" BUF SWAP CMOVE BUF BUF 1+ 5 CMOVE> BUF 6 TYPE ;
+CR .( cmove>: ) T5
+: T6 BUF 4 ERASE BUF C@ . BUF 3 + C@ . ;
+CR .( erase: ) T6
+: T7 " abc   " -TRAILING . DROP ;
+CR .( -trailing: ) T7
+: T8 " abc" DROP " abd" DROP 3 COMPARE . " abd" DROP " abc" DROP 3 COMPARE . " abc" DROP " abc" DROP 3 COMPARE . ;
+CR .( compare: ) T8
+: T11 BL WORD COUNT TYPE SPACE BL WORD C@ . ;
+CR .( word: ) T11  foo  barx
+\ NUMBER needs the blank that WORD leaves after the digits.
+: T9 BL WORD NUMBER D. ;
+CR .( number: ) T9 123 T9 -45 T9 1.5 DPL @ . T9 $1F T9 -7FH
+CR .( upc: ) 'a' UPC EMIT 'Z' UPC EMIT
+CR .( emit: ) 65 EMIT 66 EMIT SPACE 3 SPACES 67 EMIT
+CR .( pictured: ) 1234. <# # # '.' HOLD #S #> TYPE SPACE -5 DUP ABS 0 <# #S ROT SIGN #> TYPE
+CR .( hex pictured: ) HEX 255 0 <# # # #> TYPE DECIMAL
+: T10 " aaabca" 'a' SKIP . C@ EMIT SPACE " xyzab" 'b' SCAN . C@ EMIT ;
+CR .( scan/skip: ) T10
+CR .( ascii: ) ASCII A . CONTROL A .
+CR .( bl: ) BL .
+CR

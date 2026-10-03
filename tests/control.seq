@@ -1,0 +1,31 @@
+\ CONTROL.SEQ  Control structures.
+DECIMAL
+: T-IF   IF ." yes " ELSE ." no " THEN ;
+CR .( if: ) 1 T-IF 0 T-IF -1 T-IF
+: T-LOOP  5 0 DO I . LOOP ;
+CR .( do: ) T-LOOP
+: T-+LOOP 0 10 DO I . -3 +LOOP ;
+CR .( -loop: ) T-+LOOP
+: T-+LOOP2 10 0 DO I . 3 +LOOP ;
+CR .( +loop: ) T-+LOOP2
+: T-?DO  0 0 ?DO I . LOOP ." none " ;
+CR .( ?do: ) T-?DO
+: T-LEAVE 10 0 DO I DUP . 3 = IF LEAVE THEN LOOP ;
+CR .( leave: ) T-LEAVE
+: T-NEST 3 0 DO 2 0 DO J 10 * I + . LOOP LOOP ;
+CR .( nest: ) T-NEST
+: T-BU  0 BEGIN DUP . 1+ DUP 4 = UNTIL DROP ;
+CR .( until: ) T-BU
+: T-BW  0 BEGIN DUP 4 < WHILE DUP . 1+ REPEAT DROP ;
+CR .( while: ) T-BW
+: T-AGAIN 0 BEGIN 1+ DUP 5 = IF EXIT THEN AGAIN ;
+CR .( again: ) T-AGAIN .
+: FACT  DUP 1 > IF DUP 1- RECURSE * THEN ;
+CR .( recurse: ) 7 FACT . 1 FACT .
+: T-BIG  -32768 32767 DO I . -16384 +LOOP ;
+CR .( wrap loop: ) T-BIG
+: T-UNEXPECTED 2 0 DO 0 LOOP + . ;
+CR .( loop data: ) T-UNEXPECTED
+: T-EXEC  ['] T-LOOP EXECUTE ;
+CR .( execute: ) T-EXEC
+CR
