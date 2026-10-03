@@ -88,6 +88,8 @@ vm_t *vm_new(ucell memsize, host_t *host)
     a += 64;                                            /* underflow slack */
     a += RSTACK_CELLS * CELL;  vm->rp0 = a;
     a += 64;
+    ucell flo = a;             a += 256 * 8;            /* float stack */
+    ucell fhi = a;
     a = (a + 15) & ~15u;
 
     /* regions: code 1/6, list 1/6, head 1/12, rest heap */
@@ -100,6 +102,7 @@ vm_t *vm_new(ucell memsize, host_t *host)
     vm->sp = vm->sp0;
     vm->rp = vm->rp0;
     sv_set(vm, SV_UP, up);
+    float_init(vm, flo, fhi);
     uv_set(vm, U_SP0, vm->sp0);
     uv_set(vm, U_RP0, vm->rp0);
     uv_set(vm, U_DP, vm->code_base);

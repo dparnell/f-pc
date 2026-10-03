@@ -73,7 +73,8 @@ enum {
     X(ATTRIB,"ATTRIB") X(BIOSCHAR,"BIOSCHAR") X(BIOSKEYVAL,"BIOSKEYVAL")   \
     X(COLS,"COLS") X(ROWS,"ROWS") X(CROWS,"CROWS") X(UP,"UP")            \
     X(CURSOR,"CURSOR-SHAPE") X(VIDEOBUF,"VIDEO-BUF-VAR")                 \
-    X(DBGON,"DBG-ON") X(DBGLO,"DBG-LO") X(DBGHI,"DBG-HI") X(TICKDEBUG,"'DEBUG")
+    X(DBGON,"DBG-ON") X(DBGLO,"DBG-LO") X(DBGHI,"DBG-HI") X(TICKDEBUG,"'DEBUG") \
+    X(FSP,"FSP") X(PRECISION,"PRECISION-VAR")
 /* these slots are VALUEs (code field DOVALUE), the rest VARIABLEs */
 #define SV_IS_VALUE(i) ((i) == SV_COLS || (i) == SV_ROWS || (i) == SV_CROWS)
 
@@ -141,6 +142,7 @@ struct vm {
 
     ucell ip, w, sp, rp;               /* VM addresses                    */
     ucell sp0, rp0;
+    ucell fstack_lo, fstack_hi;        /* float stack area (float.c)      */
 
     ucell sysvar;                      /* address of sysvar block         */
     ucell tib;                         /* TIB address                     */
@@ -257,6 +259,9 @@ enum { E_ABORT = -1, E_ABORTQ = -2, E_DSTACK_OVER = -3, E_DSTACK_UNDER = -4,
 int   image_save(vm_t *vm, const char *path);
 int   image_load(vm_t *vm, const char *path, char *err, size_t errsz);
 void  heap_free_block(vm_t *vm, ucell a);
+
+/* float.c */
+void  float_init(vm_t *vm, ucell lo, ucell hi);
 
 /* am.c, jit.c */
 void  am_bind(vm_t *vm, vm_handler *h);

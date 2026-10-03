@@ -2,10 +2,10 @@
 CC      ?= cc
 CFLAGS  ?= -O2 -g
 CFLAGS  += -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wno-format-truncation
-OBJS    = main.o vm.o seed.o dos.o screen.o image.o am.o jit.o sljitLir.o host_batch.o host_tty.o
+OBJS    = main.o vm.o seed.o dos.o screen.o image.o am.o jit.o float.o sljitLir.o host_batch.o host_tty.o
 
 fpc: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) -lpthread
+	$(CC) $(CFLAGS) -o $@ $(OBJS) -lpthread -lm
 
 $(OBJS): vm.h prims.def seed.h amops.def
 
