@@ -325,7 +325,20 @@ static void int21(vm_t *vm, regs_t *r)
             r->ax = n;
             break;
         }
-        if (h == 3 || h == 4) { r->ax = n; break; }
+        if (h == 4) {                       /* PRN: $FPC_PRN, a file or |command */
+            static FILE *prn;
+            static int tried;
+            if (!tried) {
+                tried = 1;
+                const char *dest = getenv("FPC_PRN");
+                if (dest && *dest == '|') prn = popen(dest + 1, "w");
+                else if (dest && *dest) prn = fopen(dest, "ab");
+            }
+            if (prn) { fwrite(vm_ptr(vm, r->dx, n), 1, n, prn); fflush(prn); }
+            r->ax = n;
+            break;
+        }
+        if (h == 3) { r->ax = n; break; }
         if (n == 0) { off_t pos = lseek(d->fd[h], 0, SEEK_CUR);   /* DOS: truncate */
                       if (pos >= 0 && ftruncate(d->fd[h], pos) != 0) FAIL(r, 5);
                       r->ax = 0; break; }
