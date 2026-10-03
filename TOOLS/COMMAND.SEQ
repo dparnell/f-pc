@@ -1,4 +1,5 @@
 \ COMMAND.SEQ   Allow Forth commands to be entered      by Tom Zimmer
+\                                                       F-PC native port
 
 comment:
 
@@ -15,14 +16,25 @@ commands.
 comment;
 
 : ret           ( --- )
-                sp0 @ 80 + @ 12345 - abort" Not COMMAND nested."
-                sp0 @ 160 + sp!
+                sp0 @ @ 12345 - abort" Not COMMAND nested."
+                sp0 @ cell+ @ sp!
                 SP0 ! rp0 ! rp! >IN !   DUP SPAN ! #TIB ! 'tib ! ;
+
+\ Native port: the nested area below the saved values is laid out from the
+\ top down as: return stack (400 bytes), TIB (QUERY reads COLS characters,
+\ so it is sized at run time), two cells [ 12345 marker ][ saved SP ] at
+\ the new SP0, then the new data stack. It was 160 bytes in all, with the
+\ marker at SP0+80 inside the TIB.
+
+400 constant cmd-rstack         \ bytes of return stack for COMMAND
 
 : COMMAND       ( --- )
                 'TIB @ SPAN @ >IN @ rp@ rp0 @ SP0 @
-                sp@ dup rp0 ! dup rp! 160 - dup 'tib ! dup sp0 ! sp!
-                12345 sp0 @ 80 + !
+                sp@ dup rp0 ! dup rp!                   ( x )
+                dup cmd-rstack - COLS 4 + 256 max aligned -
+                dup 'tib !                              ( x tib )
+                2 cells - tuck cell+ !                  ( sp0' )
+                12345 over !  dup sp0 ! sp!
                 BEGIN   CR .S ." ->" QUERY #TIB @
                 WHILE   INTERPRET
                 REPEAT  ret ;

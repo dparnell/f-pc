@@ -1,4 +1,5 @@
 \ NEWCOM.SEQ    A simple utility to allow you to make small COM files.
+\                                                       F-PC native port
 
 comment:
 
@@ -8,7 +9,22 @@ comment:
         the code will be automatically saved ina file TEST.COM as
         shown at the bottom of the file.
 
+        Native port: there is no 8086 code to save. CODE words are
+        abstract-machine op streams (AMASM.SEQ) that only the VM can
+        run, so a .COM file can't be made. DOCOM is kept: it still
+        writes any range of memory to a file. The 8086 example is kept
+        below the \S for reference, and is not loaded.
+
 comment;
+
+: docom         ( Addr len | filename -- ) \ Save a range of memory to a file.
+                seqhandle+ !HCB
+                seqhandle+ HDELETE   DROP
+                seqhandle+ HCREATE   ABORT" Save Create ERR!"
+                seqhandle+ HWRITE 0= ABORT" Save Write  ERR!"
+                seqhandle+ HCLOSE    ABORT" Save Close  ERR!" ;
+
+\S      The original 8086 example, which made TEST.COM:
 
 code test       ( --- )
                 clear_labels
@@ -24,13 +40,5 @@ code test       ( --- )
 
 ' test here over -
 
-: docom         ( Addr len | filename -- ) \ Save code from external segment.
-                seqhandle+ !HCB
-                seqhandle+ HDELETE   DROP
-                seqhandle+ HCREATE   ABORT" Save Create ERR!"
-                seqhandle+ HWRITE 0= ABORT" Save Write  ERR!"
-                seqhandle+ HCLOSE    ABORT" Save Close  ERR!" ;
-
 docom test.com          \ makes a small COM file.
-
 

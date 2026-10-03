@@ -1,4 +1,5 @@
 \ UNLINK.SEQ    An extension to the defered word control set by Tom Zimmer
+\                                                       F-PC native port
 
 \ **********************************************************************
 \ UNLINK a word from somewhere in a defered word chain.  Searches for
@@ -12,26 +13,27 @@
 
 : UNLINK        ( a1 | name -- )        \ unlink name from the defered
                                         \ chain a1
+\ Native port: >IS finds the defer cell of a DEFER or USER DEFER, a colon
+\ definition is recognised by its CT-NEST code token, and a link's first
+\ token (the word DEFERS compiled) is at >BODY @ @ (it was +XSEG 0 @L).
                 ' >r
                 off> ultrys
-                dup @rel>abs [ ' key @rel>abs ] literal = >r
-                >body r> if @ up @ + then
-                dup @ @rel>abs [ ' defers @rel>abs ] literal <>
+                >is
+                dup @ @ CT-NEST <>
                 ABORT" Can only UNDEFER through a : (colon) definition."
                 dup @ dup r@ =
-        if      >body @ +xseg 0 @L swap !
+        if      >body @ @ swap !
         else    nip
-                begin   dup >body @ +xseg 0 @l dup r@ <>
+                begin   dup >body @ @ dup r@ <>
                         over ['] noop <> and
                         ultrys ulmax < and              \ not reached limit
                 while   nip                             \ try next level
                         incr> ultrys                    \ bump try count
                 repeat  dup ['] noop <>
                         ultrys ulmax < and
-                if      >body @ +xseg 0 @L
-                        swap >body @ +xseg 0 !L         \ found it, remove
+                if      >body @ @
+                        swap >body @ !                  \ found it, remove
                 else    2drop
                 then
         then    r>drop ;
-
 

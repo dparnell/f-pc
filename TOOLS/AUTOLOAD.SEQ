@@ -1,4 +1,5 @@
 \ AUTOLOAD.SEQ    Automatically load from F-PC.CFG      by Tom Zimmer
+\                                                       F-PC native port
 
 comment:
 
@@ -7,7 +8,11 @@ comment:
         up.  You can put some of your configuration stuff in that file,
         and it will take effect at each boot time.
 
-coment;
+        Native port: the image built from F-PC.SEQ already loads
+        F-PC.CFG at start-up (HDEFAULT and CFGHNDL in DEFAULT.SEQ), so
+        with this file loaded it is read twice.
+
+comment;        \ port: was misspelled "coment;", which hid the code below
 
 : autoload      ( --- )
                 " F-PC.CFG" ">$ $fload drop     \ we don't care if it exists

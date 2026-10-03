@@ -1,4 +1,5 @@
 \ MONITOR.SEQ   Interactive Forth Monitor               by Zafar Essak
+\                                                       F-PC native port
 
 comment:
   Zafar Essak, Box 46263 Stn.G, Vancouver, B.C.,Canada V6R 4G6
@@ -32,9 +33,12 @@ References:
 
 comment;
 
-POSTFIX         \ Use the postfix assembler syntax
+\ Native port: the INT 16 (10h) CODE words call the VM's INT 10h emulation,
+\ BIOS-VIDEO ( ax bx cx dx -- ax bx cx dx ), from high level. The screen
+\ is COLS x ROWS (it was 80 x 25), and QUIT's QUERY is found by scanning
+\ QUIT's token list instead of patching a fixed offset.
 
-CODE SETMODE    ( n--)  AX POP   16 INT   NEXT   END-CODE
+: SETMODE       ( n--)  $FF AND  0 0 0 BIOS-VIDEO 2DROP 2DROP ;
 
 : clearscreen   ( --)  2 SETMODE ;
 
@@ -47,52 +51,42 @@ CODE SETMODE    ( n--)  AX POP   16 INT   NEXT   END-CODE
 
         \ Craig A. Lindley, Dr.Dobbs 1986 JUL, p.46
 
-CODE location   ( --x,y)               \ current cursor location
-    SI PUSH 0 # BH MOV 3 # AH MOV    \ int 10h func. 3
-    16 INT SI POP AH AH XOR
-    DL AL MOV AX PUSH DH AL MOV
-    1PUSH END-CODE
+: location      ( --x,y)               \ current cursor location
+    $300 0 0 0 BIOS-VIDEO               \ int 10h func. 3
+    NIP NIP NIP  DUP $FF AND  SWAP 8 RSHIFT $FF AND ;
+
+: (scroll)      ( xul,yul,xlr,ylr,n,attrib,func--)
+    8 LSHIFT ROT $FF AND OR >R          \ ax = func n
+    8 LSHIFT >R                         \ bx = attrib in bh
+    8 LSHIFT OR                         \ dx has lr x y
+    -ROT 8 LSHIFT OR                    \ cx has ul x y
+    R> R> SWAP 2SWAP SWAP               ( ax bx cx dx )
+    BIOS-VIDEO 2DROP 2DROP ;
 
         \ scroll specified window n lines
 
-CODE scrollup   ( xul,yul,xlr,ylr,n,attrib--)
-    BX POP BL BH MOV DI POP
-    DX POP DL DH MOV AX POP AL DL MOV   \ dx has lr x y
-    CX POP CL CH MOV AX POP AL CL MOV   \ cx has ul x y
-    DI AX MOV SI PUSH BP PUSH           \ save regs
-    6 # AH MOV 16 INT             \ ax # of lines func code ah
-    BP POP SI POP NEXT END-CODE   \ restore forth regs
+: scrollup      ( xul,yul,xlr,ylr,n,attrib--)
+    6 (scroll) ;                        \ ax # of lines func code ah
 
-CODE scrolldown ( xul,yul,xlr,ylr,n,attrib--)
-    BX POP BL BH MOV DI POP
-    DX POP DL DH MOV AX POP AL DL MOV   \ dx has lr x y
-    CX POP CL CH MOV AX POP AL CL MOV   \ cx has ul x y
-    DI AX MOV SI PUSH BP PUSH           \ save regs
-    7 # AH MOV 16 INT             \ ax # of lines func code ah
-    BP POP SI POP NEXT END-CODE   \ restore forth regs
+: scrolldown    ( xul,yul,xlr,ylr,n,attrib--)
+    7 (scroll) ;
 
-CODE rdchar     ( --charattrib )   \ read char at current cursor
-    0 # BH MOV 8 # AH MOV       \ pg = 0  func. code = 8
-    SI PUSH 16 INT SI POP       \ do video interrupt
-    1PUSH  END-CODE             \ charattrib to stack
+: rdchar        ( --charattrib )   \ read char at current cursor
+    $800 0 0 0 BIOS-VIDEO               \ pg = 0  func. code = 8
+    2DROP DROP $FFFF AND ;              \ charattrib to stack
 
 : getchar       ( x,y--charattrib) pos rdchar ;
 
 : attribute     ( --n) rdchar 256 / ;
 
-CODE charemit   ( charattrib--)
-    AX POP AH BL MOV BH BH XOR    \ char in al, attrib in bl
-    1 # CX MOV 9 # AH MOV         \ count=1, func. code in ah
-    SI PUSH 16 INT                \ write char/attrib
-    3 # AH MOV 16 INT             \ increment cursor
-    DL INC 2 # AH MOV 16 INT      \     position
-    SI POP NEXT END-CODE
+: chars         ( charattrib,n--)    \ write n chars
+    >R DUP $FF AND $900 OR              \ char in al, func. code in ah
+    SWAP 8 RSHIFT $FF AND               \ attrib in bl
+    R> 0 BIOS-VIDEO 2DROP 2DROP ;       \ count in cx
 
-CODE chars      ( charattrib,n--)    \ write n chars
-    CX POP AX POP AH BL MOV     \ count in cx, attrib in bl
-    BH BH XOR 9 # AH MOV        \ char in al, func. code in ah
-    SI PUSH 16 INT SI POP       \ do video interrupt
-    NEXT END-CODE
+: charemit      ( charattrib--)
+    1 chars                             \ write char/attrib
+    location SWAP 1+ SWAP pos ;         \ increment cursor position
 
 : drawrow       ( x,y,charatt,n--)  \ draw n chars starting at x,y
                 >R >R pos R> R> chars ;
@@ -106,7 +100,9 @@ CODE chars      ( charattrib,n--)    \ write n chars
     >R DROP -TRAILING 1+ DUP SPAN !
      R> pos DROP ;
 
-80 CONSTANT crtwidth
+: crtwidth      ( --n) COLS ;          \ port: was 80 CONSTANT crtwidth
+
+: bottom        ( --n) ROWS 1- ;       \ port: was 24
 
 : right         ( --n) crtwidth 1- ;
 
@@ -122,22 +118,22 @@ VARIABLE saddr
 : backward      ( --) location SWAP ?DUP
                 IF 1- ELSE right THEN SWAP pos ;
 
-: down          ( n--) location DUP 24 <
+: down          ( n--) location DUP bottom <
                 IF 1+ ELSE DROP 0 THEN pos ;
 
 : goup          ( n--) location ?DUP
-                IF 1- ELSE 24 THEN pos ;
+                IF 1- ELSE bottom THEN pos ;
 
 : home          ( --) 0 0 pos ;
 
-: end           ( --) right 24 pos ;
+: end           ( --) right bottom pos ;
 
 VARIABLE TABS   8 TABS !
 
 : dotab         ( --) TABS @ location DROP over MOD - 0 DO forward LOOP ;
 
 : lowerscreen   ( --xul,yul,xlr,ylr,1,attrib)
-                location >R DROP 0 R> 79 24 1 attribute ;
+                location >R DROP 0 R> right bottom 1 attribute ;
 
 : deleteline    ( --) lowerscreen scrollup ;
 
@@ -147,7 +143,7 @@ VARIABLE TABS   8 TABS !
 
 : gobble        ( --) location crtwidth 2 PICK - SPACES pos ;
 
-: slough        ( --) gobble location 2DUP 1+ pos 24 OVER
+: slough        ( --) gobble location 2DUP 1+ pos bottom OVER
     DO deleteline LOOP pos ;
 
 VARIABLE keypressed
@@ -192,15 +188,15 @@ create lineactions ( --addr)    \   action
 
 HERE CONSTANT endlineactions
 
-endlineactions 4 - CONSTANT nomatch
+endlineactions 2 CELLS - CONSTANT nomatch
 
 : keyaction     ( ascii--) DUP keypressed !
     nomatch SWAP
     endlineactions lineactions
         DO DUP I @ =
             IF 2DROP I 0 LEAVE
-            THEN 4 +LOOP
-        DROP 2+ @ EXECUTE ;
+            THEN 2 CELLS +LOOP
+        DROP CELL+ @ EXECUTE ;
 
 : keys          ( --ascii) key ?DUP 0= IF KEY 128 + THEN ;
 
@@ -215,7 +211,14 @@ endlineactions 4 - CONSTANT nomatch
 
 \ Refill QUERY in F83 quit with new quit.
 
-' IQUERY ' QUIT >BODY @ XSEG @ + 22 !L
+: patch-quit    ( --)   \ replace QUERY with IQUERY in QUIT's token list
+    ['] QUIT >IS @ >BODY @ 64 0
+    DO  DUP @ ['] QUERY =
+        IF  ['] IQUERY SWAP ! UNDO EXIT THEN
+        CELL+
+    LOOP  TRUE ABORT" QUERY not found in QUIT" ;
+
+patch-quit
 
 
  CR CR .( Forth monitor now interactive ! )
@@ -239,7 +242,7 @@ endlineactions 4 - CONSTANT nomatch
     LOCATION >R DROP 45 R> POS 8cdump QUIT ;
 
 : DUMP ( addr,n--) CR CR OVER + SWAP
-    DO 4 SPACES I 5 U.R SPACE I 8dump SPACE ASCII | EMIT SPACE
+    DO 4 SPACES I 8 U.R SPACE I 8dump SPACE ASCII | EMIT SPACE
         I 8cdump CR ENOUGH? IF LEAVE THEN 8 +LOOP ;
 
 warning off     \ Dont want warnings about redefinitions.

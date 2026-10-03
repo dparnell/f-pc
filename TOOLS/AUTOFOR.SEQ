@@ -1,4 +1,5 @@
 \ AUTOFOR.SEQ   experimental auto forward referencing   by Tom Zimmer
+\                                                       F-PC native port
 
 comment:
 
@@ -7,6 +8,13 @@ resolution of Forth words.  there is a runtime overhead which is
 equivalent to a DEFERed word.  Words that are forward referenced are
 automatically defined, and then when really defined, they are automatically
 resolved.
+
+  Native port: the kernel's HEADER is <HEADER>, which parses the name and
+calls the deferred "HEADER, so the resolving header hooks "HEADER and then
+runs the kernel's own <"HEADER> (the original copied the whole header
+builder, with its segment and hash table code). A DEFER is recognised by
+its CT-DODEFER code token, and HEADER aligns HERE, so the new word's CFA
+is HERE after ALIGN.
 
 comment;
 
@@ -29,6 +37,7 @@ comment;
                                         ."  creating forward reference"
                                 then
                                 savein !> >in   \ Restore >IN
+                                align           \ port: the CFA DEFER makes
                                 here x,         \ compile HERE in existing def
                                 defer           \ create a new DEFERed word
                         else    double?
@@ -40,42 +49,30 @@ comment;
 
 : "fheader       ( str --- )    \ automatic forward reference resolution
                                 \ version of "HEADER.
-                spcheck
                 dup find        recursive
-                if      dup     (lit) "fheader > \ must be defined after &
+                if      dup     ['] "fheader u> \ must be defined after &
                                                  \ ONLY if its a DEFERed word
-                        over @rel>abs ['] number @rel>abs = and
+                        over @ CT-DODEFER = and
                         if      warning @
                                 if      over cr count type
                                         ."  forward reference resolved"
                                 then
                                 \ then resolve the reference
-                                here over >body !
+                                align here over >body !
                         then
                 then    drop ( str )
-                align  yhere 2- y@ cnhash  here cnhash  <>
-                if      yhere here cnhash dup y@ rot umin swap
-                        y! ( >name hash entry )
-                then    ,view
-                yhere over current @ hash dup @  y,  ( link  ) ! ( current )
-                yhere last ! ( remember nfa )
-                yhere ?cs: rot  dup c@  width @  min 1+ >r  ( yh cs str )
-                yhere ys: r@ cmovel ( copy str ) r> ydp +! align ( nam )
-                128 swap ycset   128 yhere 1- ycset   ( delimiter bits )
-                here y, ( cfa in header )
-                yhere here cnhash 2+ y! ( valid stopper in next n hash entry)
-                ;
+                <"header> ;
 
 : fheader       ( | name --- )
                 bl word ?uppercase "fheader ;
 
 : autofon       ( --- )
                 ['] f] is ]
-                ['] fheader is header ;
+                ['] "fheader is "header ;
 
 : autofoff      ( --- )
                 ['] (]) is ]
-                ['] <header> is header ;
+                ['] <"header> is "header ;
 
 \ we will now turn on automatic forward referencing
 

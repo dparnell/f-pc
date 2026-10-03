@@ -1,4 +1,5 @@
 \\ UNREF.SEQ             Locate Unreferenced Words       by Tom Zimmer
+\\                                                      F-PC native port
 
   A utility to assist in finding those words in your application that are
 not ever referenced by any other word in the application (Dead CODE).
@@ -21,59 +22,45 @@ NOTE:
         compile finishes. All of the statistics are kept in a 64k
         array in memory that gets discarded once you leave back to DOS.
 
+Native port: the counts are bytes in a POINTER array with one byte per
+cell of code space (LIMIT 4 / bytes), indexed by CFA/4; it was a 64k
+far array indexed by the 16-bit CFA. Counts now stop at 255 instead of
+wrapping. The CODE word C+!L is replaced by REF+! in Forth.
+
 {
 
 \+ unedit       unedit          \ clear edit buffer if present and used
 
-code c+!L       ( byte seg adr )
-                pop bx          pop ds          pop ax
-                add 0 [bx], al  mov bx, cs      mov ds, bx
-                next            end-code
+limit 2 rshift 0 pointer refed  \ an array to hold the reference counts
 
-65536. pointer refed            \ an array to hold the reference counts
+: ref+!         ( n cfa -- )    \ add n to the count of word cfa
+                2 rshift refed +
+                dup c@ rot + 255 min swap c! ;
 
-: 0references   ( -- )          \ null out all 64k of REFED array
-                refed $0000 $8000 0 lfill
-                refed $8000 $8000 0 lfill ;
+: 0references   ( -- )          \ null out all of the REFED array
+                refed limit 2 rshift 0 fill ;
 0references                     \ preclear the references array
 
 : .unref        ( -- )          \ find unreferenced words in filename
-                refed save!> sseg
                 cr
-                $0000 $8000
+                refed limit 2 rshift
                 begin   0 skip dup
-                while   over refed swap c@L 1 =         \ unused?
-                        if      over >name .id ?cr
+                while   over c@ 1 =                     \ unused?
+                        if      over refed - 2 lshift >name .id ?cr
                         then    1 /string
                 repeat  2drop
-                $8000 $8000
-                begin   0 skip dup
-                while   over refed swap c@L 1 =         \ unused?
-                        if      over >name .id ?cr
-                        then    1 /string
-                repeat  2drop
-                cr
-                restore> sseg ;
+                cr ;
 
 : .usage        ( -- )          \ find unreferenced words in filename
-                refed save!> sseg
                 cr
-                $0000 $8000
+                refed limit 2 rshift
                 begin   0 skip dup
-                while   over refed swap c@L
+                while   over c@
                         cr 2/ 3 .r space
-                        over >name .id
+                        over refed - 2 lshift >name .id
                         1 /string
                 repeat  2drop
-                $8000 $8000
-                begin   0 skip dup
-                while   over refed swap c@L
-                        cr 2/ 3 .r space
-                        over >name .id
-                        1 /string
-                repeat  2drop
-                cr
-                restore> sseg ;
+                cr ;
 
 : turnkey       ( -<name>- )    \ turnkey an application,
                                 \ but first show unreferenced words
@@ -86,13 +73,14 @@ code c+!L       ( byte seg adr )
 
 : ref_header    ( -- )          \ init the reference count of a defined word
                 defers header           \ make the header
-                1 refed here c!L ;      \ and set count to unused=1
+                here 2 rshift refed +   \ HERE is the new CFA
+                1 swap c! ;             \ and set count to unused=1
 
 ' ref_header is header          \ link into HEADER
 
 : ref_find      ( -- )          \ bump the reference count of a word
                 defers find dup                 \ if word was found
-                if      over 2 refed rot c+!L   \ bump usage count
+                if      2 2 pick ref+!          \ bump usage count
                 then    ;
 
 ' ref_find is find              \ link into FIND

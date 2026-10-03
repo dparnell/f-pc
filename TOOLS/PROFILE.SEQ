@@ -1,4 +1,5 @@
 \\ PROFILE.SEQ          Profile a Forth word            by Tom Zimmer
+\\                                                      F-PC native port
 
   This file provides the ability to profile a large F-PC application.
 Words that consume large amounts of execution time are detected, and
@@ -24,6 +25,22 @@ algorithm problems in your program. Since counts are only performed at 18
 times a second, you will need to profile a fairly long (in execution
 time) program to get useful results.
 
+  Native port: there is no timer interrupt and no 8086 NEXT to patch.
+The VM's debugger trace hook (see DEBUG.SEQ: DBG-ON DBG-LO DBG-HI 'DEBUG)
+is used instead: while profiling, every token executed in list space calls
+PROF-TICK, a CODE word (abstract machine, so it runs JIT compiled) that
+adds one to a count cell for that IP and re-arms the hook. So the counts
+are exact numbers of tokens executed in each colon definition (and DOES>
+clause), not clock ticks; the time spent inside a primitive or CODE word
+still goes to the colon definition that called it, as before. A program
+runs several times slower while it is profiled.
+
+  Words compiled after PROF_START are not counted. PROF.TXT lists, in
+dictionary order, each definition with a count of at least PROF-MIN: the
+count, its percentage of the total, and the name (a DOES> clause counts
+for the defining word it is in). .PROF shows the same report on the
+screen. The DEBUG debugger and the profiler share the hook, so don't use
+both at once.
 
   PROFILE can be used in two ways:
 
@@ -47,85 +64,46 @@ defintions.
 
 {
 
-VARIABLE ESSEG
+\ The count array: one cell per cell of list space, from PROF-LO for
+\ PROF-SIZE bytes, at PROF_SEG (it was a 32k far segment).
+VARIABLE PROF-LO
+VARIABLE PROF-SIZE
+VARIABLE PROF-BUF       0 PROF-BUF !
+0 VALUE  PROF_SEG       \ the count array, 0 if none
+1 VALUE  PROF-MIN       \ the smallest count reported
+VARIABLE PSAVED         \ is the hook ours?
 
-LABEL PRNEST    MOV ESSEG AX
-                MOV ES, AX      \  2 cycles     \ move into ES
-                SUB IP, IP      \  3 cycles     \ clear IP
-                NEXT
-                END-CODE
+ALSO ASSEMBLER
 
-LABEL PREXIT    XCHG RP, SP     \ 4 cycles
-                POP IP          \ 8 cycles
-                POP ES          \ 8 cycles
-                MOV ESSEG ES
-                XCHG RP, SP     \ 4 cycles
-                NEXT
-                END-CODE
+CODE PROF-TICK  ( ip -- )       \ count a token, called by the trace hook
+        R0 POP,                         \ the IP about to run
+        R1 PROF-LO LI,    R1 R1 0 LD,
+        R0 R0 R1 SUB,                   \ offset into list space
+        R2 PROF-SIZE LI,  R2 R2 0 LD,
+        R0 R2 1 BGEU,                   \ outside the array: skip
+        R2 PROF-BUF LI,   R2 R2 0 LD,
+        R0 R0 R2 ADD,
+        R3 R0 0 LD,   R3 R3 1 ADDI,   R3 R0 0 ST,
+   1 L: R1 TRUE LI,   R2 DBG-ON LI,   R1 R2 0 ST,     \ re-arm the hook
+        NEXT,
+        END-CODE
 
-: PRPATCH
-        233 >NEST $0E + !                       \ put in JMP
-        PRNEST >NEST $11 + - >NEST $0F + !      \ lay in jump address
-        233 >DOES $0C + !                       \ put in JMP
-        PRNEST >DOES $0F + - >DOES $0D + !      \ lay in jump address
-        233 ['] EXIT !                          \ put in JMP
-        PREXIT ['] EXIT   3 + - ['] EXIT   1+ ! \ lay in jump address
-        233 ['] UNNEST !                        \ put in JMP
-        PREXIT ['] UNNEST 3 + - ['] UNNEST 1+ ! \ lay in jump address
-        ;
+PREVIOUS
 
-PRPATCH         \ patch the profiled functions into existing functions
+VARIABLE OLD-DEBUG      VARIABLE OLD-LO         VARIABLE OLD-HI
 
-     4  ARRAY    TIMERSAVE      \ vector in CODE space
-$A000.  POINTER  PROF_SEG       \ a place to save the profile buffer segment
-        VARIABLE PSAVED
+: SAVE&SET_VECS ( -- )          \ point the trace hook at PROF-TICK
+                PSAVED @ PROF_SEG 0= OR ?EXIT
+                'DEBUG @ OLD-DEBUG !  DBG-LO @ OLD-LO !  DBG-HI @ OLD-HI !
+                ['] PROF-TICK 'DEBUG !
+                PROF-LO @ DUP DBG-LO !  PROF-SIZE @ + DBG-HI !
+                PSAVED ON  DBG-ON ON ;
 
-LABEL MYTIMER   ( -- )          \ Timer interrupt routine
-                PUSH DS
-                PUSH BX
-                PUSH DI
-                MOV BX, CS: ESSEG
-                MOV DS, CS: &> PROF_SEG \ DS = profile buffer segment
-                CMP 0 [BX], # $FF       \ is bucket full?
-                JAE 0 $                 \ if so, skip the increment
-                INC 0 [BX] BYTE
-        0 $:    POP DI
-                POP BX
-                POP DS
-                JMP FAR CS: [] TIMERSAVE        \ go do any other interrupts
-                END-CODE
-
-CODE SAVE&SET_VECS ( -- )       \ save and set some vectors
-                CMP PSAVED # 0 WORD
-                JNE 0 $
-                PUSH ES
-                MOV AX, # $351C         \ Get the interupt vector for
-                INT $21                 \ BIOS timer vector
-                MOV CS: TIMERSAVE BX
-                MOV CS: TIMERSAVE 2+ ES \ Save old vector
-                POP ES
-                                        \ Setup timer vector to our routine
-                PUSH DS                 \ save data segment
-                MOV AX, CS
-                MOV DS, AX              \ set DS to CS
-                MOV DX, # MYTIMER       \ the new timer tick interrupt
-                MOV AX, # $251C
-                INT $21
-                POP DS                  \ recover the data segment
-                INC PSAVED WORD
-        0 $:    NEXT    END-CODE
-
-CODE REST_VECS  ( -- )                  \ Restore the vectors
-                CMP PSAVED # 0 WORD
-                JE 0 $
-                PUSH DS
-                MOV DX, CS: TIMERSAVE
-                MOV DS, CS: TIMERSAVE 2+
-                MOV AX, # $251C
-                INT $21
-                POP DS
-                MOV PSAVED # 0 WORD
-        0 $:    NEXT    END-CODE
+: REST_VECS     ( -- )          \ give the trace hook back
+                PSAVED @ 0= ?EXIT
+                DBG-ON OFF
+                OLD-DEBUG @ 'DEBUG !  OLD-LO @ DBG-LO !  OLD-HI @ DBG-HI !
+                PSAVED OFF ;
 
 : UNPROF_EXITFUNC ( -- )
                 REST_VECS
@@ -138,44 +116,79 @@ create crlf$ $0D c, $0A c,      \ a CRLF string
 
 32 array prof_name
 
-: prof.id       ( nfa -- )
-                yseg @ swap ?cs: prof_name 32 cmovel
+DEFER PROF-OUT  ( a n -- )      \ where report text goes
+
+: >PROFFILE     ( a n -- )      profhndl hwrite drop ;
+
+: prof.id       ( nfa -- )      \ the name, without its high bits
+                prof_name 32 cmove
                 prof_name c@ 31 and prof_name c!
                 prof_name count bounds
                 ?do     i c@ $7F and i c!
-                loop    prof_name count profhndl hwrite drop ;
+                loop    prof_name count prof-out ;
 
-: 1prof         ( a1 n1 -- a2 n2 )
-                over prof_seg swap c@L 3 <       \ leave if low count
-                if      1 /string exit
-                then
-                over dup>r
-                crlf$ 2 profhndl hwrite drop
-                hex
-                dup 0 <# # # # # #> profhndl hwrite drop
-                decimal
-                prof_seg swap c@l (u.) 4 over -
-                spcs swap profhndl hwrite drop  \ spaces
-                          profhndl hwrite drop  \ word name
-                spcs 1 profhndl hwrite drop
-                ?cs: sseg !
-                r> [ bug ] seg>cfa
-                if      >name prof.id [ forth ]
-                else    drop
-                then    1 /string ;
+VARIABLE PROF-TOTAL
 
-: saveprof      ( -- )          \ display the profile results
+: PROF-TOTAL@   ( -- n )        \ add up every count
+                0 PROF_SEG PROF-SIZE @ BOUNDS
+                ?DO     I @ +
+                CELL +LOOP DUP PROF-TOTAL ! ;
+
+: PROF-CFA      ( ip -- cfa | 0 )       \ the word whose list holds ip
+                DUP IP>CFA
+                IF      DUP @ FIRST-DOES-CT U< 0=       \ a DOES> clause:
+                        IF      DROP LIST>CFA EXIT      \ the defining word
+                        THEN    NIP
+                ELSE    2DROP 0
+                THEN    ;
+
+: (U.)R         ( n w -- a n )  \ n right justified in w columns
+                >R 0 <# #S #> R> OVER - 0 MAX SPCS SWAP PROF-OUT PROF-OUT ;
+
+: 1prof         ( count cfa -- )        \ one line of the report
+                OVER PROF-MIN <
+                IF      2DROP EXIT
+                THEN
+                crlf$ 2 prof-out
+                OVER 10 (U.)R
+                SWAP 100 UM* PROF-TOTAL @ 1 MAX UM/MOD NIP 5 (U.)R
+                " %  " prof-out
+                ?DUP
+                IF      >name prof.id
+                ELSE    " ?" prof-out
+                THEN    ;
+
+: (REPORT)      ( -- )          \ the counts, grouped by definition
+                PROF_SEG 0= ?EXIT
+                PROF-TOTAL@ DROP
+                0 0                             ( count cfa )
+                PROF_SEG PROF-SIZE @ BOUNDS
+                ?DO     I @ ?DUP
+                        IF      I PROF_SEG - PROF-LO @ + PROF-CFA
+                                ( count cfa n cfa' ) DUP 3 PICK =
+                                IF      DROP ROT + SWAP
+                                ELSE    2SWAP 1prof
+                                THEN
+                        THEN
+                CELL +LOOP  1prof
+                crlf$ 2 prof-out  " Total: " prof-out
+                PROF-TOTAL @ 0 (U.)R ;
+
+: saveprof      ( -- )          \ write the profile results to PROF.TXT
                 " PROF.TXT" profhndl ">handle
                 profhndl hcreate abort" Failed to create profile save file"
-                $0000 $8000
-                begin   prof_seg sseg !
-                        0 skip dup
-                while   1prof
-                repeat  2drop
-                ?cs: sseg !
-                crlf$ 2 profhndl hwrite drop    \ append a pair of CRLF's
-                crlf$ 2 profhndl hwrite drop
+                ['] >PROFFILE IS PROF-OUT
+                (REPORT)
+                crlf$ 2 prof-out                \ append a pair of CRLF's
+                crlf$ 2 prof-out
                 profhndl hclose drop ;
+
+: .TYPE-CR      ( a n -- )      \ TYPE, with CR for a CRLF
+                OVER crlf$ = IF 2DROP CR ELSE TYPE THEN ;
+
+: .PROF         ( -- )          \ display the profile results
+                ['] .TYPE-CR IS PROF-OUT
+                (REPORT) CR ;
 
 : prof_on       ( -- )          \ turn on profiling
                 save&set_vecs ;
@@ -184,8 +197,13 @@ create crlf$ $0D c, $0A c,      \ a CRLF string
                 rest_vecs ;
 
 : prof_start    ( -- )
-                prof_seg 0 sizeof@> prof_seg drop 0 lfill
-                                        \ fill array with zeros
+                prof_off
+                PROF_SEG ?DUP IF FREE DROP 0 =: PROF_SEG THEN
+                LIMIT PROF-LO !                 \ list space so far
+                XHERE ALIGNED LIMIT - PROF-SIZE !
+                PROF-SIZE @ ALLOCATE ABORT" No memory for the profile"
+                DUP =: PROF_SEG  PROF-BUF !
+                PROF_SEG PROF-SIZE @ ERASE      \ fill array with zeros
                 prof_on ;
 
 : prof_finish   ( -- )
@@ -197,5 +215,3 @@ create crlf$ $0D c, $0A c,      \ a CRLF string
                 prof_start
                 interpret
                 prof_finish ;
-
-

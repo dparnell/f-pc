@@ -1,4 +1,5 @@
 \ CODEHIGH.SEQ  Call high level code from assembly & return
+\                                                       F-PC native port
 
 comment:
 
@@ -8,48 +9,46 @@ comment:
 group of high level words within the CODE definition. They ARE NOT !
 If you need to preserve some registers, then doit yourself.
 
+  Native port: CODE words are abstract-machine code (AMASM.SEQ). >H lays
+down ops that push the Forth IP on the return stack, point IP at a token
+list and return to the inner interpreter (NEXT,), so the high level words
+that follow are compiled into that list. H> ends the list with a token
+that runs the rest of the CODE word: a nameless code field with its own
+;CODE style code token, whose ops pop the saved IP back first. (The
+original called HDOES, which nested into the list, and HRET jumped back.)
+
+  Also: R0-R7 are not preserved (as before), the stacks are shared, and W
+holds that nameless code field after H>, not the CODE word's own. Don't
+branch to a local label on the other side of a >H ... H> group: each part
+is a separate op stream to the JIT.
+
 comment;
 
 only forth also assembler definitions also
 
-label hdoes     ( --- )
-                pop ax          \  8 cycles
-                xchg rp, sp     \  4 cycles
-                push ax         \ 11 cycles
-                xchg rp, sp     \  4 cycles
-                sub ax, # 3     \  4 cycles
-                jmp >nest       \ 16 cycles
-                end-code
+: >H            ( --- )         \ start high level code in a CODE word
+                IP RPUSH,                       \ save the caller's IP
+                XALIGN IP XHERE LI,             \ run the list that follows
+                NEXT,
+                also forth ] ;
 
-code hret       ( --- )
-                xchg rp, sp     \ 4 cycles
-                pop ip          \ 8 cycles
-                pop es          \ 8 cycles
-                pop ax          \ 8 cycles
-                xchg rp, sp     \ 4 cycles
-                add ax, # 2     \ 5 cycles
-                jmp ax
-                end-code
-
-: >h            ( --- )
-                xhere paragraph + dup xdpseg !          \ setup LIST space
-                xdp off
-                also forth
-                >pre call hdoes a; xseg @ - , pre> ] ;
-
-: h>            ( --- )
+: H>            ( --- )         \ back to the assembler
                 previous
-                compile hret  [compile] [ ; immediate
+                HERE X,                         \ a code field that runs
+                HERE CELL+ NEW-AMCODE ,         \ the ops that follow it
+                [compile] [
+                IP RPOP, ; immediate            \ restore the caller's IP
+
+only forth also definitions
 
 \s
 
 Example         A simple example of the use of High level in a code word.
 
         CODE TST
-                MOV AX, # 23
-                PUSH AX
+                R0 23 LI,
+                R0 PUSH,
                 >H DUP . H>     \ you MUST come back with "H>".
-                POP AX
-                NEXT
+                R0 POP,
+                NEXT,
                 END-CODE
-

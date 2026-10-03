@@ -1,4 +1,5 @@
 \ FORWARD.SEQ   Forward reference resolution words      by Tom Zimmer
+\                                                       F-PC native port
 
 \ Concept borrowed from UR/Forth
 
@@ -9,7 +10,7 @@
 : R:            ( name --- )    \ resolve the forward reference
                 false save!> warning    \ no redefinition message
                 >in @ defined
-                if      >r >in ! here >r :
+                if      >r >in ! align here >r :  \ port: HEADER aligns HERE
                         r> r> >is !
                 else    ." No forward reference found on " count type
                         drop

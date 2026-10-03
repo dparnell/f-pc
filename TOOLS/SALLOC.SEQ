@@ -1,4 +1,5 @@
 \\ SALLOC           An example of memory allocation      by Tom Zimmer
+\\                                                      F-PC native port
 
   This file contains an example of how to do memory allocation in F-PC.
 
@@ -8,6 +9,10 @@
   WARNING:      You should NOT use ALLOC or DEALLOC any more, they
                 conflict with the new POINTER memory management
                 system built into F-PC.
+
+  Native port: memory is flat, so a POINTER returns an ordinary address
+  and the far-memory words (CMOVEL COUNTL PLACEL TYPEL) are plain CMOVE
+  COUNT PLACE TYPE.  ALLOC and DEALLOC are gone; see ALLOCATE and FREE.
 
 {
 
@@ -21,23 +26,23 @@ bytes_needed POINTER myseg      \ Define my POINTER called 'myseg' of the
 \ the first time 'myseg' is used in an application.
 
 : string-save   ( | <string> --- )      \ accept a <string> to save
-                ?cs: 0 word dup>r       \ moving FROM here
-                myseg 0                 \ TO the beginning of MYSEG
-                r> c@ 1+ CMOVEL ;       \ move the data with CMOVE LONG
+                0 word dup>r            \ moving FROM here
+                myseg                   \ TO the beginning of MYSEG
+                r> c@ 1+ CMOVE ;        \ move the data
 
 \ And you can then display the text from MYSEG.
 
 : type-string   ( --- )
-                myseg 0                 \ FROM myseg
-                countL                  \ get the count of the far-away string
-                ?cs: here rot placeL    \ place the string at HERE
+                myseg                   \ FROM myseg
+                count                   \ get the count of the far-away string
+                here place              \ place the string at HERE
                 here count type ;       \ display it
 
-\ You could have also:  "MYSEG 0 COUNTL TYPEL"  to just type the string
+\ You could have also:  "MYSEG COUNT TYPE"  to just type the string
 \ while it resided in the far-away pointer buffer.
 
 \ If you need to deallocate the space that you have allocated, you can use
-\ UNPOINTER to release the space back to DOS.
+\ UNPOINTER to release the space back to the heap.
 
 : release-myseg ( --- )
                 unpointer> myseg ;
@@ -45,4 +50,5 @@ bytes_needed POINTER myseg      \ Define my POINTER called 'myseg' of the
 \ YOU NEED TO BE **** EXTREAMLY **** CAREFUL NOT TO WRITE BEYOND THE END
 \ OF A DEFINED POINTER.   WRITING BEYOND THE END OF A POINTER WILL CRASH
 \ DOS, AND REQUIRE A REBOOT OF YOUR COMPUTER !!!!!!!!!!!!!!!!!!!!!!!!!!!
+\ (On the VM it corrupts the heap instead, which is hardly better.)
 

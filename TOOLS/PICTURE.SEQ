@@ -1,4 +1,5 @@
 \\ PICTURE.SEQ           Pictured numeric output
+\\                                               F-PC native port: unchanged
 .options /opt /noinit
   Provide pictured numeric output for F-PC and TCOM.
 

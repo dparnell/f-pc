@@ -1,4 +1,5 @@
 \ INTERP.SEQ    Interpret a string                      by Martin Tracy
+\                                                       F-PC native port
 
 comment:
 
@@ -38,15 +39,21 @@ comment;
                 restore> >in    restore> 'tib
                 restore> #tib   restore> span ;
 
+\ Native port: (") is now followed by an in-line counted string, padded
+\ to a cell, in list space (it pointed to a string in code space).
+: x$,           ( a1 n1 --- )   \ lay a1 n1 as an in-line counted string
+                255 min dup xc,
+                bounds ?do i c@ xc, loop xalign ;
+
 : macro         ( name --- )    \ start a macro definitions
-                (:) compile (") here x,
+                (:) compile (")
                 bl word 1+ c@           \ determine the explicit delimiter
-                word c@ 1+ allot
+                parse x$,
                 compile eval state on [compile] ; immediate ;
 
 : macro:        ( name --- )
-                (:) compile (") here x,
-                ascii ; word c@ 1+ allot        \ delimiter is a ";"
+                (:) compile (")
+                ascii ; parse x$,               \ delimiter is a ";"
                 compile eval state on [compile] ; immediate ;
 
 
