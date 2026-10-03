@@ -136,6 +136,8 @@ typedef struct host {
 host_t *host_batch_new(void);
 host_t *host_tty_new(void);
 void    host_tty_attach(host_t *h, vm_t *vm);
+host_t *host_sdl_new(void);             /* NULL if unavailable */
+void    host_sdl_attach(host_t *h, vm_t *vm);
 
 /* ---- the VM ------------------------------------------------------------- */
 struct vm {

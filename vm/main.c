@@ -6,6 +6,8 @@
  *       arguments form the DOS command tail (DOS-LINE), as F-PC.EXE's
  *       command line did: "fpc - FLOAD X BYE".
  *
+ *       --sdl opens an SDL window instead of using the terminal.
+ *
  *   fpc --seed [-I dir] [-e forth]... [--batch] [file...]
  *       The bare seed interpreter (bootstrap testing).
  */
@@ -113,13 +115,24 @@ static int run_forth(vm_t *vm)
 
 int main(int argc, char **argv)
 {
-    int seed_only = 0, batch = !isatty(0) || !isatty(1);
+    int seed_only = 0, batch = !isatty(0) || !isatty(1), sdl = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--seed")) seed_only = batch = 1;
         if (!strcmp(argv[i], "--batch")) batch = 1;
+        if (!strcmp(argv[i], "--sdl")) sdl = 1;
     }
 
-    host_t *host = batch ? host_batch_new() : host_tty_new();
+    host_t *host = NULL;
+#ifdef HAVE_SDL
+    if (sdl && !seed_only) {
+        host = host_sdl_new();
+        if (!host) return 2;
+        batch = 0;
+    }
+#else
+    if (sdl) { fprintf(stderr, "fpc: built without SDL\n"); return 2; }
+#endif
+    if (!host) host = batch ? host_batch_new() : host_tty_new();
     vm_t *vm = vm_new(32u << 20, host);
     if (!vm) { perror("fpc"); return 2; }
     the_vm = vm;
@@ -141,7 +154,7 @@ int main(int argc, char **argv)
     if (getenv("FPC_IMAGE")) snprintf(image, sizeof image, "%s", getenv("FPC_IMAGE"));
     int i = 1;
     for (; i < argc; i++) {
-        if (!strcmp(argv[i], "--batch")) continue;
+        if (!strcmp(argv[i], "--batch") || !strcmp(argv[i], "--sdl")) continue;
         else if (!strcmp(argv[i], "-k") && i + 1 < argc) { snprintf(kernel, sizeof kernel, "%s", argv[++i]); image[0] = 0; }
         else if (!strcmp(argv[i], "-i") && i + 1 < argc) snprintf(image, sizeof image, "%s", argv[++i]);
         else if (!strcmp(argv[i], "-I") && i + 1 < argc) seed_add_path(vm, argv[++i]);
@@ -177,6 +190,9 @@ int main(int argc, char **argv)
     if (hl > 200) hl = 200;
     vm->mem[vm->dosbuf + 256] = (uint8_t)hl;        /* (FPC-HOME) */
     memcpy(vm->mem + vm->dosbuf + 257, home, hl);
+#ifdef HAVE_SDL
+    if (sdl) host_sdl_attach(host, vm); else
+#endif
     if (!batch) host_tty_attach(host, vm);
     return run_forth(vm);
 }

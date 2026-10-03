@@ -8,6 +8,7 @@ Last updated 2026-10-04 (overnight session). Design: [kernel-design.md](kernel-d
 make -C vm          # build vm/fpc (C11 + GNU computed goto; vendored sljit)
 make -C vm image    # load SRC/F-PC.SEQ and save F-PC.IMG (as EXTEND.BAT made F-PC.EXE)
 vm/fpc -i F-PC.IMG  # full F-PC: sign-on, status line, SED editor, debugger...
+vm/fpc --sdl -i F-PC.IMG   # the same in an SDL window (PSF console font, resizable)
 vm/fpc              # bare kernel, loaded from SRC/KERNEL.SEQ (~6 ms)
 make -C vm test     # regression tests: from source, from an image, without JIT
 make -C vm test-ui  # UI scenarios in a pseudo-terminal (needs: pip install pyte)
@@ -31,7 +32,7 @@ Running `fpc`:
 | M4: all `F-PC.SEQ` extensions | Done: all 88 files load (12,136 lines in about 0.1 s) |
 | M5: terminal UI with live resize | Done. The ANSI host diffs the VM's text screen; `SIGWINCH` drives `RESIZED` and `K-RESIZE`. SED, the status line, menus and the file list follow the terminal size |
 | M6: native CODE words | Done. AM assembler (`SRC/AMASM.SEQ`), interpreter, sljit JIT (about 6x faster than the interpreter) |
-| M7: debugger, multitasker, SDL | Debugger done, on a VM trace hook. Multitasker (`MULTASK.SEQ`, load it with `FLOAD MULTASK.SEQ`) done, switching tasks in high-level Forth. SDL not started |
+| M7: debugger, multitasker, SDL | Debugger done, on a VM trace hook. Multitasker (`MULTASK.SEQ`, load it with `FLOAD MULTASK.SEQ`) done, switching tasks in high-level Forth. SDL window host done (`fpc --sdl`) |
 
 ## What is verified interactively
 
