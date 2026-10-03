@@ -1,9 +1,10 @@
 /* main.c -- fpc: the F-PC native VM.
  *
- *   fpc [--batch] [-k kernel.seq] [-I dir]... [dos-line...]
- *       Load the F-PC kernel source with the seed, then run F-PC's own
- *       COLD start. The remaining arguments form the DOS command tail
- *       (DOS-LINE), as F-PC.EXE's command line did: "fpc - FLOAD X BYE".
+ *   fpc [--batch] [-i image | -k kernel.seq] [-I dir]... [dos-line...]
+ *       Load a saved image (-i, or $FPC_IMAGE), or else the F-PC kernel
+ *       source with the seed, then run F-PC's own COLD start. The remaining
+ *       arguments form the DOS command tail (DOS-LINE), as F-PC.EXE's
+ *       command line did: "fpc - FLOAD X BYE".
  *
  *   fpc --seed [-I dir] [-e forth]... [--batch] [file...]
  *       The bare seed interpreter (bootstrap testing).
@@ -24,7 +25,7 @@ static void on_sigint(int sig) { (void)sig; if (the_vm) the_vm->interrupt = 1; }
 static void usage(void)
 {
     fprintf(stderr,
-        "usage: fpc [--batch] [-k kernel.seq] [-I dir]... [dos-line...]\n"
+        "usage: fpc [--batch] [-i image | -k kernel.seq] [-I dir]... [dos-line...]\n"
         "       fpc --seed [-I dir]... [-e forth]... [--batch] [file...]\n");
     exit(2);
 }
@@ -114,8 +115,6 @@ int main(int argc, char **argv)
     if (!vm) { perror("fpc"); return 2; }
     the_vm = vm;
     seed_init(vm);
-    screen_init(vm);
-    if (!batch) host_tty_attach(host, vm);
     const char *env = getenv("FPC_PATH");
     if (env) {
         char *p = strdup(env), *s, *save = NULL;
@@ -123,14 +122,19 @@ int main(int argc, char **argv)
         free(p);
     }
     signal(SIGINT, on_sigint);
-    if (seed_only) return run_seed(vm, argc, argv);
+    if (seed_only) {
+        screen_init(vm);
+        return run_seed(vm, argc, argv);
+    }
 
-    char kernel[PATH_MAX];
+    char kernel[PATH_MAX], image[PATH_MAX] = "";
     default_kernel(kernel, sizeof kernel);
+    if (getenv("FPC_IMAGE")) snprintf(image, sizeof image, "%s", getenv("FPC_IMAGE"));
     int i = 1;
     for (; i < argc; i++) {
         if (!strcmp(argv[i], "--batch")) continue;
-        else if (!strcmp(argv[i], "-k") && i + 1 < argc) snprintf(kernel, sizeof kernel, "%s", argv[++i]);
+        else if (!strcmp(argv[i], "-k") && i + 1 < argc) { snprintf(kernel, sizeof kernel, "%s", argv[++i]); image[0] = 0; }
+        else if (!strcmp(argv[i], "-i") && i + 1 < argc) snprintf(image, sizeof image, "%s", argv[++i]);
         else if (!strcmp(argv[i], "-I") && i + 1 < argc) seed_add_path(vm, argv[++i]);
         else break;
     }
@@ -144,12 +148,20 @@ int main(int argc, char **argv)
         memcpy(line + len, argv[i], n);
         len += n;
     }
-    vm->mem[vm->dosbuf + 128] = (uint8_t)len;
-    memcpy(vm->mem + vm->dosbuf + 129, line, len);
-
-    if (seed_load(vm, kernel) != 0) {
-        fprintf(stderr, "fpc: could not load the kernel from %s\n", kernel);
-        return 2;
+    if (*image) {
+        char err[256];
+        if (image_load(vm, image, err, sizeof err) != 0) { fprintf(stderr, "fpc: %s\n", err); return 2; }
+        heap_free_block(vm, sv(vm, SV_VIDEOBUF));   /* the saved screen */
+        screen_init(vm);
+    } else {
+        screen_init(vm);
+        if (seed_load(vm, kernel) != 0) {
+            fprintf(stderr, "fpc: could not load the kernel from %s\n", kernel);
+            return 2;
+        }
     }
+    vm->mem[vm->dosbuf + 128] = (uint8_t)len;       /* DOS-LINE */
+    memcpy(vm->mem + vm->dosbuf + 129, line, len);
+    if (!batch) host_tty_attach(host, vm);
     return run_forth(vm);
 }

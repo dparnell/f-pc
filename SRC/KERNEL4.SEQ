@@ -222,6 +222,14 @@ VARIABLE TABSIZE    8 TABSIZE !
 \ Comment till the end of this line.
                 #TIB @ >IN ! ; IMMEDIATE
 
+BUILTIN (SAVE-IMAGE)    ( a n -- ior )  \ write a system image to host file a n
+
+: SAVE-IMAGE    ( | name -- )
+\ Save the system as an image that "fpc -i name" starts from. Images hold
+\ no machine code or host pointers (docs/kernel-design.md 7).
+                TRUE !> 1STCOLD         \ COLD re-initializes on load
+                BL WORD COUNT (SAVE-IMAGE) ABORT" Could not write the image" ;
+
 BUILTIN SET-CURSOR      ( n1 --- )      \ Set the cursor shape to value n1
 BUILTIN GET-CURSOR      ( --- n1 )      \ return n1 the shape of the cursor.
 

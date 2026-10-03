@@ -248,6 +248,11 @@ enum { E_ABORT = -1, E_ABORTQ = -2, E_DSTACK_OVER = -3, E_DSTACK_UNDER = -4,
        E_RANGE = -11, E_UNDEFINED = -13, E_COMPILE_ONLY = -14, E_INTERRUPT = -28,
        E_FILE = -38, E_BYE = -256 };
 
+/* image.c */
+int   image_save(vm_t *vm, const char *path);
+int   image_load(vm_t *vm, const char *path, char *err, size_t errsz);
+void  heap_free_block(vm_t *vm, ucell a);
+
 /* screen.c */
 void  screen_init(vm_t *vm);
 void  screen_tty(vm_t *vm, int c);
