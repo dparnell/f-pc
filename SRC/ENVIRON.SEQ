@@ -36,11 +36,9 @@ handle comspec$
                                 \ (the host's shell: COMSPEC, else SHELL)
                 " COMSPEC=" "envfind 0=
                 if      2drop " SHELL" "envfind 0=
-                then
-                if      comspec$ env>hcb
-                else    ." Couldn't find Command Spec."
-                        2drop comspec$ clr-hcb
-                then    ;
+                        if      2drop " /bin/sh"        \ the POSIX default
+                        then
+                then    comspec$ env>hcb ;
 
 : .comspec      ( --- ) comspec@ comspec$ count type ;
 
