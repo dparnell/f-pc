@@ -45,6 +45,20 @@ test: fpc
 	FPC_NOJIT=1 ../tools/runtests-native.sh
 	rm -f test.img
 
+# install under $(PREFIX): the tree goes to $(PREFIX)/lib/fpc (fpc finds
+# its sources in the directory above its executable); bin/fpc is the VM
+# (bare kernel by default), bin/f-pc starts the full system image
+PREFIX ?= /usr/local
+LIBDIR  = $(PREFIX)/lib/fpc
+install: fpc image
+	mkdir -p $(DESTDIR)$(LIBDIR)/bin $(DESTDIR)$(PREFIX)/bin
+	cp fpc $(DESTDIR)$(LIBDIR)/bin/fpc
+	cp ../F-PC.IMG $(DESTDIR)$(LIBDIR)/
+	cp -r ../SRC ../HLP ../TOOLS $(DESTDIR)$(LIBDIR)/
+	ln -sf ../lib/fpc/bin/fpc $(DESTDIR)$(PREFIX)/bin/fpc
+	printf '#!/bin/sh\nexec "%s/bin/fpc" -i "%s/F-PC.IMG" "$$@"\n' $(LIBDIR) $(LIBDIR) > $(DESTDIR)$(PREFIX)/bin/f-pc
+	chmod +x $(DESTDIR)$(PREFIX)/bin/f-pc
+
 clean:
 	rm -f fpc $(OBJS) test.img
 

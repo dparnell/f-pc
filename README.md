@@ -10,6 +10,7 @@ vm/fpc --sdl -i F-PC.IMG   # ... or in an SDL window
 vm/fpc - FLOAD MY.SEQ BYE  # scripted: the rest of the line is F-PC's command line
 make -C vm test            # regression tests; make -C vm test-ui needs pip install pyte
 make -C vm test-tools      # load each TOOLS/*.SEQ add-on
+make -C vm install PREFIX=~/.local   # then: f-pc (full system), fpc (bare kernel)
 ```
 
 Things to try:

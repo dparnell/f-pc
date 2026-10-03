@@ -13,6 +13,7 @@ vm/fpc              # bare kernel, loaded from SRC/KERNEL.SEQ (~6 ms)
 make -C vm test     # regression tests: from source, from an image, without JIT
 make -C vm test-ui  # UI scenarios in a pseudo-terminal (needs: pip install pyte)
 make -C vm test-tools  # load each of the 65 TOOLS/*.SEQ add-ons
+make -C vm install PREFIX=~/.local  # bin/f-pc (full system), bin/fpc; tree in lib/fpc
 ```
 
 Running `fpc`:
