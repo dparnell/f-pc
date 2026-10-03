@@ -1,4 +1,11 @@
 \ Division of unsigned quad by double.          08:45 31Oct87RLS
+\                                                       F-PC native port
+
+\ F-PC native port: UMD/MOD and UMD* were 8086 CODE words.  They are high
+\ level Forth now, on 32-bit cells: a double is 64 bits and a quad is four
+\ cells (128 bits), least significant cell deepest, most significant on
+\ top, as before.  The assembler label words below were only ever in
+\ comment blocks and are left as they were.
 
 \ Version for sequential files and forward assembler.  Use with Tom Zimmer's
 \   FF Forth.
@@ -113,60 +120,33 @@ comment;
 
 \ Unsigned quad divided by double.              10:46 13Oct87RLS
 
-CODE UMD/MOD   ( uquad uddiv -- udquot udmod )
-        CLEAR_LABELS
-        POP  CX
-        POP  DX
-        POP  AX
-        POP  BX
-        POP  DI
-        PUSH SI
-        PUSH BP
-        MOV  BP, SP
-        MOV  SI, 4 [BP]
-        MOV  BP, CX
-        CMP  BP, AX
-        JA   6 $
-        JNE  7 $
-        CMP  DX, BX
-        JA   6 $
- 7 $: ( INT  0)       \ Remove parens if you have a Divide Interrupt.
-        MOV  AX, DI
-        MOV  BX, SI
-        MOV  SI, # -1
-        MOV  DI, SI
-        JMP  8 $
- 6 $:   MOV  CX, # 32
-        CLC
- 1 $:   RCL  SI
-        RCL  DI
-        RCL  BX
-        RCL  AX
-        JAE  3 $
- 2 $:   SUB  BX, DX
-        SBB  AX, BP
-        STC
-        LOOP 1 $
-        JMP  5 $
- 3 $:   CMP  AX, BP
-        JB   4 $
-        JNE  2 $
-        CMP  BX, DX
-        JAE  2 $
- 4 $:   CLC
-        LOOP 1 $
- 5 $:   RCL  SI
-        RCL  DI
- 8 $:   MOV  CX, SI
-        POP  BP
-        POP  SI
-        POP  DX
-        PUSH BX
-        PUSH AX
-        PUSH CX
-        PUSH DI
-        NEXT
-        END-CODE
+\ F-PC native port: was CODE.  Restoring shift-and-subtract division,
+\ one quotient bit per step; the quotient bits are shifted into UMD-L as
+\ the dividend bits are shifted out.  If the quotient would not fit in a
+\ double, the quotient is -1 -1 and the "remainder" is the low double of
+\ the dividend, as the CODE version did.
+
+2VARIABLE UMD-L         \ low double of the dividend, becomes the quotient
+2VARIABLE UMD-R         \ high double of the dividend, becomes the remainder
+2VARIABLE UMD-D         \ divisor
+
+: UMD/MOD   ( uquad uddiv -- udmod udquot )
+        UMD-D 2!  UMD-R 2!  UMD-L 2!
+        UMD-R 2@ UMD-D 2@ DU< 0=
+        IF      UMD-L 2@ -1 -1 EXIT     \ overflow
+        THEN
+        64 0
+        DO      UMD-R 2@ DUP 0< >R D2*          \ shift R left ...
+                UMD-L 2@ NIP 0< IF  1 0 D+  THEN \ ... taking L's top bit
+                UMD-L 2@ D2* UMD-L 2!
+                R>
+                IF      TRUE                    \ R overflowed: R > D
+                ELSE    2DUP UMD-D 2@ DU< 0=
+                THEN
+                IF      UMD-D 2@ D-  UMD-L 2@ SWAP 1 OR SWAP UMD-L 2!
+                THEN    UMD-R 2!
+        LOOP
+        UMD-R 2@ UMD-L 2@ ;
 
 comment:
 
@@ -182,43 +162,20 @@ comment;
 
 \ Double precision Multiply.                    08:40 13Oct87RLS
 
-CODE UMD*   ( ud1 ud2 -- qprod )
-        POP  DI
-        POP  BX
-        POP  CX
-        POP  DX
-        SUB  SP, # 2            \ Get room for L.S. Product.
-        PUSH BP
-        PUSH SI
-        MOV  SI, DX
-        MOV  AX, BX
-        MUL  DX                 \ BD
-        MOV  BP, SP
-        MOV  4 [BP], AX         \ BDlo to stack.
-        XCHG SI, DX             \ BDhi to SI, D to DX
-        MOV  AX, DI
-        MUL  DX                 \ AD
-        ADD  SI, AX             \ BDhi + ADlo
-        ADC  DX, # 0            \ ADhi + carry
-        MOV  AX, BX
-        MOV  BX, DX
-        MUL  CX                 \ BC
-        XOR  BP, BP
-        ADD  SI, AX             \ BDhi + ADlo + BClo
-        ADC  BX, DX             \ ADhi + BChi
-        ADC  BP, # 0            \ Carry into MS part
-        MOV  AX, CX
-        MUL  DI                 \ AC
-        ADD  AX, BX             \ AClo + ADhi + BC hi
-        ADC  DX, BP             \ AChi + carrys
-        MOV  BX, SI
-        POP  SI
-        POP  BP
-        PUSH BX
-        PUSH AX
-        PUSH DX
-        NEXT
-        END-CODE
+\ F-PC native port: was CODE.  Four 32x32 partial products (UM*).
+2VARIABLE UMD-A                 \ ud1
+
+: UMD*   ( ud1 ud2 -- qprod )
+        2SWAP UMD-A 2!                          ( b0 b1 )
+        DUP UMD-A @ UM*  >R >R                  \ a1*b1 on the return stack
+        OVER UMD-A 2@ DROP UM* 2SWAP            ( a0*b0 b0 b1 )
+        UMD-A 2@ DROP UM*                       ( a0*b0 b0 a0*b1 )
+        ROT UMD-A @ UM*                         ( a0*b0 a0*b1 a1*b0 )
+        2>R ROT 0 D+                            ( p0 a0*b1+p1 )
+        2R> 2DUP 2>R D+                         ( p0 s )
+        2DUP 2R> DU< NEGATE >R                  \ carry out of the sum
+        R>                                      ( p0 q1 shi carry )
+        R> R> D+ ;                              ( q0 q1 q2 q3 )
 
 : D*    ( d1 d2 -- dprod )
      UMD* 2DROP ;

@@ -1,4 +1,5 @@
-\ From Dr. Dobb's Jr., Sept., 1988
+\ From Dr. Dobb's Jr., Sept., 1988                       F-PC native port
+\ (Needs FFLOAT.SEQ or SFLOAT.SEQ loaded first.  No changes were needed.)
 \ Translated to Forth by R. L. Smith
 
 5 CONSTANT NLOOPS

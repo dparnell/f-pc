@@ -1,0 +1,37 @@
+\ FLOAT.SEQ  Floating point via TOOLS\FFLOAT.SEQ on the VM's float core.
+FLOAD FFLOAT.SEQ
+DECIMAL
+CR .( input: ) 1.5E0 F. -2.25E0 F. 1E3 F. 12.5e-1 F. 3E F. FDEPTH .
+CR .( floats: ) FLOATS 2.5 F. 10. D. DOUBLES 7.5 D. FLOATS
+CR .( arith: ) 1.5 2.25 F+ F. 1.5 2.25 F- F. 1.5 2.25 F* F. 1.5 2.25 F/ F. 3.0 2.0 F\- F.
+CR .( E.: ) 1.0 E. 0.1 E. -123456.789 E.
+CR .( E.2: ) 6.02E23 E. 1.6E-19 E. 0.0 E.
+CR .( F.: ) 3 PLACES PI F. 1000000.5 F. -0.0049 F. 6 PLACES 2.0 FSQRT F.
+CR .( F.R: ) 4 PLACES PI 3 12 F.R 1E20 3 10 F.R -2.5 2 8 F.R 0.0 2 8 F.R
+CR .( E.R: ) PI 5 14 E.R -1.5E-7 3 12 E.R
+CR .( special: ) INFINITY F. INFINITY FNEGATE E. F0.0 F0.0 F/ F.
+CR .( stack: ) 1.0 2.0 3.0 FROT F. F. F. 1.0 2.0 3.0 F-ROT F. F. F.
+CR .( stack2: ) 1.0 2.0 3.0 4.0 3 FNSWAP F. F. F. F. 1.0 2.0 3.0 2 FPICK F. FDROP FDROP FDROP
+CR .( nip/tuck: ) 1.0 2.0 FNIP F. 1.0 2.0 FTUCK F. F. F. FDEPTH .
+CR .( compare: ) 1.0 2.0 F< . 2.0 1.0 F> . 1.0 1.0 F= . -1.0 F0< . 0.0 F0= . 2.0 F0> .
+CR .( minmax: ) 1.0 2.0 FMIN F. 1.0 2.0 FMAX F. -3.0 FABS F. 3.0 FNEGATE F.
+CR .( round: ) 2.5 FIX D. 2.7 INT D. -2.7 INT D. 2.1 RND>+INF D. 2.9 RND>-INF D. -2.5 ROUND D.
+CR .( convert: ) 1000000000000. FLOAT F. 7 IFLOAT F. 3.7 R>N . 1.0 F2* F. 1.0 F2/ F. 1.0 1/F F.
+CR .( powers: ) 2.0 10 F**N F. 2.0 -2 F**N F. 2.0 0 F**N F. 2.0 0.5 F** F. 3.0 2.0 3 F**N* F.
+CR .( trig: ) 6 PLACES PI/4 FSIN F. PI/4 FCOS F. PI/4 FTAN F. 1.0 FATAN F. 0.5 FASIN F. 0.5 FACOS F.
+CR .( degrees: ) DEGREES 30.0 FSIN F. 60.0 FCOS F. 90.0 FCOS F. 45.0 FTAN F. 1.0 FATAN F. RADIANS
+CR .( exp/log: ) 1.0 FEXP F. 100.0 FLOG F. 2.0 FLN F. 2.0 FALOG F. 1E-10 FEXPM1 E.
+CR .( hyper: ) 1.0 FSINH F. 1.0 FCOSH F. 0.5 FTANH F. 1.0 FASINH F. 2.0 FACOSH F. 0.5 FATANH F.
+CR .( var/const: ) FVARIABLE FV 2.75 FV F! FV F@ F. 1.25 FCONSTANT FC FC F.
+CR .( literal: ) : TF 1.5E0 2.5 F* [ 3.0 ] FLITERAL F+ ; TF F.
+CR .( farray: ) 3.0 2.0 1.0 3 FARRAY FA 0 FA F@ F. 2 FA F@ F. -1 FA .
+CR .( fmod: ) 7.5 2.0 FMOD F. 10.0 3.0 FMOD F.
+CR .( fmag: ) 12345.0 FMAG . FDROP 0.00123 FMAG . FDROP
+CR .( fexam: ) 1.0 FEXAM FDROP -0.0 FEXAM FDROP INFINITY FEXAM FDROP
+HEX . . . DECIMAL FDEPTH .
+CR .( fs: ) 1.0 -2.0 .FS FDROP FDROP FDEPTH .
+CR
+CR .( zcheck: ) 1.0E300 1.0E300 F* F. 1.0E-300 E. 123.456 E.
+CR .( fr.: ) 1.5 -2.5 FR. FDROP FDROP
+CR .( fperr: ) 800.0 FEXP FDROP 2.0 FACOS FDROP FDEPTH .
+CR .( input2: ) -.5 F. 1.E2 F. 2E-3 F. 1.5E+2 F. 10 . DOUBLES 1.5 D. FLOATS

@@ -1,4 +1,5 @@
 \\ FLTBUG.SEQ      Floating Point additions to DEBUG      by Bob Smith
+\\                                                       F-PC native port
 
 {
 
@@ -10,7 +11,8 @@ DEFINED ?H.S NIP
 #IF     \S
 #THEN
 
-        NEEDS FASSEM.SEQ
+\        NEEDS FASSEM.SEQ    \ F-PC native port: no 8087 assembler; the
+                            \ "NPU" is the VM float stack (FLTAUX.SEQ)
         NEEDS FLTAUX.SEQ
 
 WARNING OFF
@@ -51,8 +53,8 @@ previous
 
 cr cr
 .( The following keys will be activated when using DEBUG or DBG: ) cr cr
-.(       .    Print the contents of the floating point 80x87 stack ) cr cr
-.(       I    Display 80x87 Control word and Status word Information ) cr cr
-.(       >    Increase number of digits printed for 80x87 stack ) cr cr
-.(       <    Decrease number of digits printed for 80x87 stack ) cr cr
+.(       .    Print the contents of the floating point stack ) cr cr
+.(       I    Display the emulated 8087 Control and Status words ) cr cr
+.(       >    Increase number of digits printed for float stack ) cr cr
+.(       <    Decrease number of digits printed for float stack ) cr cr
 

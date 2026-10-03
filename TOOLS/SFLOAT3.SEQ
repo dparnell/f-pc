@@ -1,4 +1,4 @@
-\ SFLOAT3 - Floating Point Extensions
+\ SFLOAT3 - Floating Point Extensions                           F-PC native port
 \
 \ CR CR  .( Copyright 1988 by R. L. Smith )  CR
 \        .( Version 2.00-A )  CR
@@ -15,321 +15,77 @@
 \       sold for profit, please contact the author.
 \
 
+\ F-PC native port: the CODE words are high level Forth (see the notes at
+\ the top of SFLOAT1.SEQ).  GEXP1, AUXTAN and AUXATAN are computed with
+\ the VM's native doubles; the Y**2, FRACT* and GEXP1- labels are gone.
+\ The tables are lists of 16-bit words (W,), as the 6-byte numbers are.
+\ Triple numbers are three 32-bit cells.  "n FSP @ +!" (add n to the
+\ exponent of the top number) is "n FSP @ W+!": a 32-bit +! would carry
+\ into the significand when the 16-bit field wraps.
+
 DEFINED NOFLOATING NIP #IF NOFLOATING #THEN
 
 ANEW FEXPSRC
 \ LOADED,
-PREFIX
+\ PREFIX                \ F-PC native port: no 8086 assembler
 HEX
 ALSO HIDDEN DEFINITIONS
+
+: W,   ( n -- )   HERE W! 2 ALLOT ;      \ F-PC native port: 16-bit comma
 
 CREATE 1GEXPTAB
 
         \ Table of (1 - e^(k/16))  for k <= 0
-        3FFE , FE8C , DC02 ,  3FFE , EDF2 , 36CB ,  3FFE , DC45 , 6CF4 ,
-        3FFE , C974 , D039 ,  3FFE , B56D , 8E6D ,  3FFE , A01B , 9EA1 ,
-        3FFE , 8969 , AD21 ,  3FFD , E282 , 0C2A ,  3FFD , AF12 , FDA8 ,
-        3FFC , F0A5 , 76C5 ,  3FFB , F82A , 021C ,  0000 , 0000 , 0000 ,
+        3FFE W, FE8C W, DC02 W,  3FFE W, EDF2 W, 36CB W,  3FFE W, DC45 W, 6CF4 W,
+        3FFE W, C974 W, D039 W,  3FFE W, B56D W, 8E6D W,  3FFE W, A01B W, 9EA1 W,
+        3FFE W, 8969 W, AD21 W,  3FFD W, E282 W, 0C2A W,  3FFD W, AF12 W, FDA8 W,
+        3FFC W, F0A5 W, 76C5 W,  3FFB W, F82A W, 021C W,  0000 W, 0000 W, 0000 W,
 
         \ Table of (e^(k/16) - 1)  for k >= 0
-        3FFC , 8415 , ABBF ,  3FFD , 8858 , 116E ,  3FFD , D32E , 05C3 ,
-        3FFE , 916B , C788 ,  3FFE , BBD2 , 2EC1 ,  3FFE , E8F4 , A27B ,
-        3FFF , 8C80 , 2478 ,  3FFF , A612 , 98E2 ,  3FFF , C14B , 4312 ,
-        3FFF , DE45 , 5DF8 ,  3FFF , FD1D , E618 ,
+        3FFC W, 8415 W, ABBF W,  3FFD W, 8858 W, 116E W,  3FFD W, D32E W, 05C3 W,
+        3FFE W, 916B W, C788 W,  3FFE W, BBD2 W, 2EC1 W,  3FFE W, E8F4 W, A27B W,
+        3FFF W, 8C80 W, 2478 W,  3FFF W, A612 W, 98E2 W,  3FFF W, C14B W, 4312 W,
+        3FFF W, DE45 W, 5DF8 W,  3FFF W, FD1D W, E618 W,
 
 42 1GEXPTAB + CONSTANT GEXPTAB    \ Points to zero point of table.
 
-LABEL Y**2                      \ Argument in (BX,CX)
-        CLEAR_LABELS
-                                \ Start calculation of y^2
-        MOV     AX, BX
-        MUL     CX              \ A*B
-        XCHG    AX, CX          \ ABL -> CX
-        MOV     AL, AH
-        MUL     AL              \ B^2  (note 8 bit multiply)
-        SHR     AX
-        ADD     CX, AX
-        ADC     DX, # 0         \ AB + (B^2)/2
-        XCHG    DX, BX          \ A -> DX,  AB -> (BX,CX)
-        MOV     AX, DX
-        MUL     AX              \ A^2
-        SHL     CX              \ 2AB + B^2
-        RCL     BX
-        ADC     DX, # 0
-        ADD     BX, AX
-        ADC     DX, # 0
-        SHL     CX              \ Round
-        ADC     BX, # 0
-        ADC     DX, # 0
-        MOV     CX, BX
-        MOV     BX, DX          \ y^2 -> (BX,CX)
-        RET
-        END-CODE
+\ F-PC native port: the labels Y**2, FRACT* and GEXP1- (pieces of the
+\ 8086 GEXP1) are gone.
 
-LABEL FRACT*
-\ 32 bit by 32 bit multiply.  Let  (DI,BP) = (A,B), and (BX,CX) = (C,D)
-        MOV     AX, BP
-        MUL     CX              \ B*D
-        MOV     AX, CX          \ D
-        MOV     CX, DX          \ BDhi
-        MUL     DI              \ A*D
-        ADD     CX, AX          \ BDhi + ADlo
-        ADC     DX, # 0         \ ADhi + carry1 , no carry out in this case.
-        XCHG    DX, BP          \ B -> DX,  ADhi -> BP
-        MOV     AX, BX          \ C
-        MUL     DX              \ B*C
-        ADD     CX, AX          \ BDhi + ADlo + BClo
-        ADC     BP, # 0         \ ADhi + carry1 + carry2
-        MOV     AX, DI          \ A
-        XCHG    BX, DX          \ BChi -> CX, C -> DX
-        MUL     DX              \ A*C
-        ADD     BX, AX          \ BChi + AClo
-        ADC     DX, # 0         \ AChi + carry
-        ADD     BX, BP          \ BChi + AClo + ADhi + previous carries.
-        ADC     DX, # 0         \ AChi + carry -> Product high part.
-        RET                     \ Product in (DX,BX)
-        END-CODE
 
-LABEL GEXP1-                     \ Negative argument case
-        CLEAR_LABELS
-\ On entry, y = x*2^4 = (BX,CX), x = (SI,(SP)), x*(2/45) in (DX,AX)
-        MOV     BP, # 4444
-        SUB     BP, AX
-        MOV     AX, # 4444      \ 4/15
-        SBB     AX, DX          \ ((4/15) - (2/45)*x)
-        MUL     SI              \ * x
-        MOV     BP, # 5555
-        MOV     DI, # 5555
-        SUB     DI, AX
-        SBB     BP, DX          \ (1/3) - x * ((4/15) - (2/45)*x)
-        MOV     DX, BP          \ Note an implied addition by 1
-        MOV     AX, DI          \ 17 bit multiply
-        SHR     DI
-        OR      BH, BH
-        JS      1 $
-        ADD     DI, AX
-1 $:    RCR     DI
-        MOV     AX, BX          \ yhi
-        MUL     DX              \ * y
-        ADD     AX, DI
-        ADC     DX, # 0
-        XOR     DI, DI
-        ADD     AX, CX          \ + y
-        ADC     DX, BX          \ Product in (DI,DX,AX)
-        ADC     DI, # 0
-        MOV     BP, # 5555
-        MOV     AX, # 0055
-        SUB     BP, DX
-        SBB     AX, DI          \ ((1/3)*(2^-8) - y*(2^-16)*prev
-        MOV     DI, AX
-        CALL    Y**2
-        CALL    FRACT*
-        POP     AX              \ xlo
-        SUB     AX, BX
-        SBB     SI, DX          \ x - prev
-        SHR     SI              \ Shift right by 1
-        RCR     AX
-        ADC     AX, # 0         \ Round
-        ADC     SI, # 0
-        NOT     SI              \ Subtract from 1 by negating result.
-        NEG     AX
-        CMC
-        ADC     SI, # 0
-        MOV     DX, SI
-        POP     SI              \ Restore SI and BP
-        POP     BP
-        MOV     BX, FSP
-        MOV     4 [BX], AX      \ Push result
-        MOV     2 [BX], DX
-        MOV     AX, # 3FFF      \ Exponent of result.
-        MOV     0 [BX], AX
-        NEXT
-        END-CODE
 
-CODE GEXP1   ( F: r1 -- r2 )  \  |f1| < 2^-4  \  GEXP1 = (exp(r1) - r1) / r1 .
-        CLEAR_LABELS
-        MOV     BX, FSP
-        MOV     CX, 0 [BX]      \ Sign and biased exponent.
-        MOV     DX, 4 [BX]      \ LS part of r1
-        MOV     BX, 2 [BX]      \ MS part of r1
-        MOV     DI, CX          \ Save sign
-        AND     CX, # 7FFF      \ Mask off sign bit
-        SUB     CX, # 3FFB      \ Get unbiased exponent + 4
-        CMP     CX, # -8
-        JG      3 $
-        CMP     CX, # -20
-        JG      1 $
-        XOR     AX, AX          \ Unbiased exponent <= -36
-        MOV     DX, # 4000
-        MOV     CX, # 8000
-        MOV     BX, FSP
-        MOV     4 [BX], AX
-        MOV     2 [BX], CX
-        MOV     0 [BX], DX
-        NEXT
-
-1 $:    CMP     CX, # -10
-        JG      2 $
-        MOV     DX, BX          \ Shift right by 16
-        XOR     BX, BX
-        ADD     CX, # 10        \ Adjust exponent
-2 $:    CMP     CX, # -8
-        JG      3 $
-        MOV     DL, DH          \ Shift right by 8.
-        MOV     DH, BL
-        MOV     BL, BH
-        XOR     BH, BH
-        ADD     CX, # 8
-3 $:    PUSH    BP
-        PUSH    SI
-        OR      CX, CX
-        JZ      5 $
-        NEG     CX
-4 $:    SHR     BX
-        RCR     DX
-        LOOP    4 $
-        ADC     DX, # 0         \ Round
-        ADC     BX, # 0
-5 $:    MOV     CX, DX          \ y = x*(2^4) in (BX,CX)
-        MOV     SI, BX
-        SHR     SI              \ Shift right by 4.
-        RCR     DX
-        SHR     SI
-        RCR     DX
-        SHR     SI
-        RCR     DX
-        SHR     SI
-        RCR     DX
-        ADC     DX, # 0
-        ADC     SI, # 0         \ Round
-        PUSH    DX              \ x in (SI,(SP))
-        MOV     AX, # 0B61      \ 2/45
-        MUL     SI              \ * x
-        OR      DI, DI
-        JNS     6 $             \ Jump if r1 is positive.
-        JMP     GEXP1-          \ Jump to negative case.
-6 $:    ADD     AX, # 4444
-        ADC     DX, # 4444      \ + 4/15
-        MOV     AX, SI
-        MUL     DX              \ * x
-        ADD     AX, # 5555
-        ADC     DX, # 5555      \ + 1/3, double, implied 1+
-        MOV     DI, AX          \ Perform a 17 bit multiply.
-        SHR     DI
-        OR      BH, BH
-        JNS     7 $
-        ADD     DI, AX
-7 $:    RCR     DI
-        MOV     AX, BX          \ yhi
-        MUL     DX              \ * y
-        ADD     AX, DI
-        ADC     DX, # 0
-        XOR     DI, DI
-        ADD     AX, CX
-        ADC     DX, BX
-        ADC     DI, # 0
-        ADD     DX, # 5555
-        ADC     DI, # 0055      \ + (1/3)*2^-8
-        MOV     BP, DX
-        CALL    Y**2
-        CALL    FRACT*
-        POP     AX              \ xlo
-        ADD     AX, BX
-        ADC     DX, SI          \ + x
-        SHR     DX              \ Shift right by 2
-        RCR     AX
-        SHR     DX
-        RCR     AX
-        ADC     AX, # 0         \ Round
-        ADC     DX, # 8000      \ + 1
-        POP     SI              \ Restore SI and BP
-        POP     BP
-        MOV     BX, FSP
-        MOV     4 [BX], AX      \ Push result
-        MOV     2 [BX], DX
-        MOV     CX, # 4000      \ Exponent of result.
-        MOV     0 [BX], CX
-        NEXT
-        END-CODE
+: GEXP1   ( F: r1 -- r2 )  \  |f1| < 2^-4  \  GEXP1 = (exp(r1) - 1) / r1 .
+        NF-GEXP1 ;      \ F-PC native port: in double precision (SFLOAT1)
 
 PREVIOUS DEFINITIONS
 
-CODE FNORMALIZE   ( F: r1 -- r2 )
-        CLEAR_LABELS
-        MOV     BX, FSP
-        MOV     CX, 0 [BX]      \ SX1
-        MOV     AX, 2 [BX]      \ FH1
-        OR      AX, AX          \ Check if already normalized
-        JS      3 $             \ If so, just return.
-        JNZ     4 $             \ If high part non-zero, shift less than 16
-        MOV     AX, 4 [BX]      \ FL1  Shift left by 16 by waving a hand.
-        XOR     DX, DX
-        OR      AX, AX          \ Check if argument is all zero.
-        JZ      2 $
-        SUB     CX, # 10        \ Reduce exponent to compensate.
-        JO      1 $             \ Jump if we underflowed
-        OR      AX, AX
-        JS      7 $
-        JMP     5 $
+: FNORMALIZE   ( F: r1 -- r2 )            \ F-PC native port: was CODE
+        [ ALSO HIDDEN ]
+        FSP @ (SF@) OVER 0< IF  2DROP EXIT  THEN        \ already normal
+        OVER 0= IF  2DROP 0 0 FSP @ (SF!) EXIT  THEN    \ zero
+        DUP 8000 AND >R 7FFF AND
+        BEGIN   OVER 0< 0=
+        WHILE   1- SWAP 2* SWAP
+        REPEAT
+        DUP 1 < IF  2DROP R> DROP 0 0  ELSE  R> OR  THEN  \ Underflow case.
+        FSP @ (SF!) ;
+PREVIOUS
 
-1 $:    XOR     AX, AX          \ Underflow case.  Set results to 0.
-        MOV     4 [BX], AX
-        MOV     2 [BX], AX
-2 $:    MOV     0 [BX], AX
-3 $:    NEXT
-
-4 $:    MOV     DX, 4 [BX]
-5 $:    OR      AH, AH
-        JNZ     6 $
-        SUB     CX, # 8
-        MOV     AH, AL
-        MOV     AL, DH
-        XOR     DL, DL
-        OR      AH, AH
-        JS      7 $
-6 $:    DEC     CX
-        SHL     DX
-        RCL     AX
-        JNO     6 $
-7 $:    MOV     4 [BX], DX
-        MOV     2 [BX], AX
-        MOV     0 [BX], CX
-        NEXT
-
-        END-CODE
-
-CODE >INTFRACT   ( F: r1 -- ur2 ; -- int )   \ r2 may not be normalized.
-        CLEAR_LABELS
-        MOV     BX, FSP
-        MOV     AX, 0 [BX]      \ Sign + exponent
-        MOV     DX, 4 [BX]      \ LS part
-        MOV     BX, 2 [BX]      \ MS part
-        XOR     DI, DI          \ Integer part
-        MOV     CX, AX
-        AND     CX, # 7FFF      \ Strip sign from exponent
-        SUB     CX, # 3FFF      \ Calculate true exponent
-        JLE     2 $             \ Jump if no shifting required
-1 $:    SHL     DX              \ Left shift loop
-        RCL     BX
-        RCL     DI
-        LOOP    1 $
-        OR      AX, # 3FFF      \ Set resultant exponent to 3FFF
-        AND     AX, # BFFF      \ But keep sign.
-        JNS     2 $             \ Jump if positive sign
-        NEG     DI              \ Otherwise negate integer part
-2 $:    PUSH    DI
-        MOV     CX, BX
-        MOV     BX, FSP
-        MOV     4 [BX], DX      \ Push fractional part of real
-        MOV     2 [BX], CX
-        OR      DX, CX
-        JZ      3 $             \ Jump if fractional part is zero
-        MOV     0 [BX], AX      \ Else push exponent and integer part
-        NEXT                    \ And exit
-
-3 $:    MOV     0 [BX], CX      \ If fractional part is zero, push 0 exponent
-        NEXT
-        END-CODE
+: >INTFRACT   ( F: r1 -- ur2 ; -- int )   \ r2 may not be normalized.
+        [ ALSO HIDDEN ]                 \ F-PC native port: was CODE.  int
+        FSP @ (SF@) DUP 7FFF AND 3FFF - \ is a 32-bit cell (it was 16 bits)
+        DUP 1 <
+        IF      DROP 0                          \ no shifting required
+        ELSE    >R 3FFF OR BFFF AND SWAP        \ exponent 3FFF, keep sign
+                R@ 20 <
+                IF      DUP 20 R@ - RSHIFT SWAP R> LSHIFT
+                ELSE    R> 20 - LSHIFT 0
+                THEN    SWAP >R SWAP R>         ( frac sx int )
+                OVER 8000 AND IF  NEGATE  THEN  \ negate integer part
+        THEN    >R
+        OVER 0= IF  DROP 0  THEN        \ If fractional part is zero, 0 exponent
+        FSP @ (SF!) R> ;
+PREVIOUS
 
 : FLOOR   ( F: r -- ; -- n )
         >INTFRACT FPOP DUP
@@ -363,8 +119,8 @@ ALSO HIDDEN DEFINITIONS
         IF   GEXPTAB@ FOVER FOVER F* F+ F+  THEN ;
 
 : GEXP0   ( F: r1 -- r2 ; -- n )
-        4 FSP @ +!
-        >INTFRACT -4 FSP @ +!
+        4 FSP @ W+!
+        >INTFRACT -4 FSP @ W+!
         FNORMALIZE FDUP GEXP1 F* ;
 
 : GEXPLN2   ( F: r1 -- r2 ; -- n )
@@ -376,16 +132,16 @@ PREVIOUS DEFINITIONS
         [ ALSO HIDDEN ]
         FPSEXP 0<
         IF      FDUP FLN2 FNEGATE F<=
-                IF      F/LN2 FPSEXP BFF2 <
+                IF      F/LN2 FPSEXP -400E <    \ F-PC native port: BFF2
                         IF      FDROP F0.0 EXIT   THEN
-                        >INTFRACT GEXPLN2 AUX- F1.0+ FSP @ +!
+                        >INTFRACT GEXPLN2 AUX- F1.0+ FSP @ W+!
                 ELSE    GEXP0 AUX- F1.0+
                 THEN
         ELSE    FDUP FLN2 F>=
                 IF      F/LN2 FPSEXP 400D >
                         IF      FDROP -1 -1 7FFF FPUSH
                                 [ LAST @ NAME> ] LITERAL 10 FPERR EXIT
-                        ELSE    >INTFRACT GEXPLN2 AUX+ F1.0+ FSP @ +!
+                        ELSE    >INTFRACT GEXPLN2 AUX+ F1.0+ FSP @ W+!
                         THEN
                 ELSE    GEXP0 AUX+ F1.0+
                 THEN
@@ -412,9 +168,9 @@ ALSO HIDDEN DEFINITIONS
 : FEXP-1    ( F: r1 -- r2 )                \ ( e^x - 1 )
         FPSEXP 0<
         IF      FDUP FLN2 FNEGATE F<=
-                IF      F/LN2 FPSEXP BFF2 <
+                IF      F/LN2 FPSEXP -400E <    \ F-PC native port: BFF2
                         IF      FDROP F1.0 EXIT   THEN
-                        >INTFRACT GEXPLN2 AUX- DUP FSP @ +!
+                        >INTFRACT GEXPLN2 AUX- DUP FSP @ W+!
                         F2**N-1 F+
                 ELSE    GEXP0 AUX-
                 THEN
@@ -423,7 +179,7 @@ ALSO HIDDEN DEFINITIONS
                         IF      FDROP -1 -1 7FFF FPUSH
                                 [ LAST @ NAME> ] LITERAL 10 FPERR EXIT
                         ELSE    >INTFRACT GEXPLN2
-                                AUX+ DUP FSP @ +!
+                                AUX+ DUP FSP @ W+!
                                 F2**N-1 F+
                         THEN
                 ELSE    GEXP0 AUX+
@@ -431,10 +187,10 @@ ALSO HIDDEN DEFINITIONS
         THEN ;
 
 : FSINH1   ( F: r1 -- r2 )
-        FEXP-1 FDUP FDUP F1.0+ F/ F+ -1 FSP @ +! ;
+        FEXP-1 FDUP FDUP F1.0+ F/ F+ -1 FSP @ W+! ;
 
 : FTANH1   ( F: r1 -- r2 )
-        1 FSP @ +!
+        1 FSP @ W+!
         FEXP-1 FDUP 0 8000 4001 FPUSH F+ F/ ;
 
 PREVIOUS DEFINITIONS
@@ -448,7 +204,7 @@ PREVIOUS DEFINITIONS
         PREVIOUS
 
 : FCOSH   ( F: r1 -- r2 )
-        FABS FEXP F1.0 FOVER F/ F+ -1 FSP @ +! ;
+        FABS FEXP F1.0 FOVER F/ F+ -1 FSP @ W+! ;
 
 : FTANH   ( F: r1 -- r2 )
         [ ALSO HIDDEN ]
@@ -639,57 +395,36 @@ HEX
 : FACOSH   ( F: r1 -- r2 )
         FDUP FABS F1.0 F<
         IF      FDROP F0.0 [ LAST @ NAME> ] LITERAL 10 FPERR
-        ELSE    F1.0 FOVER FDUP F* F- FSQRT F+ FLN
-        THEN ;
+        ELSE    FDUP FDUP F* F1.0 F- FSQRT F+ FLN
+        THEN ;  \ F-PC native port: was F1.0 FOVER FDUP F* F-, sqrt(1-x^2)
 
 : FATANH   ( F: r1 -- r2 )
         FDUP FABS F1.0 F<
-        IF      F1.0 FOVER F+ FSWAP F1.0 F- F/ FLN 1 -
+        IF      F1.0 FOVER F+ FSWAP F1.0 FSWAP F- F/ FLN -1 FSP @ W+!
+        \ F-PC native port: was F1.0 F- (x-1) and 1 - (on the data stack)
         ELSE
                 FPSEXP FDROP FINFINITY 0<
                 IF    FNEGATE  THEN
                 [ LAST @ NAME> ] LITERAL 10 FPERR
         THEN ;
 
-CODE UMT*   ( ut1 n -- ut2 )      \ Multiply a triple number by a single.
-        POP     DI
-        POP     CX
-        POP     BX
-        POP     AX
-        MUL     DI
-        PUSH    AX              \ Lowest part of result.
-        MOV     AX, BX
-        MOV     BX, DX
-        MUL     DI
-        ADD     BX, AX
-        ADC     DX, # 0
-        PUSH    BX              \ Middle part of product.
-        MOV     BX, DX
-        MOV     AX, CX
-        MUL     DI
-        ADD     AX, BX
-        PUSH    AX              \ Most significant part of product.
-        NEXT
-        END-CODE
+\ F-PC native port: UMT* and TS+ were CODE; 32-bit cells.
+VARIABLE T-N
 
-CODE TS+   ( ut1 n -- ut2 )
-        POP     AX
-        POP     BX
-        POP     CX
-        POP     DX
-        ADD     DX, AX
-        ADC     CX, # 0
-        ADC     BX, # 0
-        PUSH    DX
-        PUSH    CX
-        PUSH    BX
-        NEXT
-        END-CODE
+: UMT*   ( ut1 n -- ut2 )      \ Multiply a triple number by a single.
+        T-N ! >R >R  T-N @ UM*          ( p0 c0 )
+        R> T-N @ UM* ROT 0 D+           ( p0 p1 c1 )
+        R> T-N @ * + ;
+
+: TS+   ( ut1 n -- ut2 )
+        >R ROT R> 0 TUCK D+             ( mid hi lo' c )
+        SWAP >R SWAP >R 0 TUCK D+       ( mid' c2 )
+        R> + R> ROT ROT ;
 
 : TCONVERT   ( ut1 adr1 -- ut2 adr2 )
         BEGIN   1+ DUP >R C@ BASE @ DIGIT
         WHILE
-                OVER 1000 U<        \ Check for very large numbers
+                OVER 1000000 U<     \ Check for very large numbers (port: 32-bit cells)
                 IF
                         >R BASE @ UMT* R> TS+
                         DOUBLE?  IF DPL INCR  THEN
@@ -697,75 +432,24 @@ CODE TS+   ( ut1 n -- ut2 )
                 THEN  R>
         REPEAT  DROP R> ;
 
-CODE TFLOAT   ( F: -- r ; ut -- )   \ Float triple precision unsigned number
-        CLEAR_LABELS
-        POP     AX              \ MS part
-        POP     BX              \ Mid part
-        POP     DX              \ LS part
-        MOV     CX, # 402F      \ Initial exponent.
-        OR      AX, AX          \ See if we can shift 16 bits at a time.
-        JNZ     1 $
-        SUB     CX, # 10        \ Yes.  Adjust exponent.
-        MOV     AX, BX          \ Shift left by 16 bits
-        MOV     BX, DX
-        XOR     DX, DX          \ Zero out LS part.
-        OR      AX, AX          \ Can we shift another 16 bits?
-        JNZ     1 $
-        SUB     CX, # 10        \ Adjust exponent again
-        MOV     AX, BX          \ Shift left another 16 bits
-        XOR     BX, BX          \ Clear middle part
-        OR      AX, AX          \ Check for initial value of 0.
-        JZ      9 $
-1 $:    OR      AH, AH          \ See if we can shift by 8 bits
-        JNZ     2 $
-        SUB     CX, # 8         \ Yes.
-        MOV     AH, AL
-        MOV     AL, BH
-        MOV     BH, BL
-        MOV     BL, DH
-        MOV     DH, DL
-        XOR     DL, DL
-        OR      AH, AH          \ Test MS bit
-2 $:    JS      4 $
-3 $:    DEC     CX              \ MS bit not set, so shift left by 1
-        SHL     DX, # 1
-        RCL     BX, # 1
-        RCL     AX, # 1
-        JNO     3 $             \ Overflow indicates MS bit set.
-4 $:    ADD     DX, # 8000      \ Begin rounding process
-        JC      6 $             \ Jump if rounding needed.
-5 $:    MOV     DI, BX
-        MOV     BX, FSP
-        SUB     BX, # 6
-        MOV     FSP BX
-        MOV     4 [BX], DI      \ Push result on floating point stack.
-        MOV     2 [BX], AX
-        MOV     0 [BX], CX
-        NEXT
+: (T2*)   ( ut -- ut*2 )         \ F-PC native port
+        2* OVER 0< 1 AND OR >R  2* OVER 0< 1 AND OR >R  2* R> R> ;
 
-6 $:    JZ      8 $             \ Rounding.  Jump for round to even case.
-        ADC     BX, # 0
-        ADC     AX, # 0
-        JNC     5 $             \ Jump if no carry out
-7 $:    RCR     AX, # 1         \ Shift right
-        RCR     BX, # 1
-        INC     CX              \ Adjust exponent
-        JMP     5 $
-
-8 $:    ADC     BX, # 0
-        ADC     AX, # 0
-        JC      7 $
-        AND     BX, # FFFE
-        JMP     5 $
-
-9 $:    MOV     BX, FSP
-        SUB     BX, # 6
-        MOV     FSP BX
-        MOV     4 [BX], AX      \ Zero result
-        MOV     2 [BX], AX
-        MOV     0 [BX], AX
-        NEXT
-        END-CODE
+: TFLOAT   ( F: -- r ; ut -- )   \ Float triple precision unsigned number
+        [ ALSO HIDDEN ]                 \ F-PC native port: was CODE
+        2 PICK 2 PICK OR OVER OR 0=
+        IF      DROP 2DROP 0 0 (SFPUSH) EXIT    \ Zero result
+        THEN
+        405F >R                         \ Initial exponent.
+        BEGIN   DUP 0=                  \ shift 32 bits at a time
+        WHILE   DROP 0 ROT ROT  R> 20 - >R
+        REPEAT
+        BEGIN   DUP 0< 0=               \ then bit by bit
+        WHILE   (T2*)  R> 1- >R
+        REPEAT
+        ROT 0<> 1 AND ROT OR SWAP       \ sticky bit
+        R> 0 (RPACK) ;                  \ round to nearest even
+PREVIOUS
 
 VARIABLE FPT  0 FPT !
 
@@ -856,18 +540,9 @@ VARIABLE FLTS   0 FLTS !
 : #?    ( number --- val flag )
         BL WORD FNUMBER NEGATE ;        \  07/06/89 TJZ NEGATE ADDED
 
-CODE (FLIT)   ( F: -- r )
-        MOV     BX, FSP
-        SUB     BX, # 6
-        MOV     FSP BX
-        LODSW   ES:
-        MOV     0 [BX], AX
-        LODSW   ES:
-        MOV     2 [BX], AX
-        LODSW   ES:
-        MOV     4 [BX], AX
-        NEXT
-        END-CODE
+: (FLIT)   ( F: -- r )      \ F-PC native port: the 3 cells follow
+        R> DUP 3 CELLS + >R             \ in the token list
+        DUP @ SWAP CELL+ DUP @ SWAP CELL+ @ SWAP ROT FPUSH ;
 
 : FLITERAL    ( F: r -- )
         COMPILE (FLIT) FPOP X, X, X, ;  IMMEDIATE
@@ -879,7 +554,7 @@ ALSO HIDDEN DEFINITIONS
 
 : <.FSTAT>   ( -- )
         #OUT @ #LINE @ >R >R  ATTRIB C@ >R  BASE @ >R
-        DECIMAL 74 0 AT FDEPTHB 6 / DUP
+        DECIMAL COLS 6 - 0 AT FDEPTHB 6 / DUP   \ F-PC native port: COLS
         IF      >ATTRIB4 ."  {" (U.) TYPE ." }" 2 SPACES >ATTRIB1
         ELSE    >ATTRIB1 DROP ."  {0}  "
         THEN
@@ -950,103 +625,25 @@ PREVIOUS DEFINITIONS
         PREVIOUS
 
 ALSO HIDDEN DEFINITIONS
-CODE AUXTAN  ( F: r1 -- ur2 )       \ ur2 is tan(x) - x , |x| < 2^-4
-        CLEAR_LABELS
-        MOV     BX, FSP
-        MOV     CX, 0 [BX]      \ Sign and biased exponent.
-        MOV     DX, 4 [BX]      \ LS part of r1
-        MOV     BX, 2 [BX]      \ MS part of r1
-        MOV     DI, CX          \ Save sign
-        AND     DI, # 8000
-        ADD     DI, # 3FF2      \ Generate Sign and Exponent of result.
-        AND     CX, # 7FFF      \ Mask off sign bit
-        SUB     CX, # 3FFB      \ Get unbiased exponent + 4
-        PUSH    BP
-        PUSH    SI
-        PUSH    DI
-        CMP     CX, # -8
-        JG      3 $
-        CMP     CX, # -10
-        JG      2 $
-        XOR     CX, CX
-        ADD     SP, # 6         \ Don't bother popping the stack.
-        MOV     BX, FSP
-        MOV     4 [BX], CX
-        MOV     2 [BX], CX
-        MOV     0 [BX], CX
-        NEXT
-
-2 $:    MOV     AH, DL          \ Shift right by 8
-        MOV     DL, DH
-        MOV     DH, BL
-        MOV     BL, BH
-        XOR     BH, BH
-        ADD     CX, # 8
-        JNZ     3 $             \ Jump if we need more shifting
-        ADD     AH, # 80
-        JMP     5 $
-
-3 $:    OR      CX, CX
-        JZ      6 $
-        NEG     CX
-4 $:    SHR     BX
-        RCR     DX
-        LOOP    4 $
-5 $:    ADC     DX, # 0         \ Round
-        ADC     BX, # 0
-6 $:    MOV     CX, DX          \ y = x*(2^4) in (BX,CX)
-        MOV     SI, BX
-        PUSH    DX              \ y in (SI,(SP))
-        CALL    Y**2            \ y^2 in (BX,CX)
-        MOV     AL, # 37        \ 68/315
-        MUL     BH              \ (y^2)*(2^-8)*(68/315)
-        MOV     AL, AH
-        XOR     AH, AH
-        ADD     AX, # 8889      \ + (8/15)
-        MUL     BX              \ * (y^2)
-        MOV     AL, AH          \ Shift right by 8
-        MOV     AH, DL
-        MOV     DL, DH
-        XOR     DH, DH
-        SHR     DX              \ /2
-        RCR     AX
-        ADD     AX, # AAAB      \ + (2/3)
-        ADC     DX, # AAAA
-        MOV     BP, AX
-        MOV     DI, DX          \ Partial result in (DI,BP)
-        CALL    FRACT*          \ *(y^2).  Result in (DX,BX)
-        MOV     DI, DX
-        MOV     BP, BX
-        MOV     BX, SI
-        POP     CX
-        CALL    FRACT*          \ *y.  Result in (DX,BX)
-        POP     AX              \ SX
-        POP     SI
-        POP     BP
-        MOV     DI, BX
-        MOV     BX, FSP
-        MOV     4 [BX], DI
-        MOV     2 [BX], DX
-        MOV     0 [BX], AX
-        NEXT
-        END-CODE
+: AUXTAN  ( F: r1 -- ur2 )       \ ur2 is tan(x) - x , |x| < 2^-4
+        NF-AUXTAN ;     \ F-PC native port: in double precision (SFLOAT1)
 
 CREATE TANTAB           \ Table of tan(i/16)  for i = 0 to 12.
-        0000 , 0000 , 0000 ,   3FFC , 802A , BBC3 ,   3FFD , 80AB , BD79 ,
-        3FFD , C248 , 3789 ,   3FFE , 82BC , 2D22 ,   3FFE , A56B , 8F6B ,
-        3FFE , C989 , 6C2D ,   3FFE , EF7A , 4F55 ,   3FFF , 8BDA , 7AE0 ,
-        3FFF , A164 , 5D07 ,   3FFF , B8B3 , 344F ,   3FFF , D236 , 595F ,
-        3FFF , EE7D , 1B09 ,
+        0000 W, 0000 W, 0000 W,   3FFC W, 802A W, BBC3 W,   3FFD W, 80AB W, BD79 W,
+        3FFD W, C248 W, 3789 W,   3FFE W, 82BC W, 2D22 W,   3FFE W, A56B W, 8F6B W,
+        3FFE W, C989 W, 6C2D W,   3FFE W, EF7A W, 4F55 W,   3FFF W, 8BDA W, 7AE0 W,
+        3FFF W, A164 W, 5D07 W,   3FFF W, B8B3 W, 344F W,   3FFF W, D236 W, 595F W,
+        3FFF W, EE7D W, 1B09 W,
 
 : GTAN0   ( F: r1 -- r2 r3 )       \ The tangent is the ratio of r2 to r3.
-        4 FSP @ +!
+        4 FSP @ W+!
         >INTFRACT 6 * TANTAB + >R
-        -4 FSP @ +!
+        -4 FSP @ W+!
         FNORMALIZE FDUP AUXTAN FNORMALIZE F+ FDUP R@ F@ F+
         FSWAP R> F@ F* F1.0 F\- ;
 
 : GTAN1   ( F: r1 -- r2 r3 ; flag )
-        PI -2 FSP @ +!  ( pi/4)
+        PI -2 FSP @ W+!  ( pi/4)
         F/PREM FPOP 401F =
         IF    DROP >R FNORMALIZE GTAN0 R@ 1 AND
               IF    FOVER FOVER R> 2 AND
@@ -1083,9 +680,9 @@ PREVIOUS DEFINITIONS
 
 : FSIN   ( F: r1 -- r2 )
         [ ALSO HIDDEN ]
-        -1 FSP @ +!  ( 2.0E0 F/ ) GTAN2
+        -1 FSP @ W+!  ( 2.0E0 F/ ) GTAN2
         IF      FDROP FDROP F0.0
-        ELSE    F/ FDUP FDUP F* F1.0 F+ F/ 1 FSP @ +! ( 2.0E0 F* )
+        ELSE    F/ FDUP FDUP F* F1.0 F+ F/ 1 FSP @ W+! ( 2.0E0 F* )
         THEN
         IF      [ LAST @ NAME> ] LITERAL 10 FPERR
         THEN ;
@@ -1093,7 +690,7 @@ PREVIOUS DEFINITIONS
 
 : FCOS   ( F: r1 -- r2 )
         [ ALSO HIDDEN ]
-        -1 FSP @ +! ( 2.0E0 F/ ) GTAN2
+        -1 FSP @ W+! ( 2.0E0 F/ ) GTAN2
         IF      FDROP FDROP F1.0 FNEGATE
         ELSE    FOVER FOVER FOVER FOVER
                 F\- F-ROT F+ F*
@@ -1104,116 +701,32 @@ PREVIOUS DEFINITIONS
         PREVIOUS DEFINITIONS
 
 ALSO HIDDEN DEFINITIONS
-CODE AUXATAN  ( F: r1 -- ur2 )     \ ur2 is x - arctan(x) , |x| < 2^-4
-        CLEAR_LABELS
-        MOV     BX, FSP
-        MOV     CX, 0 [BX]      \ Sign and biased exponent.
-        MOV     DX, 4 [BX]      \ LS part of r1
-        MOV     BX, 2 [BX]      \ MS part of r1
-        MOV     DI, CX          \ Save sign
-        AND     DI, # 8000
-        ADD     DI, # 3FF2      \ Generate Sign and Exponent of result.
-        AND     CX, # 7FFF      \ Mask off sign bit
-        SUB     CX, # 3FFB      \ Get unbiased exponent + 4
-        PUSH    BP
-        PUSH    SI
-        PUSH    DI
-        CMP     CX, # -8
-        JG      3 $
-        CMP     CX, # -10
-        JG      2 $
-        XOR     CX, CX
-        ADD     SP, # 6         \ Don't bother popping the stack.
-        MOV     BX, FSP
-        MOV     4 [BX], CX
-        MOV     2 [BX], CX
-        MOV     0 [BX], CX
-        NEXT
-
-2 $:    MOV     AH, DL          \ Shift right by 8
-        MOV     DL, DH
-        MOV     DH, BL
-        MOV     BL, BH
-        XOR     BH, BH
-        ADD     CX, # 8
-        JNZ     3 $             \ Jump if we need more shifting
-        ADD     AH, # 80
-        JMP     5 $
-
-3 $:    OR      CX, CX
-        JZ      6 $
-        NEG     CX
-4 $:    SHR     BX
-        RCR     DX
-        LOOP    4 $
-5 $:    ADC     DX, # 0         \ Round
-        ADC     BX, # 0
-6 $:    MOV     CX, DX          \ y = x*(2^4) in (BX,CX)
-        MOV     SI, BX
-        PUSH    DX              \ y in (SI,(SP))
-        CALL    Y**2            \ y^2 in (BX,CX)
-        MOV     AL, # 92        \ 4/7
-        MUL     BH              \ (y^2)*(2^-8)*(4/7)
-        MOV     AL, AH
-        XOR     AH, AH
-        NEG     AX
-        ADD     AX, # CCCD      \ + (4/5)
-        MUL     BX              \ * (y^2)
-        MOV     AL, AH          \ Shift right by 8
-        MOV     AH, DL
-        MOV     DL, DH
-        XOR     DH, DH
-        SHR     DX              \ /2
-        RCR     AX
-        ADC     AX, # 0         \ Round
-        ADC     DX, # 0
-        NEG     DX              \ Negate
-        NEG     AX
-        SBB     DX, # 0
-        ADD     AX, # AAAB      \ + (2/3)
-        ADC     DX, # AAAA
-        MOV     BP, AX
-        MOV     DI, DX          \ Partial result in (DI,BP)
-        CALL    FRACT*          \ *(y^2).  Result in (DX,BX)
-        MOV     DI, DX
-        MOV     BP, BX
-        MOV     BX, SI
-        POP     CX
-        CALL    FRACT*          \ *y.  Result in (DX,BX)
-        POP     AX              \ SX
-        POP     SI
-        POP     BP
-        MOV     DI, BX
-        MOV     BX, FSP
-        MOV     4 [BX], DI
-        MOV     2 [BX], DX
-        MOV     0 [BX], AX
-        NEXT
-        END-CODE
+: AUXATAN  ( F: r1 -- ur2 )     \ ur2 is x - arctan(x) , |x| < 2^-4
+        NF-AUXATAN ;    \ F-PC native port: in double precision (SFLOAT1)
 
 \ arctangent table
 CREATE ATANTAB          \ Table of arctan (k/16), for k = 0 to 16.
-     0000 , 0000 , 0000 ,    3FFB , FFAA , DDB9 ,    3FFC , FEAD , D4D5 ,
-     3FFD , BDCB , DA5E ,    3FFD , FADB , AFC9 ,    3FFE , 9B13 , B9B8 ,
-     3FFE , B7B0 , CA0F ,    3FFE , D327 , 761E ,    3FFE , ED63 , 382B ,
-     3FFF , 832B , F4A7 ,    3FFF , 8F00 , 5D5F ,    3FFF , 9A2F , 80E6 ,
-     3FFF , A4BC , 7D19 ,    3FFF , AEAC , 4C39 ,    3FFF , B805 , 3E2C ,
-     3FFF , C0CE , 85B9 ,    3FFF , C90F , DAA2 ,
+     0000 W, 0000 W, 0000 W,    3FFB W, FFAA W, DDB9 W,    3FFC W, FEAD W, D4D5 W,
+     3FFD W, BDCB W, DA5E W,    3FFD W, FADB W, AFC9 W,    3FFE W, 9B13 W, B9B8 W,
+     3FFE W, B7B0 W, CA0F W,    3FFE W, D327 W, 761E W,    3FFE W, ED63 W, 382B W,
+     3FFF W, 832B W, F4A7 W,    3FFF W, 8F00 W, 5D5F W,    3FFF W, 9A2F W, 80E6 W,
+     3FFF W, A4BC W, 7D19 W,    3FFF W, AEAC W, 4C39 W,    3FFF W, B805 W, 3E2C W,
+     3FFF W, C0CE W, 85B9 W,    3FFF W, C90F W, DAA2 W,
 
 : GATAN1   ( F: r1 -- r2 )         \ 0 <= r1 <= 1.0
-        FDUP 4 FSP @ +! >INTFRACT DUP
-        IF    >R -4 FSP @ +!
-              FNORMALIZE FSWAP R@ IFLOAT -4 FSP @ +!
+        FDUP 4 FSP @ W+! >INTFRACT DUP
+        IF    >R -4 FSP @ W+!
+              FNORMALIZE FSWAP R@ IFLOAT -4 FSP @ W+!
               F* F1.0 F+ F/ FDUP AUXATAN FNORMALIZE F- R>
               6 * ATANTAB + F@ F+
-        ELSE  DROP -4 FSP @ +!
+        ELSE  DROP -4 FSP @ W+!
               FNORMALIZE FDUP AUXATAN FNORMALIZE F- FNIP
         THEN ;
 
 : GATAN2   ( F: r1 -- r2 )         \ 0 <= r1
         FPSEXP 4000 <
         IF      GATAN1
-        ELSE    F1.0 FSWAP F/ GATAN1 FNEGATE PI -1 FSP @ +! ( F2.0 F/ ) F+
+        ELSE    F1.0 FSWAP F/ GATAN1 FNEGATE PI -1 FSP @ W+! ( F2.0 F/ ) F+
         THEN ;
 
 PREVIOUS DEFINITIONS
@@ -1236,7 +749,7 @@ PREVIOUS DEFINITIONS
 : FACOS   ( F: r1 -- r2 )          \ arccosine routine
         FDUP FABS F1.0 F>
         IF      [ LAST @ NAME> ] LITERAL 10 FPERR
-        ELSE    F1.0 FOVER F- FSWAP F1.0 F+ F/ FSQRT FATAN 1 FSP @ +!
+        ELSE    F1.0 FOVER F- FSWAP F1.0 F+ F/ FSQRT FATAN 1 FSP @ W+!
         THEN ;
 
 : FTRIG0   ( F: r1 -- r2 )         \ SQRT ( ABS ( 1 - X^2 ))

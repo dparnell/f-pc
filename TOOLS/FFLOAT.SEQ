@@ -1,4 +1,4 @@
-\    FFLOAT.SEQ   Faster Hardware Floating point for 8087
+\    FFLOAT.SEQ   Faster Hardware Floating point for 8087   F-PC native port
 \    Enhancements by: Robert L. Smith
 comment:
         Based on HFLOAT by Steve Pollack and Mark Smiley and others.
@@ -59,9 +59,41 @@ comment: Version 3.0  A number of changes and bug fixes have been made.
 
 comment;
 
-NEEDS FASSEM.SEQ
+comment:  F-PC native port.
 
-CR .( FFLOAT Version 3.0         10/26/92 )
+        There is no 8087.  The VM has a native floating point core: a
+        separate float stack of IEEE doubles (8 bytes per number, 256
+        deep) with built-in primitives (F+ F- F* F/ F** FSQRT FSIN FCOS
+        FTAN FASIN FACOS FATAN FATAN2 FEXP FLN FLOG FALOG FLOOR FROUND
+        FTRUNC F0= F0< F< F= FMIN FMAX FNEGATE FABS FDUP FDROP FSWAP FOVER
+        FROT FDEPTH FCLEAR F@ F! S>F D>F F>S F>D (FLIT) >FLOAT (F.) ).
+        This file now builds FFLOAT's word set on that core:
+
+        - The virtual stack (FVBOS/FVTOS, the (nVLOAD)/(nVEMPTY) helpers)
+          is gone; the VM float stack is the only float stack.
+        - Every CODE word was rewritten in high level Forth on the
+          built-ins.  Words that the VM already provides with the same
+          meaning (F+ FDUP F@ FDEPTH FCLEAR ...) are simply not redefined.
+        - Arithmetic is IEEE double throughout.  The 8087 kept 80-bit
+          temporaries; results that FFLOAT computed in one 80-bit step may
+          differ in the last bit or two.
+        - The 8087 control and status words are emulated (see FPCW> and
+          FPSW> below).  The rounding control bits are honoured by the
+          rounding words (FIX INT RND>+INF RND>-INF).  There are no sticky
+          exception flags: overflow and division by zero quietly give
+          infinities or NaNs, which F. and E. print as INFINITY / NAN.
+        - Doubles are 64 bits, so FLOAT, FIX, INT etc. now take and give
+          64-bit doubles (they were 32 bits), and the "q" (64-bit integer)
+          words used by number conversion are plain doubles.
+        - FLOATS ( -- ) keeps its FFLOAT meaning (allow "1.5" as a float);
+          it hides the ANS built-in FLOATS ( n -- n*8 ).  Use 8 * instead.
+        - Number input converts with the VM's >FLOAT (correctly rounded).
+comment;
+
+\ NEEDS FASSEM.SEQ   \ F-PC native port: no 8087 assembler.  The few words
+                     \ of FASSEM.SEQ used here are emulated just below.
+
+CR .( FFLOAT Version 3.0         10/26/92   F-PC native port )
 
 comment:
 
@@ -76,20 +108,40 @@ stack, with the overflow going to a separate external stack.
 
 comment;
 
+\ F-PC native port: some built-in float words are redefined below
+\ (FSIN FCOS FTAN FATAN FASIN FACOS FEXP FALOG FLOATS) to add DEGREES mode
+\ and FFLOAT's argument checks.  Silence the "isn't unique" messages.
+WARNING OFF
+
 DEFER FPERR
 
 ALSO FORTH DEFINITIONS
+
+\ ---- F-PC native port: emulation of the FASSEM.SEQ words FFLOAT used ----
+
+: {.}   ( n -- )
+        SPACE ASCII { FEMIT (U.) TYPE ASCII } FEMIT SPACE ;
+
+VARIABLE <FPCW>   $037F <FPCW> !        \ emulated 8087 control word
+                                        \ (all exceptions masked, round
+                                        \ to nearest, 64-bit precision)
+
+: FPCW>   ( -- n )   <FPCW> @ ;         \ read the control word
+: >FPCW   ( n -- )   <FPCW> ! ;         \ only the rounding bits (RC,
+                                        \ $0C00) have an effect.
+: FPSW>   ( -- n )                      \ emulated status word: just the
+        FDEPTH NEGATE 7 AND 11 LSHIFT ; \ stack TOP field; no exception
+                                        \ flags are kept.
+: INITFP  ( -- )   $037F >FPCW ;        \ was FINIT FDISI
+
+\ -----------------------------------------------------------------------
 
 : 2/?   ( n1 -- n2 n3 )         \ n2 is n1 shifted right by 1.
                                 \ n3 is least significant bit of n1 .
         DUP >R 2/ $7FFF AND R> 1 AND ;
 
-CODE OR!   ( n addr -- )        \ Logical OR of contents at addr with n
-        POP     BX
-        POP     AX
-        OR      0 [BX], AX
-        NEXT
-        END-CODE
+: OR!   ( n addr -- )           \ Logical OR of contents at addr with n
+        TUCK @ OR SWAP ! ;      \ F-PC native port: was CODE
 
 CREATE FPSTAT 0 , 0 ,
 
@@ -97,7 +149,9 @@ CREATE FPSTAT 0 , 0 ,
 
 : .NAME   ( n -- )   >NAME .ID ;
 
-: .NAMES   ( n1 n2 -- )   .NAME 2 SPACES SPACE 3 - .NAME CR ;
+\ F-PC native port: n1 was a return address (hence "3 -"); callers now
+\ pass a CFA for it too.
+: .NAMES   ( n1 n2 -- )   .NAME 2 SPACES SPACE .NAME CR ;
 
 : (FPERR)  ( F: r -- r ; n1 n2 n3 --  )  \  n2 is CFA, n3 is error flag.
          \ n1 is a possible return address on the parameter stack.
@@ -122,340 +176,22 @@ CREATE FPSTAT 0 , 0 ,
 
 ' (FPERR) IS FPERR
 
-CODE CLEARFP    ( -- )
-        FCLEX
-        NEXT
-        END-CODE
+: CLEARFP    ( -- )             \ F-PC native port: was FCLEX.  There are
+        ;                       \ no exception flags to clear.
 
-64   CONSTANT FSTACK-SIZE
+\ F-PC native port: the float stack is the VM's (256 deep).  FSP is the
+\ VM's float stack pointer; FSP0 is its value when the stack is empty.
+256  CONSTANT FSTACK-SIZE
 
-CREATE FSTACK  FSTACK-SIZE 1+ 8* ALLOT  0 , 0 , 0 , 0 ,
-
-FSTACK FSTACK-SIZE 8 * + CONSTANT FSP0
+FCLEAR FSP @ CONSTANT FSP0
 
 CREATE FLOAT-WORK 10 ALLOT
-VARIABLE FVBOS       \ Floating point Virtual Bottom of Stack
-VARIABLE FVTOS       \ Floating point Virtual Top of Stack (toward lower mem)
 
-: FCLEAR   ( -- )
-         FSP0 FVBOS !  FSP0 FVTOS !  INITFP ;
+\ F-PC native port: FVBOS FVTOS (the virtual stack), FCLEAR, FDROP, F! and
+\ F@ and the (1VLOAD) ... (3VEMPTY) helpers are gone: the VM's FCLEAR
+\ FDROP F! F@ are used.  An empty float stack gives "Float stack empty".
 
-FCLEAR
-
-CODE FDROP   ( F: r -- )
-        CLEAR_LABELS
-        MOV     AX, FVTOS
-        CMP     AX, FVBOS
-        JAE     1 $             \ Jump if empty or underflow on virtual stack
-        ADD     AX, # 8
-        MOV     FVTOS AX        \ FVTOS + 8 -> FVTOS (drop from virtual stack)
-        FSTP    REAL*8 ST(0)    \ drop from NPU
-        NEXT
-1 $:    JNE     2 $             \ FVTOS >= FVBOS case.  Jump if > .
-        ADD     AX, # 8         \ FVTOS = FVBOS
-        MOV     FVTOS AX        \ FVTOS + 8 -> FVTOS -> FVBOS
-        MOV     FVBOS AX
-        CMP     AX, # FSP0      \ Check for underflow
-        JA      2 $
-        NEXT
-2 $:    FINIT                   \ FP Stack has underflowed
-        FDISI
-        WAIT
-        MOV     AX, # FSP0
-        MOV     FVBOS AX
-        MOV     FVTOS AX
-        PUSH    ES
-        MOV     AX, 2 [RP]
-        MOV     ES, AX
-        MOV     BX, 0 [RP]
-        SUB     BX, # 2
-        MOV     AX, 0 [RP] ES:
-        POP     ES
-        PUSH    AX
-        MOV     BX, # LAST @ NAME>
-        PUSH    BX
-        MOV     AX, # $2000
-        PUSH    AX
-        MOV     AX, # ' FPERR
-        JMP     AX
-        END-CODE
-
-GLOBAL_REF
-
-LABEL (1VLOAD)             \ If NPU stack is empty, load 1 oprnd from mem.
-        CLEAR_LABELS
-        MOV     BX, FVBOS
-        CMP     BX, FVTOS
-        JE      1 $
-        RET                             \ NPU is not empty, so return
-1 $:    CMP     BX, # FSP0              \ NPU is empty.  Check underflow.
-        JAE     2 $
-        FLD     REAL*8 0 [BX]           \ VBOS = VTOS < FSP0 , so load NPU
-        ADD     BX, # 8
-        MOV     FVBOS BX                \ Indicate push on virtual stack
-        WAIT
-        RET
-2 $:    POP     AX
-        PUSH    ES
-        MOV     AX, 2 [RP]
-        MOV     ES, AX
-        MOV     BX, 0 [RP]
-        SUB     BX, # 2
-        MOV     AX, 0 [RP] ES:
-        POP     ES
-        PUSH    AX
-        MOV     AX, ES: -2 [SI]
-        PUSH    AX
-        MOV     AX, # $2000     \ Error: F.P. Stack Underflow
-        PUSH    AX
-        MOV     AX, # ' FPERR
-        JMP     AX
-        END-CODE
-
-LABEL (2VLOAD)             \ Possible load from memory stack up to 2 opnds.
-        MOV     BX, FVBOS
-        MOV     AX, FVTOS
-        CMP     BX, AX
-        JE      3 $             \ Jump on empty virtual stack
-        ADD     AX, # 8
-        CMP     BX, AX
-        JE      4 $             \ Jump if one element only on virtual and NPU
-        RET
-
-3 $:    CMP     BX, # FSP0 $10 -  \ Stack empty.  Are two elements available?
-        JA      2 $               \ Jump if two are not available
-        FLD     REAL*8 8 [BX]     \ Else load the top two elements
-        FLD     REAL*8 0 [BX]
-        ADD     BX, # $10         \ and increase the virtual stack.
-        MOV     FVBOS BX
-        WAIT
-        RET
-
-4 $:    CMP     BX, # FSP0 8 -    \ One stack item.  Can we free up one more?
-        JA      2 $               \ Jump if we cannot.
-        FINCSTP                   \ Bump TOS pointer
-        FINCSTP                   \ Bump TOS pointer.
-        FLD     REAL*8 0 [BX]     \ Load NPU (Push)
-        FDECSTP                   \ Decrement TOS pointer
-        ADD     BX, # 8
-        MOV     FVBOS BX          \ Adjust virtual stack to match
-        WAIT
-        RET
-        END-CODE
-
-CODE 1VLOAD                     \ Insure at least on stack item on NPU
-        CALL    (1VLOAD)
-        NEXT
-        END-CODE
-
-LABEL (3VLOAD)                  \ Insure at least three real stack items
-        CLEAR_LABELS
-        MOV     BX, FVBOS
-        MOV     AX, FVTOS
-        ADD     AX, # $18
-        CMP     BX, AX          \ Compare BOS with TOS+3
-        JB      4 $
-        RET                     \ Three or more items on the stack
-
-4 $:    FINCSTP                 \ Less than three items on stack
-        FINCSTP                 \ Adjust NPU stack pointer
-        FINCSTP
-        SUB     AX, # 8
-        CMP     BX, AX          \ Compare BOS with TOS+2
-        JE      1 $             \ If equal, go to $1 (2 items on stack)
-        SUB     AX, # 8
-        CMP     BX, AX          \ Compare BOS with TOS+1  \ 10/11/92 RLS
-        JE      2 $             \ If equal, go to $2 (1 item on stack)
-        CMP     BX, # FSP0 $18 + \ No items on NPU stack.  Check for underflow.
-        JA      3 $
-        FLD     $10 [BX]        \ We need to load 3 fp words from RAM
-        FLD     8 [BX]
-        FLD     0 [BX]
-        ADD     WORD FVBOS # $18 \ Adjust virtual stack pointer
-        WAIT
-        RET
-
-2 $:    CMP     BX, # FSP0 $10 + \ One item on NPU stack. Check UFLO.
-        JA      3 $
-        FLD     8 [BX]           \ Load two words from RAM
-        FLD     0 [BX]
-        FDECSTP                  \ Adjust NPU Stack Pointer
-        ADD     WORD FVBOS # $10 \ Adjust virtual stack pointer
-        WAIT
-        RET
-
-1 $:    CMP     BX, # FSP0 8 +   \ Two items on NPU stack.  Check UFLO
-        JA      3 $
-        FLD     0 [BX]           \ Load one item from RAM
-        FDECSTP                  \ Re-adjust NPU Stack Pointer
-        FDECSTP
-        ADD     WORD FVBOS # 8   \ Adjust Virtual Stack Pointer
-        WAIT                     \  10/11/92 RLS
-        RET
-
-3 $:    POP     AX
-        PUSH    ES
-        MOV     AX, 2 [RP]
-        MOV     ES, AX
-        MOV     BX, 0 [RP]
-        SUB     BX, # 2
-        MOV     AX, 0 [RP] ES:
-        POP     ES
-        PUSH    AX
-        MOV     AX, ES: -2 [SI]   \ FP stack underflow case.
-        PUSH    AX
-        MOV     AX, # $2000
-        PUSH    AX
-        MOV     AX, # ' FPERR
-        JMP     AX
-        END-CODE
-
-LABEL (1VEMPTY)                 \ Insure at least one empty position in NPU
-        CLEAR_LABELS
-1 $:    MOV     BX, FVTOS
-        ADD     BX, # $40
-        CMP     BX, FVBOS       \ Compare TOS+8 with BOS
-        JE      2 $             \ If equal, we have a full stack
-        RET                     \ Else return.
-
-2 $:    CMP     BX, # FSTACK    \ Full NPU stack.  Check for overflow
-        JB      4 $
-        FDECSTP                 \ Move pointer to last NPU stack item
-        SUB     BX, # 8         \ Adjust VBOS
-        MOV     FVBOS BX
-        FSTP    REAL*8 0 [BX]   \ Pop NPU stack item.
-        WAIT
-        RET
-
-4 $:    POP     AX
-        PUSH    ES
-        MOV     AX, 2 [RP]
-        MOV     ES, AX
-        MOV     BX, 0 [RP]
-        SUB     BX, # 2
-        MOV     AX, 0 [RP] ES:
-        POP     ES
-        PUSH    AX
-        MOV     AX, ES: -2 [SI]           \ FP Stack Overflow
-        PUSH    AX
-        MOV     AX, # $4000
-        PUSH    AX
-        MOV     AX, # ' FPERR
-        JMP     AX
-        END-CODE
-
-LABEL (1VL1VE)                \ Equivalent to (1VLOAD) followed by (1VEMPTY)
-        MOV     BX, FVBOS
-        CMP     BX, FVTOS     \ Compare VBOS with VTOS
-        JNE     1 $           \ If non-zero, we have at least 1. Check empty
-        CMP     BX, # FSP0    \ Virtual stack empty.  Check for Underflow.
-        JAE     3 $
-        FLD     REAL*8 0 [BX] \ Load one item
-        ADD     BX, # 8       \ and adjust VBOS
-        MOV     FVBOS BX
-        WAIT
-        JMP     1 $
-
-3 $:    POP     AX
-        PUSH    ES
-        MOV     AX, 2 [RP]
-        MOV     ES, AX
-        MOV     BX, 0 [RP]
-        SUB     BX, # 2
-        MOV     AX, 0 [RP] ES:
-        POP     ES
-        PUSH    AX
-        MOV     AX, ES: -2 [SI]   \ FP Stack Underflow
-        PUSH    AX
-        MOV     AX, # $2000
-        PUSH    AX
-        MOV     AX, # ' FPERR
-        JMP     AX
-        END-CODE
-
-LABEL (2VEMPTY)               \ Insure at least two empty stack items
-        MOV     BX, FVTOS
-        ADD     BX, # $40
-        MOV     AX, FVBOS
-        CMP     BX, AX        \ Compare VTOS+8 with VBOS
-        JE      6 $           \ If equal, NPU is full.  Need to empty 2 items.
-        SUB     BX, # 8
-        CMP     BX, AX        \ Compare VTOS+7 with VBOS
-        JE      5 $           \ If equal, need to empty one item.
-        RET
-
-5 $:    CMP     BX, # FSTACK 8 +  \ Check for Overflow
-        JB      9 $
-        FDECSTP               \ Move NPU stack pointer to last item
-        FDECSTP
-        SUB     BX, # 8       \ Adjust VBOS
-        MOV     FVBOS BX
-        FSTP    REAL*8 0 [BX] \ Move NPU item to RAM
-        FINCSTP               \ Re-adjust NPU stack pointer
-        RET
-
-9 $:    JMP     4 $
-
-6 $:    CMP     BX, # FSTACK 16 +  \ Empty 2 NPU items.  But check for Overflow.
-        JB      9 $
-        FDECSTP                 \ Adjust NPU stack pointer for 2 pops
-        FDECSTP
-        SUB     BX, # $10       \ Adjust VBOS
-        MOV     FVBOS BX
-        FSTP    0 [BX]          \ Move two items from NPU to RAM
-        FSTP    8 [BX]
-        WAIT
-        RET
-        END-CODE
-
-LABEL (3VEMPTY)                 \ Insure at least three empty stack items
-        MOV     BX, FVTOS
-        ADD     BX, # $40
-        MOV     AX, FVBOS
-        CMP     BX, AX        \ Compare VTOS+8 with VBOS
-        JE      7 $           \ If equal, NPU is full.  Need to empty 3 items.
-        SUB     BX, # 8
-        CMP     BX, AX        \ Compare VTOS+7 with VBOS
-        JE      6 $           \ If equal, need to empty two items.
-        SUB     BX, # 8
-        CMP     BX, AX        \ Compare VTOS+6 with VBOS
-        JE      5 $           \ If equal, need to empty one item.
-        RET                   \ Else there's enough room.
-
-7 $:    CMP     BX, # FSTACK $18 + \ Empty 3 NPU items.  Check for Overflow.
-        JB      8 $
-        FDECSTP               \ Adjust NPU stack pointer for 3 pops
-        FDECSTP
-        FDECSTP
-        SUB     BX, # $18     \ Adjust VBOS
-        MOV     FVBOS BX
-        FSTP    0 [BX]        \ Move three items from NPU to RAM
-        FSTP    8 [BX]
-        FSTP    16 [BX]
-        WAIT
-        RET
-8 $:    JMP     4 $
-        END-CODE
-
-LOCAL_REF
-
-CODE F!   ( F: r -- ; addr -- )
-        CALL    (1VLOAD)
-        POP     BX
-        FSTP    REAL*8 0 [BX]
-        ADD     FVTOS # 8 WORD
-        WAIT
-        NEXT
-        END-CODE
-
-CODE F@    ( F: -- r ; addr -- )
-        CALL    (1VEMPTY)
-        POP     BX
-        FLD     REAL*8 0 [BX]
-        SUB     FVTOS # 8 WORD
-        WAIT
-        NEXT
-        END-CODE
+: 1VLOAD   ( -- )   ;           \ F-PC native port: nothing to load
 
 : FCONSTANT ( F: r -- ) ( compiling)
             ( F: -- r ) ( run-time )
@@ -467,198 +203,71 @@ CODE F@    ( F: -- r ; addr -- )
         CREATE 8 ALLOT
         DOES> ;
 
-CODE FP>DI    ( F: r -- ; -- 32b )
-        SUB     SP, # 4
-        MOV     BX, SP
-        FRNDINT
-        FSTP    INTEGER*4 0 [BX]
-        WAIT
-        ADD     WORD FVTOS # 8
-        NEXT
-        END-CODE
+\ F-PC native port: FRNDINT rounds to an integral value as the emulated
+\ control word's RC bits say (00 nearest, 01 down, 10 up, 11 chop).
+: FRNDINT   ( F: r -- r' )
+        FPCW> $0C00 AND
+        DUP $0000 = IF DROP FROUND                     EXIT THEN
+        DUP $0400 = IF DROP FLOOR                      EXIT THEN
+            $0800 = IF FNEGATE FLOOR FNEGATE           EXIT THEN
+        FTRUNC ;
 
-CODE FP>QI    ( F: r -- ; -- 64b)
-        CALL    (1VLOAD)
-        SUB     SP, # 8
-        MOV     BX, SP
-        FRNDINT
-        FSTP    INTEGER*8 0 [BX]
-        WAIT
-        ADD     WORD FVTOS # 8
-        NEXT
-        END-CODE
+: FP>DI    ( F: r -- ; -- d )   \ F-PC native port: gives a 64-bit double
+        FRNDINT F>D ;           \ (was a 32-bit integer in two cells)
 
-CODE QI>FP    ( F: -- r ; 64b -- )
-        CALL    (1VEMPTY)
-        MOV     BX, SP
-        FLD     INTEGER*8 0 [BX]
-        WAIT
-        ADD     SP, # 8
-        SUB     WORD FVTOS # 8
-        NEXT
-        END-CODE
+: FP>QI    ( F: r -- ; -- d )   \ 64-bit integer = a double in the port
+        FRNDINT F>D ;
 
-CODE FEXAM    ( F: r -- r ; -- n )
-        CLEAR_LABELS
-        MOV     BX, FVBOS
-        CMP     BX, # FSP0
-        JAE     1 $
-        CALL    (1VLOAD)
-1 $:    FXAM
-        SUB     SP, # 2
-        MOV     BX, SP
-        FSTSW   0 [BX]
-        WAIT
-        AND     0 [BX], # $4700 WORD
-        NEXT
-        END-CODE
+: QI>FP    ( F: -- r ; d -- )
+        D>F ;
 
-CODE PI    ( F: -- pi )
-        CALL    (1VEMPTY)
-        FLDPI
-        SUB     FVTOS # 8 WORD
-        NEXT
-        END-CODE
+\ FEXAM returns the 8087 FXAM condition bits (masked with $4700):
+\ C3 $4000  C2 $0400  C1 $0200 (sign)  C0 $0100.
+\   NaN $0100  normal $0400  infinity $0500  zero $4000  empty $4100
+\   denormal $4400
+\ F-PC native port: computed from the IEEE bits of the top number.
+: FEXAM    ( F: r -- r ; -- n )
+        FDEPTH 0= IF  $4100 EXIT  THEN
+        FDUP FLOAT-WORK F!
+        FLOAT-WORK CELL+ @ DUP 0< $0200 AND SWAP        ( c1 hi )
+        DUP 20 RSHIFT $7FF AND SWAP $FFFFF AND FLOAT-WORK @ OR  ( c1 e m )
+        OVER $7FF =
+        IF      NIP IF $0100 ELSE $0500 THEN    \ NaN or infinity
+        ELSE    SWAP
+                IF      DROP $0400              \ normal
+                ELSE    IF $4400 ELSE $4000 THEN \ denormal or zero
+                THEN
+        THEN    OR ;
 
-CODE F1.0    ( F: -- 1.0 )
-        CALL    (1VEMPTY)
-        FLD1
-        SUB     FVTOS # 8 WORD
-        NEXT
-        END-CODE
+-1 S>F FACOS FCONSTANT PI       \ F-PC native port: was FLDPI
 
-CODE F0.0    ( F: -- 0.0 )
-        CALL    (1VEMPTY)
-        FLDZ
-        SUB     FVTOS # 8 WORD
-        NEXT
-        END-CODE
+: F1.0    ( F: -- 1.0 )   1 S>F ;
 
-CODE F*   ( F: r1 r2 -- r1*r2)
-        CALL    (2VLOAD)
-        FMULP   ST(1), ST
-        ADD     FVTOS # 8 WORD
-        NEXT
-        END-CODE
+: F0.0    ( F: -- 0.0 )   0 S>F ;
 
+\ F-PC native port: F* F+ F- F/ FABS FNEGATE FSQRT FLOG FLN are built-ins.
 
-CODE F+    ( F: r1 r2 -- r1+r2)
-        CALL    (2VLOAD)
-        FADDP   ST(1), ST
-        ADD     FVTOS # 8 WORD
-        NEXT
-        END-CODE
+: F\-    ( F: r1 r2 -- r2-r1)
+        FSWAP F- ;
 
-CODE F-    ( F: r1 r2 -- r1-r2)
-        CALL    (2VLOAD)
-        FSUBRP  ST(1), ST(0)
-        ADD     WORD FVTOS # 8
-        NEXT
-        END-CODE
+: 1/F  ( F: r -- r^-1)
+        F1.0 FSWAP F/ ;
 
-CODE F\-    ( F: r1 r2 -- r2-r1)
-        CALL    (2VLOAD)
-        FSUBP   ST(1), ST(0)
-        ADD     WORD FVTOS # 8
-        NEXT
-        END-CODE
+: F2*   ( F: r1 -- r2 )
+        2 S>F F* ;
 
-CODE F/    ( F: r1 r2 -- r1/r2)
-        CALL    (2VLOAD)
-        FDIVRP  ST(1), ST(0)
-        ADD     WORD FVTOS # 8
-        NEXT
-        END-CODE
+: F2/   ( F: r1 -- r2 )
+        2 S>F F/ ;
 
-CODE FABS    ( F: r1 -- |r1|)
-        CALL    (1VLOAD)
-        FABS,
-        NEXT
-        END-CODE
+: F2**N*    ( F: r1 -- r2 ; n -- )   \ r2 = r1 * 2^n
+        2 S>F S>F F** F* ;
 
-CODE FNEGATE    ( F: r1 -- -r1 )
-        CALL    (1VLOAD)
-        FCHS
-        NEXT
-        END-CODE
-
-CODE FSQRT    ( F: r1 -- SQRT[r1])
-        CALL    (1VLOAD)
-        FSQRT,
-        NEXT
-        END-CODE
-
-CODE FLOG    ( F: r1 -- LOG10[r1])
-        CALL    (1VL1VE)
-        FLDLG2
-        FXCH    ST(1)
-        FYL2X
-        NEXT
-        END-CODE
-
-CODE FLN    ( F: r1 -- LN[r1])
-        CALL    (1VL1VE)
-        FLDLN2
-        FXCH    ST(1)
-        FYL2X
-        NEXT
-        END-CODE
-
-CODE 1/F  ( F: r -- r^-1)
-        CALL    (1VL1VE)
-        FLD1
-        FDIVP   ST(1), ST(0)
-        NEXT
-        END-CODE
-
-CODE F2*   ( F: r1 -- r2 )
-        CALL    (1VL1VE)
-        FLD1
-        FXCH    ST(1)
-        FSCALE
-        FSTP    ST(1)
-        NEXT
-        END-CODE
-
-CODE F2/   ( F: r1 -- r2 )
-        CALL    (1VL1VE)
-        CALL    (1VEMPTY)
-        FLD1
-        FCHS
-        FXCH    ST(1)
-        FSCALE
-        FSTP    ST(1)
-        NEXT
-        END-CODE
-
-CODE F2**N*    ( F: r1 -- r2 ; n -- )
-        CALL    (1VL1VE)
-        MOV     BX, SP
-        FLD     INTEGER*2 0 [BX]
-        ADD     SP, # 2
-        FXCH    ST(1)
-        FSCALE
-        FSTP    ST(1)
-        NEXT
-        END-CODE
-
-CODE FLOAT    ( F: -- r ; d -- )
-        CALL    (1VEMPTY)
-        MOV     BX, SP
-        MOV     AX, 0 [BX]
-        MOV     CX, 2 [BX]
-        MOV     2 [BX], AX
-        MOV     0 [BX], CX
-        FLD     INTEGER*4 0 [BX]
-        ADD     SP, # 4
-        SUB     FVTOS # 8 WORD
-        WAIT
-        NEXT
-        END-CODE
+: FLOAT    ( F: -- r ; d -- )
+        D>F ;
 
 : (ROUND)    ( F: r -- ; n -- d )
         FPCW> DUP >R  $F3FF AND OR >FPCW
-        1VLOAD FP>DI SWAP R> >FPCW ;
+        1VLOAD FP>DI R> >FPCW ;         \ F-PC native port: no SWAP
 
 : FIX   ( F: r -- ; -- d )  $0000 (ROUND) ;
 
@@ -668,158 +277,36 @@ CODE FLOAT    ( F: -- r ; d -- )
 
 : RND>-INF  ( F: r -- ; -- d )  $0400 (ROUND) ;
 
-CODE FDUP    ( F: r -- r r )
-        CALL    (1VL1VE)
-        FLD     ST
-        SUB     FVTOS # 8 WORD
-        NEXT
-        END-CODE
+\ F-PC native port: FDUP FOVER FSWAP FROT are built-ins.  The words that
+\ reach into the stack address it directly: item n is at FSP @ n 8 * +.
 
-CODE FOVER    ( F: r1 r2 -- r1 r2 r1 )
-        CALL    (2VLOAD)
-        CALL    (1VEMPTY)
-        FLD     ST(1)
-        SUB     FVTOS # 8 WORD
-        NEXT
-        END-CODE
+: (FSTK)   ( n -- addr )        \ address of item n of the float stack
+        DUP 0< OVER FDEPTH < 0= OR
+        IF      FCLEAR TRUE ABORT" Floating Point Stack Underflow "  THEN
+        8 * FSP @ + ;
 
-CODE FSWAP   ( F: r1 r2 -- r2 r1 )
-        CALL    (2VLOAD)
-        FXCH    ST(1)
-        NEXT
-        END-CODE
+: FNSWAP   ( F: rn rn-1 ... r1 r0 -- r0 rn-1 ... r1 rn ; n -- )
+        (FSTK) FSP @ ( an a0 )
+        DUP F@ OVER F@ ( F: r0 rn ) F! F! ;
 
-CODE FNSWAP   ( F: rn rn-1 ... r1 r0 -- r0 rn-1 ... r1 rn ; n -- )
-        CLEAR_LABELS
-        CALL    (1VLOAD)
-        POP     BX
-        SHL     BX, 1
-        JZ      10 $
-        SHL     BX, 1
-        SHL     BX, 1
-        MOV     CX, FVTOS
-        MOV     AX, FVBOS
-        SUB     AX, CX
-        CMP     BX, AX
-        JA      8 $
-        CMP     BX, # 4 8 *
-        JA      6 $
-        JB      2 $
-        FXCH    ST(4)
-10 $:   RET
-2 $:    CMP     BX, # 2 8 *
-        JB      1 $
-        JA      3 $
-        FXCH    ST(2)
-        RET
-1 $:    FXCH    ST(1)
-        RET
-3 $:    FXCH    ST(3)
-        RET
-6 $:    CMP     BX, # 6 8 *
-        JB      5 $
-        JA      7 $
-        FXCH    ST(6)
-        RET
-5 $:    FXCH    ST(5)
-        RET
-7 $:    FXCH    ST(7)
-        RET
-8 $:    ADD     BX, CX
-        FSTP    REAL*8 FLOAT-WORK
-        FLD     REAL*8 0 [BX]
-        MOV     BX, CX
-        MOV     DI, # 7
-9 $:    MOV     AL, FLOAT-WORK [DI]
-        MOV     0 [BX+DI], AL
-        DEC     DI
-        JNS     9 $
-        RET
-        END-CODE
+: F-ROT    ( F: r1 r2 r3 -- r3 r1 r2 )
+        FROT FROT ;
 
-CODE FROT    ( F: r1 r2 r3 -- r2 r3 r1 )
-        CALL    (3VLOAD)
-        FXCH    ST(1)           \ r1 r3 r2
-        FXCH    ST(2)           \ r2 r3 r1
-        NEXT
-        END-CODE
+: FNIP    ( F: r1 r2 -- r2 )
+        FSWAP FDROP ;
 
-CODE F-ROT    ( F: r1 r2 r3 -- r3 r1 r2 )
-        CALL    (3VLOAD)
-        FXCH    ST(2)           \ r3 r2 r1
-        FXCH    ST(1)           \ r3 r1 r2
-        NEXT
-        END-CODE
+: FTUCK    ( F: r1 r2 -- r2 r1 r2 )
+        FSWAP FOVER ;
 
-CODE FNIP    ( F: r1 r2 -- r2 )
-        CALL    (2VLOAD)
-        FXCH    ST(1)
-        FSTP    ST(0)
-        ADD     WORD FVTOS # 8
-        NEXT
-        END-CODE
+: FPICK    ( F: rn ... r1 r0 -- rn ... r1 r0 rn ; n -- )
+        (FSTK) F@ ;
 
-CODE FTUCK    ( F: r1 r2 -- r2 r1 r2 )
-        CALL    (2VLOAD)
-        CALL    (1VEMPTY)
-        FXCH    ST(1)            \ r2 r1
-        FLD     ST(1)
-        SUB     WORD FVTOS # 8
-        NEXT
-        END-CODE
-
-CODE FPICK    ( F: rn ... r1 r0 -- rn ... r1 r0 rn ; n -- )
-        CLEAR_LABELS
-        CALL    (1VEMPTY)
-        POP     BX
-        SHL     BX, 1
-        SHL     BX, 1
-        SHL     BX, 1
-        MOV     CX, FVTOS
-        MOV     AX, FVBOS
-        SUB     WORD FVTOS # 8
-        SUB     AX, CX
-        CMP     BX, AX
-        JAE     8 $
-        CMP     BX, # 3 8 *
-        JA      5 $
-        JB      1 $
-        FLD     ST(3)
-        NEXT
-1 $:    CMP     BX, # 1 8 *
-        JB      0 $
-        JA      2 $
-        FLD     ST(1)
-        NEXT
-0 $:    FLD     ST(0)
-        NEXT
-2 $:    FLD     ST(2)
-        NEXT
-5 $:    CMP     BX, # 5 8 *
-        JB      4 $
-        JA      6 $
-        FLD     ST(5)
-        NEXT
-4 $:    FLD     ST(4)
-        NEXT
-6 $:    FLD     ST(6)
-        NEXT
-8 $:    ADD     BX, CX
-        FLD     REAL*8 0 [BX]
-        NEXT
-        END-CODE
-
-CODE [RVS0]     ( F: r -- ; -- fpsw )
-        CALL    (1VLOAD)
-        FTST
-        SUB     SP, # 2
-        MOV     BX, SP
-        FSTSW   0 [BX]
-        FSTP    ST(0)
-        ADD     WORD FVTOS # 8
-        WAIT
-        NEXT
-        END-CODE
+\ [RVS0] and [RVSR] return 8087 FTST / FCOM status bits (C3 $4000,
+\ C0 $0100); F-PC native port: computed with the built-in compares.
+: [RVS0]     ( F: r -- ; -- fpsw )
+        FDUP F0= IF FDROP $4000 EXIT THEN
+        FDUP F0< IF FDROP $0100 EXIT THEN
+        F0.0 FSWAP F< IF 0 ELSE $4500 THEN ;    \ positive or unordered
 
 : C3C0X    ( fpsw -- n )
         DUP $04000 AND
@@ -830,65 +317,26 @@ CODE [RVS0]     ( F: r -- ; -- fpsw )
         IF      1+
         THEN ;
 
-: F0=   ( F: r -- ; -- f )
-        [RVS0] C3C0X 2 = ;
+\ F-PC native port: F0= F0< F= F< FMIN FMAX are built-ins.
 
 : FDUP0=   ( F: r -- r ; -- f )
         FDUP F0= ;
 
-: F0<  ( F: r -- ; -- f)  [RVS0] C3C0X 1 = ;
+: F0>  ( F: r -- ; -- f)  F0.0 FSWAP F< ;
 
-: F0>  ( F: r -- ; -- f)  [RVS0] C3C0X 0= ;
-
-CODE [RVSR]    ( F: r1 r2 -- ; -- fpsw )
-        CALL    (2VLOAD)
-        FXCH    ST(1)
-        FCOMPP
-        ADD     WORD FVTOS # $10
-        SUB     SP, # 2
-        MOV     BX, SP
-        FSTSW   0 [BX]
-        WAIT
-        NEXT
-        END-CODE
-
-: F=    ( F: r1 r2 -- ; -- f )
-        [RVSR] C3C0X 2 = ;
-
-: F<    ( F: r1 r2 -- ; -- f )
-        [RVSR] C3C0X 1 = ;
+: [RVSR]    ( F: r1 r2 -- ; -- fpsw )
+        FOVER FOVER F= IF FDROP FDROP $4000 EXIT THEN
+        FOVER FOVER F< IF FDROP FDROP $0100 EXIT THEN
+        FSWAP F< IF 0 ELSE $4500 THEN ;
 
 : F>    ( F: r1 r2 -- ; -- f )
-        [RVSR] C3C0X 0=  ;
+        FSWAP F< ;
 
-: FMIN   ( F: r1 r2 -- rmin )
-        FOVER FOVER F<
-        IF      FDROP
-        ELSE
-                FNIP
-        THEN ;
-
-: FMAX    ( F: r1 r2 -- rmax )
-        FOVER FOVER F>
-        IF      FDROP
-        ELSE
-                FNIP
-        THEN ;
-
-CODE (FLIT)   ( F: -- r )
-        CALL    (1VEMPTY)
-        FLD     REAL*8 ES: 0 [SI]
-        SUB     WORD FVTOS # 8
-        WAIT
-        ADD     SI, # 8
-        NEXT
-        END-CODE
-
+\ F-PC native port: (FLIT) is a built-in; the 8-byte float follows it in
+\ the token list as two cells.
 : FLITERAL  ( F: r -- )
         COMPILE (FLIT) FLOAT-WORK F!
-        4 0 DO
-                FLOAT-WORK I 2* +  @ X,
-        LOOP
+        FLOAT-WORK @ X,  FLOAT-WORK CELL+ @ X,
         ; IMMEDIATE
 
 VARIABLE TRIG-MODE     TRIG-MODE OFF
@@ -915,61 +363,13 @@ VARIABLE TRIG-MODE     TRIG-MODE OFF
 
 INITFP CLEARFP
 
-CODE [SIN]    ( F: r -- sin<r> )
-        CALL    (1VLOAD)          \ radian argument
-        CALL    (2VEMPTY)
-        FLD1                      \ Load F1.0
-        FCHS
-        FXCH    ST(1)
-        FSCALE                    \ arg/2
-        FSTP    ST(1)             \  12/27/90 10:45:40.59 RLS
-        FPTAN                     \ Partial tangent -> y, x
-        FXCH    ST(1)
-        FDIVRP  ST(1), ST(0)      \ y/x
-        FLD     ST(0)             \ dup
-        FLD     ST(0)             \ dup
-        FMULP   ST(1), ST(0)
-        FLD1
-        FADDP   ST(1), ST(0)      \ 1 + (y/x)**2
-        FXCH    ST(1)
-        FLD1
-        FLD     ST(0)
-        FADDP   ST(1), ST(0)      \ 2.0
-        FMULP   ST(1), ST(0)      \ 2(y/x)
-        FDIVP   ST(1), ST(0)      \ 2(y/x)/(1+(y/x)**2)
-        NEXT
-        END-CODE
+\ F-PC native port: [SIN] [COS] [TAN] were FPTAN sequences for arguments
+\ already reduced to 0..pi/4; the built-ins do it now.
+: [SIN]    ( F: r -- sin<r> )   FSIN ;
 
-CODE [COS]    ( F: r -- cos<r> )
-        CALL    (1VLOAD)
-        CALL    (2VEMPTY)
-        FLD1
-        FCHS
-        FXCH    ST(1)
-        FSCALE
-        FSTP    ST(1)
-        FPTAN
-        FXCH    ST(1)
-        FDIVRP  ST(1), ST(0)
-        FLD     ST(0)
-        FMULP   ST(1), ST(0)
-        FLD     ST(0)
-        FLD1
-        FADDP   ST(1), ST(0)
-        FXCH    ST(1)
-        FLD1
-        FSUBRP  ST(1), ST(0)
-        FDIVP   ST(1), ST(0)
-        NEXT
-        END-CODE
+: [COS]    ( F: r -- cos<r> )   FCOS ;
 
-CODE [TAN]    ( F: r -- tan<r> )
-        CALL    (1VL1VE)
-        FPTAN
-        FXCH    ST(1)
-        FDIVP   ST(1), ST(0)
-        NEXT
-        END-CODE
+: [TAN]    ( F: r -- tan<r> )   FTAN ;
 
 : ?DEG->RAD   ( F: r1 -- r2 )
         TRIG-MODE @
@@ -999,7 +399,7 @@ F1.0 -53 F2**N* FCONSTANT SMALL-ANGLE
         DUP 1 = IF  DROP PI/4 FSWAP F- FCOS1  ELSE
             2 = IF  FCOS1                     ELSE
                     PI/4 FSWAP F- FSIN1
-        THEN THEN THEN 
+        THEN THEN THEN
         XOR IF  FNEGATE THEN ;
 
 : FCOS ( F: r -- COS<r> )
@@ -1010,7 +410,7 @@ F1.0 -53 F2**N* FCONSTANT SMALL-ANGLE
         DUP 1 = IF  DROP PI/4 FSWAP F- FSIN1  ELSE
             2 = IF  FSIN1                     ELSE
                     PI/4 FSWAP F- FCOS1
-        THEN THEN THEN 
+        THEN THEN THEN
         2+ 2/ 2/ 1 AND
         IF FNEGATE THEN ;
 
@@ -1047,68 +447,10 @@ FCLEAR
         ELSE  TANARG<>0  THEN
         IF FNEGATE THEN ;
 
-ALSO ASSEMBLER ALSO
+\ F-PC native port: (POWER-1) (FALN) [FALOG] were 8087 F2XM1/FSCALE code.
+: (FALN)    ( F: r -- e^r )     FEXP ;
 
-LABEL (POWER-1)    ( F: log2x y -- [x^y]-1 )    \ Takes 4 f.p. stack spaces
-        CALL    (2VLOAD)
-        CALL    (2VEMPTY)
-        FMULP   ST(1), ST(0)      \ z * y  , where z = log2(x)
-        FLD     ST(0)             \ DUP
-        FSTCW   CWTEMP            \ Save current Control Word
-        MOV     AX, CWTEMP
-        MOV     CX, AX
-        AND     AX, # $0F3FF
-        OR      AX, # $00400      \ Round toward neg. inf.
-        MOV     CWTEMP AX
-        FLDCW   CWTEMP
-        FRNDINT                   \ Take floor of z*y
-        MOV     CWTEMP CX
-        FLDCW   CWTEMP            \ Restore Control word.
-        FST     REAL*8 CWTEMP     \ Save copy of floored value = I
-        FXCH    ST(1)
-        FSUBP   ST(1), ST(0)      \ (z*y) - floor(z*y) -> fract
-        FLD1                      \ f 1
-        FCHS                      \ f -1
-        FXCH    ST(1)             \ -1 f
-        FSCALE                    \ -1 f/2
-        FSTP    ST(1)             \ f/2
-        F2XM1                     \ 2^(fract/2) - 1
-        FLD     ST(0)             \ dup
-        FLD1                      \ (2^f/2 - 1) (2^f/2 - 1) 1
-        FADDP   ST(1), ST(0)      \ (2^f/2 - 1) 2^f/2
-        FLD1                      \ 3 items on FP stack
-        FADDP   ST(1), ST(0)      \ (2^f/2 - 1) (2^f/2 + 1)
-        FMULP   ST(1), ST(0)      \ 2^f - 1
-        FLD     REAL*8 CWTEMP
-        FXCH    ST(1)
-        FSCALE                    \ 2^(z*y) - 2^I
-        FXCH    ST(1)
-        FLD1                      \ 3 items on FP stack
-        FSCALE                    \ 2^I
-        FLD1                      \ 4 items on FP stack
-        FSUBRP  ST(1), ST(0)      \ 2^I - 1
-        FSTP    ST(1)
-        FADDP   ST(1), ST(0)
-        ADD     WORD FVTOS # 8
-        WAIT
-        RET
-        END-CODE
-
-PREVIOUS PREVIOUS \ FORTH
-
-CODE (FALN)    ( F: r -- e^r )
-        CALL    (1VL1VE)
-        FLDL2E
-        CALL    (POWER)
-        NEXT
-        END-CODE
-
-CODE [FALOG]    ( F: r -- 10^r )
-        CALL    (1VL1VE)
-        FLDL2T
-        CALL    (POWER)
-        NEXT
-        END-CODE
+: [FALOG]    ( F: r -- 10^r )   FALOG ;
 
 : FEXP ( F: r -- e^r )
         FDUP 699. FLOAT  F>
@@ -1128,29 +470,15 @@ CODE [FALOG]    ( F: r -- 10^r )
 : FLOATDPL    ( F: -- r ; d -- )        \ Float a double, using DPL
         FLOAT DPL @ 0 FLOAT FALOG F/ ;
 
-: F**    ( F: r1 r2 -- r1^r2 )
-        FSWAP FLOG F* FALOG ;
+\ F-PC native port: F** is the built-in (pow); FFLOAT's
+\ FSWAP FLOG F* FALOG lost precision.
 
-CODE F**+N     ( F: r1 -- r2 ; n -- )
-        CLEAR_LABELS
-        CALL    (1VLOAD)
-        CALL    (2VEMPTY)
-        POP     AX
-     0= IF      NEXT
-        THEN
-        FLD1
-1 $:    SHR     AX, # 1
-        JNC     2 $
-        FMUL    ST(0), ST(1)
-2 $:    JZ      3 $
-        FXCH    ST(1)
-        FMUL    ST(0), ST(0)
-        FXCH    ST(1)
-        JMP     1 $
-3 $:    FXCH    ST(1)
-        FSTP    ST(0)
-        NEXT
-        END-CODE
+: F**+N     ( F: r1 -- r2 ; n -- )   \ F-PC native port: was CODE.
+        F1.0 FSWAP                     \ ( F: acc x )
+        BEGIN   DUP
+        WHILE   DUP 1 AND IF  FSWAP FOVER F* FSWAP  THEN
+                U2/ FDUP F*
+        REPEAT  DROP FDROP ;           \ r^0 is now 1.0 (it gave r)
 
 : F**N     ( F: r1 -- r2 ; n -- )  \ Floating number raised to integer power.
         DUP 0<
@@ -1171,90 +499,9 @@ CREATE (PI/2)
 CREATE (PI/4)
         $18 C, $2D C, $44 C, $54 C, $FB C, $21 C, $E9 C, $3F C,
 
-LABEL (FATAN)   ( F: z -- arctan )
-        FLD1
-        FCOM    ST(1)           \ Now compare argument against 1
-        FSTSW   FLOAT-WORK
-        WAIT
-        MOV     AX, FLOAT-WORK
-        AND     AH, # $45
-     0= IF      \ 1 > z
-                FPATAN
-                RET
-        THEN
-                \ Check further
-        CMP     AH, # 1
-     0= IF      \ 1 < z
-                FXCH  ST(1)
-                FPATAN
-                FLD1
-                FLD   ST(0)
-                FADDP ST(1), ST(0)
-                FLDPI
-                FDIVP ST(1), ST(0)
-                FSUBP ST(1), ST(0)
-                RET
-        THEN
-                \ Assume that z = 1
-        FSTP    ST(0)                   \ Pop the 1
-        FSTP    ST(0)                   \ Pop z
-        FLD     REAL*8 (PI/4)           \ Load pi/4
-        RET
-        END-CODE
-
-CODE FATANA    ( F: r -- arctan[r] )
-        CALL    (1VL1VE)
-        FXAM                    \ Only useful way to test for infinity
-        FSTSW   FLOAT-WORK
-        MOV     AX, FLOAT-WORK
-        AND     AX, # $4700
-        TEST    AH, # 1
-    0<> IF      \ Special case
-                CMP     AH, # 5
-             0= IF      \ +infinity. Result is pi/2
-                        FSTP    ST(0)
-                        FLD     REAL*8 (PI/2)
-                        NEXT
-                THEN
-                CMP     AH, # 7
-             0= IF      \ -infinity.  Result is -pi/2
-                        FSTP    ST(0)
-                        FLD     REAL*8 (PI/2)
-                        FCHS
-                        NEXT
-                THEN
-                \ Something invalid
-                SUB     BX, # 2
-                MOV     AX, 0 [RP] ES:
-                POP     ES
-                PUSH    AX
-                MOV     AX, ES: -2 [SI]
-                PUSH    AX
-                MOV     AX, # $200
-                PUSH    AX
-                MOV     AX, # ' FPERR
-                JMP     AX
-        THEN
-        FTST                            \ Now test for other cases
-        FSTSW   FLOAT-WORK
-        WAIT
-        MOV     AX, FLOAT-WORK
-        AND     AX, # $4500
-     0= IF                              \ Normal positive argument
-                CALL  (FATAN)
-                NEXT
-        THEN
-                        \ Check for negative and non-zero
-        CMP     AH, # 1
-     0= IF      \ Ordinary negative argument
-                FCHS
-                CALL  (FATAN)
-                FCHS
-                NEXT
-        THEN
-                        \ Argument must be zero
-        NEXT            \ Just return +0 or -0
-        END-CODE
+\ F-PC native port: (FATAN) was 8087 FPATAN code with special cases for
+\ infinities; the built-in atan handles them.
+: FATANA    ( F: r -- arctan[r] )   FATAN ;
 
 : FATAN   ( F: r -- arctan[r] )
         FATANA ?RAD->DEG ;
@@ -1273,7 +520,7 @@ CODE FATANA    ( F: r -- arctan[r] )
 
 : FACOS    ( F: r -- arccos[r] )
         ARCRANGE
-        IF      3 RPICK 2 RPICK 2- @L 3 + [ LAST @ ] LITERAL NAME> $10 FPERR
+        IF      [ LAST @ ] LITERAL NAME> DUP $10 FPERR \ F-PC native port
         ELSE    FDUP  F0<   FABS  F1.0  FOVER F- FSWAP
                 F1.0 F+ F/ FSQRT FATANA FDUP F+
                 IF      PI  FSWAP  F-
@@ -1281,24 +528,27 @@ CODE FATANA    ( F: r -- arctan[r] )
                 ?RAD->DEG
         THEN ;
 
-CREATE (F2.0)     0 , 0 , 0 , $4000 ,   \ REAL*8
+CREATE (F2.0)     0 , $40000000 ,       \ REAL*8  (F-PC native port: 32-bit cells)
 
-CODE (FTANH)   ( F: r -- tanh[r] )
-        CALL    (1VLOAD)
-        CALL    (2VEMPTY)
-        FLD1
-        FXCH    ST(1)
-        FSCALE                     \ 2*(abs(r))
-        FSTP    ST(1)              \ FNIP
-        FLDL2E                     \ log to base 2 of e
-        SUB     FVTOS [] # 8
-        CALL    (POWER-1)          \ e**2r - 1
-        FLD     ST                 \ FDUP
-        FLD     REAL*8 (F2.0)      \ F2.0
-        FADDP   ST(1), ST(0)       \ e**2r + 1
-        FDIVRP  ST(1), ST(0)       \ tanh
-        NEXT
-        END-CODE
+\ F-PC native port: the hyperbolic CODE words used F2XM1 and FYL2XP1,
+\ which keep precision near zero.  FEXPM1 and FLN1P do the same job here
+\ (Kahan's formulas: accurate to a few ulps).
+
+: FEXPM1   ( F: r -- e^r-1 )
+        FDUP FEXP FDUP F1.0 F=
+        IF      FDROP EXIT  THEN                \ tiny r: e^r-1 = r
+        FDUP F1.0 F- FDUP F1.0 FNEGATE F=
+        IF      FNIP FNIP EXIT  THEN            \ e^r-1 = -1
+        FROT F* FSWAP FLN F/ ;                  \ (u-1)*r/ln(u)
+
+: FLN1P   ( F: r -- ln[1+r] )
+        FDUP F1.0 F+ FDUP F1.0 F=
+        IF      FDROP EXIT  THEN                \ tiny r: ln(1+r) = r
+        FDUP FLN FSWAP F1.0 F- F/ F* ;          \ r*ln(u)/(u-1)
+
+: (FTANH)   ( F: r -- tanh[r] )     \ r >= 0
+        FDUP 22 S>F F> IF  FDROP F1.0 EXIT  THEN        \ tanh = 1.0
+        F2* FEXPM1 FDUP 2 S>F F+ F/ ;
 
 : FTANH   ( F: r -- tanh[r] )
         FDUP  699. FLOAT  F>
@@ -1312,25 +562,9 @@ CODE (FTANH)   ( F: r -- tanh[r] )
         ELSE    (FTANH)
         THEN ;
 
-CODE (FSINH)   ( F: r -- sinh[r] )
-        CALL    (1VLOAD)
-        CALL    (2VEMPTY)
-        FLDL2E                  \ log to base 2 of e
-        SUB     FVTOS [] # 8
-        CALL    (POWER-1)       \ e**r - 1
-        FLD     ST              \ FDUP
-        FLD1                    \ 1.0
-        FADDP   ST(1), ST(0)    \ e**r
-        FLD     ST(1)           \ FOVER
-        FDIVP   ST(1), ST(0)    \ F/
-        FADDP   ST(1), ST(0)    \ F+
-        FLD1                    \
-        FCHS
-        FXCH    ST(1)
-        FSCALE                  \ r/2
-        FSTP    ST(1)           \ FNIP
-        NEXT
-        END-CODE
+: (FSINH)   ( F: r -- sinh[r] )     \ r >= 0
+        FDUP 40 S>F F> IF  FEXP F2/ EXIT  THEN          \ e^-r is lost
+        FEXPM1 FDUP FDUP F1.0 F+ F/ F+ F2/ ;
 
 : <FSINH>   ( F: r -- sinh[r] )
         FDUP 699. FLOAT  F>
@@ -1351,23 +585,11 @@ CODE (FSINH)   ( F: r -- sinh[r] )
         THEN
         FEXP F1.0 FOVER F/ F+ F2/ ;
 
-CREATE F.25  0 , 0 , 0 , $0D0 C, $0FF C,
+\ F-PC native port: F.25 was a 10-byte temp-real; this is a REAL*8 0.25
+CREATE F.25  0 , $3FD00000 ,
 
-CODE (FASINH1)   ( F: r -- arcsinh[r] )
-        CALL    (1VLOAD)
-        CALL    (3VEMPTY)
-        FLD     ST              \ x  x
-        FLD     ST              \ x  x  x
-        FMUL    ST(0), ST(1)    \ x  x^2
-        FLD1                    \ x  x^2  1
-        FADDP   ST(1), ST(0)    \ x  1 + x^2
-        FSQRT,                  \ x  sqrt(1+x^2)
-        FADDP   ST(1), ST(0)    \ x+sqrt(1+x^2) = y
-        FLDLN2
-        FXCH    ST(1)
-        FYL2X                   \ ln(y) = asinh(x)
-        NEXT
-        END-CODE
+: (FASINH1)   ( F: r -- arcsinh[r] )   \ ln(x+sqrt(1+x^2)), near 0 too
+        FDUP FDUP F* FDUP F1.0 F+ FSQRT F1.0 F+ F/ F+ FLN1P ;
 
 F1.0 40 F2**N* FCONSTANT BIG-NUM
 
@@ -1383,21 +605,8 @@ F1.0 40 F2**N* FCONSTANT BIG-NUM
         ELSE    (FASINH)
         THEN ;
 
-CODE (FACOSH)    ( F: r -- arccosh[r] )
-        CALL    (1VLOAD)
-        CALL    (2VEMPTY)
-        FLD1                    \ r, 1
-        FADD    ST(0), ST(1)    \ r, r+1
-        FLD1                    \ r, r+1, 1
-        FSUBR   ST(0), ST(2)    \ r, r+1, r-1
-        FMULP   ST(1), ST(0)    \ r, (r**2)-1
-        FSQRT,                  \ r, sqrt()
-        FADDP   ST(1), ST(0)
-        FLDLN2
-        FXCH    ST(1)
-        FYL2X
-        NEXT
-        END-CODE
+: (FACOSH)    ( F: r -- arccosh[r] )
+        FDUP F1.0 F+ FOVER F1.0 F- F* FSQRT F+ FLN ;
 
 : FACOSH   ( F: r -- arccosh[r] )
         FABS FDUP
@@ -1409,102 +618,21 @@ CODE (FACOSH)    ( F: r -- arccosh[r] )
         ELSE    (FACOSH)
         THEN ;
 
+
 F1.0 F1.0 2 0 FLOAT FSQRT F/ F- FCONSTANT 1-SQRT1/2
 
-LABEL (FATANH)   ( F: r -- arctanh[r] )
-        FLD1                    \ r, 1
-        FSUB    ST(0), ST(1)    \ r, 1-r
-        FTST
-        FSTSW   FLOAT-WORK
-        WAIT
-        MOV     AX, FLOAT-WORK
-        SAHF
-        U<= IF                          \ 1-r is <= 0 or invalid
-                0<> IF                  \ 1-r < 0
-                        POP     AX
-                        PUSH    ES
-                        MOV     AX, 2 [RP]
-                        MOV     ES, AX
-                        MOV     BX, 0 [RP]
-                        SUB     BX, # 2
-                        MOV     AX, 0 [RP] ES:
-                        POP     ES
-                        PUSH    AX
-                        MOV     AX, ES: -2 [SI]
-                        PUSH    AX
-                        MOV     AX, # $10         \ Argument out of range
-                        PUSH    AX
-                        MOV     AX, # ' FPERR
-                        JMP     AX
-                ELSE                    \ 1-r = 0 or invalid
-                        U< IF                   \ Invalid argument
-                                SUB     BX, # 2
-                                MOV     AX, 0 [RP] ES:
-                                POP     ES
-                                PUSH    AX
-                                MOV     AX, ES: -2 [SI]
-                                PUSH    AX
-                                MOV     AX, # $200
-                                PUSH    AX
-                                MOV     AX, # ' FPERR
-                                JMP     AX
-                        ELSE            \ r = 1, result is infinity
-                                FSTP    ST(0)
-                                FSTP    ST(0)
-                                MOV     BX, # ' INFINITY
-                                FLD     REAL*8 0 [BX]
-                                RET
-                        THEN
-                THEN
+\ F-PC native port: (FATANH) was 8087 code.  atanh(r) = ln1p(2r/(1-r))/2;
+\ |r| = 1 gives an infinity, |r| > 1 is out of range.
+: FATANH   ( F: r -- arctanh[r] )
+        FDUP F0< FABS
+        FDUP F1.0 F>
+        IF      DROP [ LAST @ ] LITERAL NAME> DUP $10 FPERR EXIT
         THEN
-        FXCH    ST(1)           \ 1-r, r
-        FLD1                    \ 1-r, r, 1
-        FXCH    ST(1)           \ 1-r, 1, r
-        FSCALE                  \ 1-r, 1, 2r
-        FSTP    ST(1)           \ 1-r, 2r
-        FDIVP   ST(1), ST(0)    \ 2r/(1-r) = z
-        FLDLN2                  \ z, ln2
-        FXCH    ST(1)           \ ln2, z
-\ Need to compare z with (1-1/sqrt(2)).  If less,use fyl2xp1, else add 1,
-\  and use fyl2x ?
-        FLD     REAL*8 ' 1-SQRT1/2 >BODY
-        FCOMP   ST(1)
-        FSTSW   FLOAT-WORK
-        WAIT
-        MOV     AX, FLOAT-WORK
-        SAHF
-        U<= IF                  \ 1-sqrt1/2 <= z
-                FLD1
-                FADDP   ST(1), ST(0)
-                FYL2X
-        ELSE
-                FYL2XP1                 \ 2*arctanh
+        FDUP F1.0 F=
+        IF      FDROP INFINITY
+        ELSE    FDUP F2* F1.0 FROT F- F/ FLN1P F2/
         THEN
-        FLD1
-        FCHS
-        FXCH    ST(1)
-        FSCALE
-        FSTP    ST(1)
-        RET
-        END-CODE
-
-CODE FATANH   ( F: r -- arctanh[r] )
-        CALL    (1VLOAD)
-        CALL    (2VEMPTY)
-        FTST
-        FSTSW   FLOAT-WORK
-        WAIT
-        MOV     AX, FLOAT-WORK
-        SAHF
-        U<=
-        IF      FCHS
-                CALL  (FATANH)
-                FCHS
-        ELSE
-                CALL  (FATANH)
-        THEN
-        NEXT
-        END-CODE
+        IF      FNEGATE THEN ;
 
 FALSE VALUE FP?
 
@@ -1551,30 +679,14 @@ VARIABLE FLOATING   FLOATING OFF
                 I (FP-CHECK) DROP
         LOOP ;
 
-CREATE (I10)  10 ,
+: F10.0    ( F: -- r2 )
+        10 S>F ;
 
-CODE F10.0    ( F: -- r2 )
-        CALL    (1VEMPTY)
-        FLD     INTEGER*2 (I10)
-        SUB     WORD FVTOS # 10
-        NEXT
-        END-CODE
+: FMUL10    ( F: r1 -- r2 )
+        10 S>F F* ;
 
-CODE FMUL10    ( F: r1 -- r2 )
-        CALL    (1VL1VE)
-        FLD     INTEGER*2 (I10)
-        FMULP   ST(1), ST(0)
-        NEXT
-        END-CODE
-
-CODE (FADDI)    ( F: r1 -- r2 ; n -- )
-        CALL    (1VL1VE)
-        MOV     BX, SP
-        FLD     INTEGER*2 0 [BX]
-        FADDP   ST(1), ST(0)
-        ADD     SP, # 2
-        NEXT
-        END-CODE
+: (FADDI)    ( F: r1 -- r2 ; n -- )
+        S>F F+ ;
 
 : QCONVERT    ( +q1 adr1 -- +q2 adr2 )
         >R QI>FP R>
@@ -1585,13 +697,8 @@ CODE (FADDI)    ( F: r1 -- r2 ; n -- )
         REPEAT
         DROP FP>QI R> ;
 
-CODE QNEGATE    ( +q -- -q )
-        MOV     BX, SP
-        FLD     0 [BX] INTEGER*8
-        FCHS
-        FSTP    0 [BX]
-        NEXT
-        END-CODE
+: QNEGATE    ( +q -- -q )
+        DNEGATE ;
 
 : QFLOAT    ( F: -- r ; q -- )
         DPL @ 0 MAX DPL !
@@ -1600,7 +707,7 @@ CODE QNEGATE    ( +q -- -q )
 : (MANTISSA)   ( F: -- r ; addr1 -- addr2 )
         DUP 1+ C@ ASCII + = ?MISSING            ( lead "+" invalid)
         DUP 1+ C@ ASCII - = DUP >R IF 1+ THEN   ( check for lead "-")
-        -1 DPL ! >R 0 0 0 0 R>
+        -1 DPL ! >R 0 0 R>                      \ F-PC native port: q is 2 cells
         BEGIN
                 QCONVERT DUP C@ ASCII . =       ( convert till "E" )
         WHILE
@@ -1623,10 +730,25 @@ CODE QNEGATE    ( +q -- -q )
         2DUP 308. DU< 0= ?MISSING R>
         IF DNEGATE THEN 0 DPL ! ;
 
+\ F-PC native port: FNUMBER converts with the VM's >FLOAT (correctly
+\ rounded) instead of (MANTISSA) (EXP) FLOAT FALOG F*, which rounded
+\ several times.  A missing exponent ("1.5E", "2E-") counts as 0, and a
+\ leading "+" is still invalid, as before.
+CREATE FNUM-BUF 40 ALLOT
+
+: (>FLOAT)   ( F: -- r ; addr -- )
+        DUP 1+ C@ ASCII + = ?MISSING
+        COUNT 38 MIN FNUM-BUF PLACE
+        FNUM-BUF COUNT + 1- C@ DUP ASCII E = OVER ASCII + = OR
+        SWAP ASCII - = OR
+        IF      ASCII 0 FNUM-BUF COUNT + C!  1 FNUM-BUF C+!
+        THEN
+        FNUM-BUF COUNT >FLOAT 0= ?MISSING ;
+
 : FNUMBER    ( addr -- r | n | d | ; )
         [ FORTH ] FLOATING OFF FP-CHECK BASE @ 10 = AND
         IF      EXP? @ FP? DPL @ 0 > AND OR
-                IF      (MANTISSA) (EXP) FLOAT FALOG F*
+                IF      (>FLOAT)
                         DPL OFF FLOATING ON EXIT
                 THEN
         THEN
@@ -1665,25 +787,86 @@ CREATE FLOAT-BCD 10 ALLOT
 
 VARIABLE #BCD   17 #BCD !
 
-CODE R>BCD!    ( F: r -- ; n -- ; full precision bcd-string to FLOAT-BCD )
-       CALL     (1VLOAD)
-       CALL     (2VEMPTY)
-       MOV      AX, #BCD
-       POP      CX
-       SUB      AX, CX
-       DEC      AX WORD
-       PUSH     AX
-       MOV      BX, SP
-       FLD      INTEGER*2 0 [BX]
-       ADD      SP, # 2
-       FLDL2T
-       CALL     (POWER)
-       FMULP    ST(1), ST(0)
-       FSTP     FLOAT-BCD BCD
-       WAIT
-       ADD      WORD FVTOS # 8
-       NEXT
-       END-CODE
+\ F-PC native port: R>BCD! and FIXBCD used the 8087's packed BCD store
+\ (FBSTP).  FLOAT-BCD keeps the same layout: 18 digits, two per byte,
+\ least significant byte first, and a sign byte ($80 = negative) at +9.
+\ The 64-bit doubles hold any 18-digit value.  R>BCD! now gets the digits
+\ from (F.); see below.
+
+: D*100   ( d -- d*100 )
+        100 * >R 100 UM* R> + ;
+
+: BCD>D   ( -- d )                      \ magnitude of FLOAT-BCD
+        0 0  0 8
+        DO      D*100  FLOAT-BCD I + C@ 16 /MOD 10 * + 0 D+
+        -1 +LOOP ;
+
+: D>BCD   ( d -- )                      \ store a double in FLOAT-BCD
+        FLOAT-BCD 10 ERASE
+        DUP 0< IF  $80 FLOAT-BCD 9 + C!  DABS  THEN
+        9 0
+        DO      100 MU/MOD ROT 10 /MOD 16 * + FLOAT-BCD I + C!
+        LOOP    2DROP ;
+
+: (F*10^N)   ( F: r1 -- r2 ; n -- )      \ r2 = r1 * 10^n, in steps that
+        BEGIN   DUP 300 >               \ don't overflow 10^n
+        WHILE   300 - [ 300. FLOAT ] FLITERAL [FALOG] F*
+        REPEAT
+        BEGIN   DUP -300 <
+        WHILE   300 + [ 300. FLOAT ] FLITERAL [FALOG] F/
+        REPEAT
+        DUP 0<
+        IF      NEGATE S>F [FALOG] F/   \ dividing by an exact power of
+        ELSE    S>F [FALOG] F*          \ ten rounds only once
+        THEN ;
+
+: D*10   ( d -- d*10 )
+        10 * >R 10 UM* R> + ;
+
+\ The digits come from the VM's (F.) (C's %g, correctly rounded): r*10^k
+\ computed in double precision would round twice and show noise digits.
+\ G-D accumulates the digits, G-EXP is the power of ten of its last digit
+\ (G-E10 the exponent after the e).
+CREATE G-BUF 40 ALLOT
+2VARIABLE G-D   VARIABLE G-EXP   VARIABLE G-E10   VARIABLE G-ESIGN
+VARIABLE G-STATE                \ 0 integer digits, 1 fraction, 2 exponent
+
+: (GPARSE)   ( a n -- )         \ parse %g output: [-]d[.ddd][e[+-]dd]
+        0. G-D 2!  G-EXP OFF  G-E10 OFF  G-ESIGN OFF  G-STATE OFF
+        BOUNDS
+        ?DO     I C@
+                DUP ASCII . = IF  DROP 1 G-STATE !        ELSE
+                DUP ASCII e = IF  DROP 2 G-STATE !        ELSE
+                DUP ASCII - = IF  DROP G-ESIGN ON         ELSE
+                DUP ASCII 0 ASCII 9 BETWEEN
+                IF      ASCII 0 -  G-STATE @ 2 =
+                        IF      G-E10 @ 10 * +  G-E10 !
+                        ELSE    G-D 2@ D*10 ROT 0 D+ G-D 2!
+                                G-STATE @ IF  -1 G-EXP +!  THEN
+                        THEN
+                ELSE    DROP
+                THEN  THEN THEN THEN
+        LOOP
+        G-E10 @ G-ESIGN @ IF NEGATE THEN G-EXP +! ;
+
+: R>BCD!    ( F: r -- ; n -- ; full precision bcd-string to FLOAT-BCD )
+        #BCD @ SWAP - 1-                        ( k: r*10^k is wanted )
+        FMAG FDUP F0= IF  2DROP FDROP 0. D>BCD EXIT  THEN
+        OVER + 1+                               ( k digits )
+        DUP 1 <
+        IF      DROP (F*10^N) FROUND F>D D>BCD EXIT     \ less than 1
+        THEN
+        FDUP F0< >R FABS
+        PRECISION-VAR @ >R  17 MIN PRECISION-VAR !
+        G-BUF 40 (F.) G-BUF SWAP (GPARSE)
+        R> PRECISION-VAR !
+        G-D 2@ ROT G-EXP @ +                    ( d p: r*10^k = d*10^p )
+        DUP 0<
+        IF      NEGATE 1- 0 ?DO 10 MU/MOD ROT DROP LOOP
+                5 0 D+ 10 MU/MOD ROT DROP       \ round the last digit
+        ELSE    0 ?DO D*10 LOOP
+        THEN
+        R> IF  DNEGATE  THEN  D>BCD ;
 
 : .DIGITS    ( last first -- )
         2DUP > ABORT"  FP I/O error. "
@@ -1695,21 +878,12 @@ CODE R>BCD!    ( F: r -- ; n -- ; full precision bcd-string to FLOAT-BCD )
 : FULL2    ( n -- )
         0 <# # # #> TYPE ;
 
-CODE FIXBCD   ( n1 -- n2 | FLOAT-BCD possibly changed )
-        CLEAR_LABELS
-        CALL    (2VEMPTY)
-        MOV     AL, FLOAT-BCD 8 +
-        CMP     AL, # $10
-        JB      1 $
-        MOV     BX, SP
-        INC     0 [BX] WORD
-        FLD     BCD FLOAT-BCD
-        FLD     INTEGER*2 (I10)
-        FDIVRP  ST(1), ST(0)
-        FSTP    BCD FLOAT-BCD
-        WAIT
-1 $:    NEXT
-        END-CODE
+: FIXBCD   ( n1 -- n2 | FLOAT-BCD possibly changed )
+        FLOAT-BCD 8 + C@ $10 <
+        IF      EXIT    THEN            \ 17 digits or less: fine
+        1+  FLOAT-BCD 9 + C@ >R         \ 18 digits: drop one, rounding
+        BCD>D 5 0 D+ 10 MU/MOD ROT DROP D>BCD
+        R> FLOAT-BCD 9 + C! ;
 
 : F.SPECIAL   ( F: r -- ; cc n -- )  \ Display special f-p numbers.
         SWAP DUP $0100 AND 0=
@@ -1722,9 +896,9 @@ CODE FIXBCD   ( n1 -- n2 | FLOAT-BCD possibly changed )
                 THEN
                 $0400 >
                 IF      FDROP " INFINITY"
-                ELSE    FLOAT-WORK F!  FLOAT-WORK 2@ D0= >R
-                        FLOAT-WORK 4 + 2@ SWAP
-                        $7FFF AND 0 $7FF8 D= R> AND
+                ELSE    FLOAT-WORK F!  FLOAT-WORK @ 0= >R    \ F-PC native
+                        FLOAT-WORK CELL+ @                  \ port: 32-bit
+                        $7FFFFFFF AND $7FF80000 = R> AND    \ cells
                         IF   " INDEFINITE"
                         ELSE   " NAN"
                         THEN
@@ -1758,27 +932,8 @@ VARIABLE #PLACES
 
         4 PLACES
 
-CODE FPARSE    ( F: r -- int-part frac-part )
-        CALL    (1VLOAD)
-        CALL    (2VEMPTY)
-        FLD     ST0
-        FSTCW   FLOAT-WORK
-        WAIT
-        MOV     AX, FLOAT-WORK
-        MOV     CX, AX
-        OR      AX, # $00C00
-        MOV     FLOAT-WORK AX
-        FLDCW   FLOAT-WORK
-        FRNDINT
-        MOV     FLOAT-WORK CX
-        FLDCW   FLOAT-WORK
-        FXCH    ST(1)
-        FLD     ST(1)
-        FSUBP   ST1, ST0
-        SUB     WORD FVTOS # 8
-        WAIT
-        NEXT
-        END-CODE
+: FPARSE    ( F: r -- int-part frac-part )      \ F-PC native port: was CODE
+        FDUP FTRUNC FSWAP FOVER F- ;
 
 : .INT    ( F: r -- )
         FDUP F0=
@@ -1789,18 +944,8 @@ CODE FPARSE    ( F: r -- int-part frac-part )
                 FIXBCD - SWAP .DIGITS
         THEN ;
 
-CODE FRNDFRC    ( F: +r1 -- +r2 )
-        CALL    (1VLOAD)
-        CALL    (2VEMPTY)
-        FLD     INTEGER*2 #PLACES
-        FCHS
-        FLDL2T
-        CALL    (POWER)
-        FLD     REAL*8 (F2.0)
-        FDIVRP  ST(1), ST(0)
-        FADDP   ST(1), ST(0)
-        NEXT
-        END-CODE
+: FRNDFRC    ( F: +r1 -- +r2 )          \ add half a unit in the last place
+        #PLACES @ NEGATE S>F [FALOG] (F2.0) F@ F/ F+ ;
 
 : .FRAC    ( F: r -- )
         FDUP F0=
@@ -1922,8 +1067,7 @@ VARIABLE F.R#INT
                 >R 0 R>BCD! R> #BCD @ DUP ROT - SWAP 1- .DIGITS
         THEN ;   \ convert and output fractional part
 
-: FDEPTH     ( -- n )
-        FSP0 FVTOS @ - 8 / ;
+\ F-PC native port: FDEPTH is a built-in.
 
 72 rmargin !
 
@@ -1967,32 +1111,26 @@ VARIABLE F.R#INT
         IF
                 DROP  @
         ELSE
-                8 * 2+  +
+                8 * CELL+  +            \ F-PC native port: skip a cell
         THEN    ;
 
+\ F-PC native port: the VM checks float stack underflow and overflow
+\ itself, and keeps no exception flags, so ?FSTACK only checks the
+\ (soft) FSTACK-SIZE limit before the usual checks.
+\ TODO-PORT: the 8087 version also reported invalid operation, division
+\ by zero and overflow from the sticky status flags.  That needs a
+\ built-in that reads (and clears) the host's floating point exception
+\ flags; see docs/port-notes/tools-T1.md.
 : ?FSTACK  ( -- )
-        FVTOS @ FSP0 SWAP U<
-        IF      FCLEAR TRUE ABORT" Floating Point Stack Underflow "
-        THEN
-        FVTOS @ FSP0 FSTACK-SIZE 8 * - U<
+        FDEPTH FSTACK-SIZE >
         IF      FCLEAR TRUE ABORT" Floating point Stack Overflow "
-        THEN
-        FPSW> DUP 1 AND
-        IF      FCLEAR  CR ." Invalid Floating Point Operation. "
-        THEN
-        DUP 4 AND
-        IF      FCLEAR  CR ." Floating Point Divsion by zero. "
-        THEN
-        8 AND
-        IF      FCLEAR  CR ." Floating Point Overflow. "
         THEN
         (?STACK) ;
 
 ' ?FSTACK IS ?STACK
 
-CREATE FR 94 ALLOT
-
-: FFILL  INITFP FR 14 + 80 -1 FILL  FR >FREGS INITFP ;
+\ F-PC native port: FR held an FSAVE image of the NPU registers.  FR.
+\ now shows the emulated control/status words and the float stack in hex.
 
 CREATE TAGLINE
         ," Valid  "
@@ -2000,13 +1138,18 @@ CREATE TAGLINE
         ," Special"
         ," Empty  "
 
+: (TAG)   ( F: r -- r ; -- n )  \ 0 valid, 1 zero, 2 special, 3 empty
+        FEXAM DUP $4100 = IF  DROP 3 EXIT  THEN
+        $4500 AND DUP $4000 = IF  DROP 1 EXIT  THEN
+        $0400 = IF 0 ELSE 2 THEN ;
+
 : .TAG   ( n1 -- )              \ Print an alpha version of the tag.
-        FR (TAG) 8 * TAGLINE + COUNT TYPE ;
+        8 * TAGLINE + COUNT TYPE ;
 
 CREATE EXCEPTIONAL ," PUOZDI"
 
 : .FPSTATUS   ( -- )
-        FR 2+ @ DUP FLIP $47 AND ."  CC = " DUP 7 >
+        FPSW> DUP FLIP $47 AND ."  CC = " DUP 7 >
         1 AND $30 + FEMIT 1 SPACES 7 AND
         3 0
         DO      DUP 3 > 1 AND $30 + FEMIT 1 SPACES
@@ -2023,23 +1166,22 @@ CREATE EXCEPTIONAL ," PUOZDI"
         DROP ;
 
 : FR.   ( -- )
-        FR >FREGS> BASE @ HEX CR 14 0
-        DO FR I + @ 0 <# # # # # #> SPACE TYPE 2 +LOOP
+        BASE @ HEX CR ."  FPCW = " FPCW> 0 <# # # # # #> TYPE
+        ."  FPSW = " FPSW> 0 <# # # # # #> TYPE
         3 SPACES .FPSTATUS
-        8 0
-        DO      CR SPACE 10 0
-                DO      FR 14 + J 10 * + I + C@ .2W
+        FDEPTH 0
+        ?DO     CR SPACE 8 0
+                DO      FSP @ J 8 * + 7 + I - C@ .2W
                 LOOP
-                I .TAG
+                I FPICK (TAG) FDROP .TAG
         LOOP
-        CR ." FVTOS = " FVTOS @ H.  ."  FVBOS = " FVBOS @ H.
-        ."  FBASE = " FSP0 H.  BASE ! ;
+        CR ." FSP = " FSP @ H.  ."  FBASE = " FSP0 H.  BASE ! ;
 
 ALSO HIDDEN DEFINITIONS
 
 : <.FSTAT>   ( -- )
         #OUT @ #LINE @ >R >R  ATTRIB C@ >R  BASE @ >R
-        DECIMAL 74 0 AT FDEPTH DUP
+        DECIMAL COLS 6 - 0 AT FDEPTH DUP        \ F-PC native port: COLS
         IF      >ATTRIB4 SPACE {.} SPACE >ATTRIB1
         ELSE    >ATTRIB1 DROP ."  {0}  "
         THEN
@@ -2058,5 +1200,6 @@ PREVIOUS DEFINITIONS
 
 PREVIOUS PREVIOUS
 
-\ .( ..Loaded)
+WARNING ON
 
+\ .( ..Loaded)

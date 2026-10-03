@@ -1,107 +1,50 @@
 \ FLTAUX.SEQ    Auxilliary floating point functions for CODEBUG or FLTBUG
+\                                                       F-PC native port
 
-NEEDS FASSEM.SEQ        \ Requires the floating point assembler
+\ F-PC native port: these words read the 8087 registers directly (FSAVE
+\ images, FXAM, BCD stores) so that the debugger could show the NPU stack
+\ without disturbing FFLOAT's virtual stack.  There is no NPU now: the
+\ "NPU stack" is the VM's float stack, which can be read without side
+\ effects.  The (xxx) words are the FFLOAT.SEQ words (or thin wrappers on
+\ them); the display words .NPUSTK and H.NPUSTK are kept.
 
-CODE (WAIT)
-        WAIT
-        NEXT
-        END-CODE
+\ NEEDS FASSEM.SEQ        \ Requires the floating point assembler
+NEEDS FFLOAT.SEQ        \ F-PC native port: FFLOAT provides the primitives
 
-CREATE FR1 94 ALLOT
-FR1 14 + CONSTANT NPSTK
+: (WAIT)   ( -- )   ;           \ F-PC native port: was WAIT
+
+\ F-PC native port: FR1 and NPSTK (an FSAVE image) are gone.
 CREATE FLT-WORK 10 ALLOT
 CREATE FLT-BCD 10 ALLOT
 VARIABLE (PLACES)
 VARIABLE (#BCD)   17 (#BCD) !
-CREATE [F2.0]     0 , 0 , 0 , $4000 ,
+CREATE [F2.0]     0 , $40000000 ,   \ REAL*8 2.0 (F-PC native port: 32-bit cells)
 
 : NPU-DEPTH   ( -- n )
-        FR1 >FREGS>
-        0 0 7
-        DO      I FR1 (TAG) 3 <>
-                IF      DROP I 1+ LEAVE
-                THEN
-        -1 +LOOP ;
+        FDEPTH ;                \ F-PC native port: the float stack depth
 
-CODE (FDROP)   ( F: r -- )      \ No monitoring of virtual stack.
-        FSTP  REAL*8 ST(0)      \ drop from NPU
-        NEXT
-        END-CODE
+: (FDROP)   ( F: r -- )      FDROP ;      \ No monitoring of virtual stack.
 
-CODE (FDUP)    ( F: r -- r r )          \ No monitoring of virtual stack
-        FLD   ST
-        NEXT
-        END-CODE
+: (FDUP)    ( F: r -- r r )  FDUP ;       \ No monitoring of virtual stack
 
-CODE (FABS)    ( F: r1 -- |r1|)         \ No virtual stack monitoring
-        FABS,
-        NEXT
-        END-CODE
+: (FABS)    ( F: r1 -- |r1|) FABS ;       \ No virtual stack monitoring
 
-CODE (FLOG)    ( F: r1 -- LOG10[r1])    \ No virtual stack check
-        FLDLG2
-        FXCH   ST(1)
-        FYL2X
-        NEXT
-        END-CODE
+: (FLOG)    ( F: r1 -- LOG10[r1]) FLOG ;  \ No virtual stack check
 
-CODE (FALOG)    ( F: r -- 10^r )
-        FLDL2T
-        CALL (POWER)
-        NEXT
-        END-CODE
+: (FALOG)    ( F: r -- 10^r )  [FALOG] ;
 
-CODE (FLOAT)    ( F: -- r ; d -- )
-        MOV     BX, SP
-        MOV     AX, 0 [BX]
-        MOV     CX, 2 [BX]
-        MOV     2 [BX], AX
-        MOV     0 [BX], CX
-        FLD     INTEGER*4 0 [BX]
-        ADD     SP, # 4
-        WAIT
-        NEXT
-        END-CODE
+: (FLOAT)    ( F: -- r ; d -- )  D>F ;
 
-CODE (F!)   ( F: r -- ; addr -- )
-        POP   BX
-        FSTP  REAL*8 0 [BX]
-        WAIT
-        NEXT
-        END-CODE
+: (F!)   ( F: r -- ; addr -- )  F! ;
 
-CODE (F/)    ( F: r1 r2 -- r1/r2)
-        FDIVRP  ST(1), ST(0)
-        NEXT
-        END-CODE
+: (F/)    ( F: r1 r2 -- r1/r2)  F/ ;
 
-CODE (FRNDFRC)    ( F: +r1 -- +r2 )
-        FLD    INTEGER*2 (PLACES)       \ 2
-        FCHS
-        FLDL2T                          \ 3
-        CALL    (POWER)                 \ 2
-        FLD     REAL*8 [F2.0]           \ 3
-        FDIVRP  ST(1), ST(0)            \ 2
-        FADDP   ST(1), ST(0)            \ 1
-        NEXT
-        END-CODE
+: (FRNDFRC)    ( F: +r1 -- +r2 )
+        (PLACES) @ NEGATE S>F [FALOG] [F2.0] F@ F/ F+ ;
 
-CODE (R>BCD!)    ( F: r -- ; n -- ; full precision bcd-string to FLT-BCD )
-       MOV      AX, (#BCD)
-       POP      CX
-       SUB      AX, CX
-       DEC      AX WORD
-       PUSH     AX
-       MOV      BX, SP
-       FLD      INTEGER*2 0 [BX]
-       ADD      SP, # 2
-       FLDL2T
-       CALL     (POWER)
-       FMULP    ST(1), ST(0)
-       FSTP     FLT-BCD BCD
-       WAIT
-       NEXT
-       END-CODE
+: (R>BCD!)    ( F: r -- ; n -- ; full precision bcd-string to FLT-BCD )
+        #BCD @ >R  (#BCD) @ #BCD !  R>BCD!  R> #BCD !   \ FFLOAT's, with
+        FLOAT-BCD FLT-BCD 10 CMOVE ;                    \ (#BCD) digits
 
 : (E.R0)    ( #dec   #col -- )
         OVER - 5 - SPACES ASCII . FEMIT 0
@@ -118,33 +61,19 @@ CODE (R>BCD!)    ( F: r -- ; n -- ; full precision bcd-string to FLT-BCD )
         ELSE DUP $0200 AND  IF  ." -"  ELSE  ." +"  THEN
              $0400 >
              IF    (FDROP) " INFINITY"
-             ELSE  FLT-WORK (F!)  FLT-WORK 2@ D0= >R
-                   FLT-WORK 4 + 2@ SWAP
-                   $7FFF AND 0 $7FF8 D= R> AND
+             ELSE  FLT-WORK (F!)  FLT-WORK @ 0= >R      \ F-PC native port:
+                   FLT-WORK CELL+ @                     \ 32-bit cells
+                   $7FFFFFFF AND $7FF80000 = R> AND
                    IF   " INDEFINITE"  ELSE   " NAN"   THEN
              THEN
         THEN
         ROT $.R ;
 
-CODE (FEXAM)    ( F: r -- r ; -- n )    \ This version assumes fpstack is ok.
-        NOP
-        FXAM
-        SUB     SP, # 2
-        MOV     BX, SP
-        FSTSW   0 [BX]
-        WAIT
-        AND     0 [BX], # $4700 WORD
-        NEXT
-        END-CODE
+: (FEXAM)    ( F: r -- r ; -- n )    \ This version assumes fpstack is ok.
+        FEXAM ;
 
-CODE (FP>DI)    ( F: r -- ; -- 32b )
-        SUB     SP, # 4
-        MOV     BX, SP
-        FRNDINT
-        FSTP    INTEGER*4 0 [BX]
-        WAIT
-        NEXT
-        END-CODE
+: (FP>DI)    ( F: r -- ; -- d )      \ F-PC native port: a 64-bit double
+        FRNDINT F>D ;
 
 : (C3C0X)    ( fpsw -- n )
         DUP  $04000 AND
@@ -155,25 +84,9 @@ CODE (FP>DI)    ( F: r -- ; -- 32b )
         IF   1+
         THEN ;
 
-CODE (RVS0)     ( F: r -- ; -- fpsw )
-        FTST
-        SUB     SP, # 2
-        MOV     BX, SP
-        FSTSW   0 [BX]
-        FSTP    ST(0)
-        WAIT
-        NEXT
-        END-CODE
+: (RVS0)     ( F: r -- ; -- fpsw )   [RVS0] ;
 
-CODE (RVSR)    ( F: r1 r2 -- ; -- fpsw )
-        FXCH    ST(1)
-        FCOMPP
-        SUB     SP, # 2
-        MOV     BX, SP
-        FSTSW   0 [BX]
-        WAIT
-        NEXT
-        END-CODE
+: (RVSR)    ( F: r1 r2 -- ; -- fpsw )   [RVSR] ;
 
 : (F0<)  ( F: r -- ; -- f)  (RVS0) (C3C0X) 1 = ;
 
@@ -183,7 +96,7 @@ CODE (RVSR)    ( F: r1 r2 -- ; -- fpsw )
 : (RND>-INF)  ( F: r -- ; -- d )
         $0400
         FPCW> DUP >R  $F3FF AND OR >FPCW
-        (FP>DI) SWAP R> >FPCW ;
+        (FP>DI) R> >FPCW ;              \ F-PC native port: no SWAP
 
 : (FMAG)   ( F: r -- r ; -- n )
         (FDUP) (FABS) (FLOG) (RND>-INF) DROP ;
@@ -250,22 +163,23 @@ TRUE DECIMAL_STACK !
 VARIABLE SIGDIGITS
 3 SIGDIGITS !           \ Default Number of significant digits
 
+\ F-PC native port: the items are copied with FPICK instead of being
+\ loaded from the FSAVE image; the deepest shown comes first.
 : .NPUSTK   ( -- )               \ Needs lots of work yet.
-        NPU-DEPTH DUP NDEPTH ! {.} INITFP
+        NPU-DEPTH DUP NDEPTH ! {.}
         SIGDIGITS @ 2 UMAX 19 UMIN DUP 7 +
         FPDISPSIZE #OUT @ - OVER / 0 MAX NDEPTH @ UMIN NDEPTH @ 0<>
         IF      1 MAX
         THEN
         NEGATE 0 SWAP
-        ?DO     NPSTK I 1+ 10 * - (F@)
+        ?DO     I 1+ NEGATE FPICK
                 2DUP (E.R)
         LOOP
         2DROP
-        FR1 >FREGS
         FPDISPSIZE 2 + #OUT @ - 0 MAX SPACES ;
 
-: .NPUHEX  ( addr -- )
-        $10 SAVE!> BASE 0 9
+: .NPUHEX  ( addr -- )          \ F-PC native port: 8 bytes, not 10
+        $10 SAVE!> BASE 0 7
         DO
                 DUP I + C@ 0 <# # # #> TYPE
         -1 +LOOP
@@ -274,10 +188,8 @@ VARIABLE SIGDIGITS
 
 : H.NPUSTK   ( -- )
         NPU-DEPTH DUP NDEPTH ! {.}
-        FPDISPSIZE 21 / NDEPTH @ UMIN 0
-        ?DO     NDEPTH @ I - 1- 10 * NPSTK +
+        FPDISPSIZE 17 / NDEPTH @ UMIN 0
+        ?DO     NDEPTH @ I - 1- 8 * FSP @ +     \ F-PC native port
                 .NPUHEX
         LOOP
-        FR1 >FREGS
         FPDISPSIZE #OUT @ - 0MAX SPACES ;
-

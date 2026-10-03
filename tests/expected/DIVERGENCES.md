@@ -66,4 +66,11 @@ New test for the port (no oracle): CODE words on the abstract machine, local lab
 
 ## tasks (tests/full)
 New test for the port (no oracle): the multitasker (SRC/MULTASK.SEQ) on the VM. Tests in
-tests/full/ run against the full system image F-PC.IMG; its status line is filtered out.
+tests/full/ run against the full system image F-PC.IMG; the status line is not drawn in batch mode.
+
+## float (tests/full)
+New test for the port (no oracle; the original needed an 8087): TOOLS/FFLOAT.SEQ on
+the VM's IEEE double float core. Input, F. E. F.R E.R, stack words, compares,
+rounding, conversions, trig/log/hyperbolics, FEXAM, the FR. register dump and FPERR.
+Output differs from the 8087 original where the double's true digits show:
+`0.1 E.` prints `.10000000000000001E+00`. Doubles (FLOAT, FIX, D.) are 64 bits.

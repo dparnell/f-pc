@@ -1,4 +1,4 @@
-\ Complex Floating Point Routines   by Mark Smiley
+\ Complex Floating Point Routines   by Mark Smiley             F-PC native port
 \ Corrections and additions by R. L. Smith
 \ Complex numbers are entered as ordered floating point pairs
 \ with the real part second on the f.p. stack, and the
@@ -6,8 +6,57 @@
 \ magnitude is second on the stack and the angle is at the
 \ top of the stack.
 
+\ F-PC native port: this file was written for SFLOAT (it uses FPOP FPUSH
+\ FPCOPY FPSEXP and FDUP0<).  It now also loads on FFLOAT: if FPOP is not
+\ defined, those words are defined below for FFLOAT's IEEE doubles, with
+\ the SFLOAT meaning of n (sign $8000 and a 15-bit exponent with bias
+\ $3FFF, so n 1+ doubles the number) and d holding the 53-bit significand
+\ (with its leading 1, so d = 0 means zero whatever n is, as in SFLOAT);
+\ FPOP ... FPUSH loses nothing.  FPERR takes three arguments in FFLOAT
+\ and two in SFLOAT: Z/ calls ZPERR, which adapts.
+
 ANEW COMPLEX
 FLOATS
+DECIMAL
+
+DEFINED FPOP NIP 0= #IF         \ FFLOAT
+
+CREATE ZWORK 8 ALLOT
+
+: FPOP   ( F: r -- ; -- d n )
+        ZWORK F!  ZWORK @  ZWORK CELL+ @        ( lo hi )
+        DUP 0< >R  DUP 20 RSHIFT 2047 AND       ( lo hi ef )
+        ?DUP IF  1022 - 16383 +  R> IF -32768 OR THEN
+             ELSE  R> DROP 0                    \ zero (and denormals)
+             THEN  >R  1048575 AND
+        OVER OVER OR R@ OR IF  1048576 OR  THEN  R> ;  \ the leading 1
+
+: FPUSH   ( F: -- r ; d n -- )
+        DUP 32768 AND >R  32767 AND             ( lo dhi e )
+        OVER 1048576 AND 0= OVER 0= OR          \ zero
+        IF  DROP 2DROP R> DROP 0 S>F EXIT  THEN
+        16383 - 1022 +                          ( lo dhi ef )
+        DUP 1 < IF  DROP 2DROP R> DROP 0 S>F EXIT  THEN    \ underflow
+        DUP 2046 >                                          \ overflow
+        IF      DROP 2DROP 1 S>F 0 S>F F/ R> IF  FNEGATE  THEN  EXIT
+        THEN
+        20 LSHIFT SWAP 1048575 AND OR  R> IF  $80000000 OR  THEN
+        ZWORK CELL+ !  ZWORK !  ZWORK F@ ;
+
+: FPCOPY   ( F: r -- r ; -- d n )   FDUP FPOP ;
+
+: FPSEXP   ( F: r -- r ; -- n )     FPCOPY NIP NIP ;
+
+: FDUP0<   ( F: r -- r ; -- f )     FDUP F0< ;
+
+: ZPERR   ( cfa n -- )   >R DUP R> FPERR ;
+
+#ELSE                           \ SFLOAT
+
+: ZPERR   ( cfa n -- )   FPERR ;
+
+#THEN
+
 HEX
 
 : ZDROP   ( Z: z -- )
@@ -45,7 +94,7 @@ HEX
 ( Vol.6, No. 8 , 1962 )
         FDUP0=
         IF      FDROP FDUP0=
-                IF      [ LAST @ NAME> ] LITERAL 1 FPERR
+                IF      [ LAST @ NAME> ] LITERAL 1 ZPERR
                 ELSE    FPCOPY F/ FSWAP FPUSH F/ FSWAP
                 THEN
                 EXIT
@@ -80,7 +129,8 @@ HEX
         FOVER F/ FDUP F* F1.0 F+ FSQRT F* ;
 
 : TOPOLAR   ( F: x y -- r theta )
-        F2DUP FATAN FPOP ZMAG FPUSH ;
+        F2DUP FSWAP F/ FATAN FPOP ZMAG FPUSH ;  \ F-PC native port: was
+        \ F2DUP FATAN (arctan of y, not y/x), which also left an extra number.
 
 : TOCART   ( F: r theta -- x y )
         F2DUP FSIN F* FPOP FCOS F* FPUSH ;
