@@ -40,11 +40,11 @@
                         then
                         \ Native port: if the result would not fit in the
                         \ handle (host directories are deep), or PDOS may
-                        \ have cut the directory short (63 chars), leave
+                        \ have cut the directory short (127 chars), leave
                         \ the name relative: the host resolves it against
                         \ the same current directory.
                         flhndl c@ pathhndl c@ + b/filename 3 - > 0=
-                        pathhndl c@ 64 < and
+                        pathhndl c@ 128 < and
                         if      flhndl 1+ pathhndl c@ over + flhndl c@ cmove>
                                 pathhndl count flhndl 1+ swap cmove
                                 pathhndl c@ flhndl c@ + flhndl c!

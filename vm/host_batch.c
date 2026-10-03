@@ -68,6 +68,7 @@ host_t *host_batch_new(void)
     host_t *h = calloc(1, sizeof *h);
     h->emit = b_emit; h->type = b_type; h->key = b_key; h->keyq = b_keyq; h->flush = b_flush;
     h->eof = b_eof;
+    h->stream = 1;
     h->put = b_put; h->gotoxy = b_gotoxy; h->tty = b_tty; h->size = b_size;
     return h;
 }

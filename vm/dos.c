@@ -365,6 +365,12 @@ static void int21(vm_t *vm, regs_t *r)
         vm_asciiz(vm, r->dx, name, sizeof name);
         struct stat st;
         if (dos_resolve(name, path, sizeof path, 0) != 0 || stat(path, &st) != 0) FAIL(r, 2);
+        if ((r->ax & 0xFF) == 1) {          /* set: only read-only maps to the host */
+            mode_t m = (r->cx & 1) ? st.st_mode & ~(mode_t)(S_IWUSR | S_IWGRP | S_IWOTH)
+                                   : st.st_mode | S_IWUSR;
+            if (chmod(path, m & 07777) != 0) FAIL(r, 5);
+            break;
+        }
         r->cx = S_ISDIR(st.st_mode) ? 0x10 : (st.st_mode & S_IWUSR) ? 0x20 : 0x21;
         break; }
     case 0x47: {                            /* get cwd into DS:SI, no drive or leading \ */
@@ -373,8 +379,8 @@ static void int21(vm_t *vm, regs_t *r)
         const char *c = cwd;
         while (*c == '/') c++;
         size_t n = strlen(c);
-        if (n > 63) n = 63;
-        uint8_t *p = vm_ptr(vm, r->si, 64);
+        if (n > 127) n = 127;               /* DOS: 63; callers have B/FILENAME room */
+        uint8_t *p = vm_ptr(vm, r->si, 128);
         for (size_t i = 0; i < n; i++) p[i] = (uint8_t)(c[i] == '/' ? '\\' : c[i]);
         p[n] = 0;
         break; }
@@ -542,8 +548,8 @@ static int next_key(vm_t *vm, int wait)
 
 void p_BIOSKEYQ(vm_t *vm)
 {
-    int q = next_key(vm, 0);
-    if (q > 1) screen_unget_key(vm, q);     /* a resize: report it as a key */
+    int q = scr_unget_peek(vm) ? 2 : next_key(vm, 0);
+    if (q > 1 && !scr_unget_peek(vm)) screen_unget_key(vm, q);  /* a resize: report it as a key */
     sv_set(vm, SV_BIOSCHAR, (ucell)q);
     push(vm, q ? TRUE_F : 0);
 }

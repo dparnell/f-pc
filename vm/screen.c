@@ -116,6 +116,7 @@ int screen_take_resize_key(vm_t *vm)
 }
 
 void screen_unget_key(vm_t *vm, int k) { scr(vm)->unget = k; }
+int  scr_unget_peek(vm_t *vm) { return scr(vm)->unget; }
 int  screen_unget_take(vm_t *vm) { int k = scr(vm)->unget; scr(vm)->unget = 0; return k; }
 
 void screen_cursor(vm_t *vm, int *x, int *y) { *x = scr(vm)->x; *y = scr(vm)->y; }
@@ -179,12 +180,13 @@ void screen_tty(vm_t *vm, int c)
 void screen_put(vm_t *vm, int x, int y, const uint8_t *str, int n, int attr)
 {
     screen_t *s = scr(vm);
+    if (vm->host->stream && vm->host->put && n > 0) vm->host->put(vm->host, x, y, str, (size_t)n, attr);
     if (y < 0 || y >= s->rows || x >= s->cols || n <= 0) return;
     if (x < 0) { str -= x; n += x; x = 0; }
     if (x + n > s->cols) n = s->cols - x;
     uint8_t *p = cellp(vm, x, y);
     for (int i = 0; i < n; i++) { p[i * 2] = str[i]; p[i * 2 + 1] = (uint8_t)attr; }
-    if (vm->host->put) vm->host->put(vm->host, x, y, str, (size_t)n, attr);
+    if (vm->host->put && !vm->host->stream) vm->host->put(vm->host, x, y, str, (size_t)n, attr);
 }
 
 /* ---- primitives ---------------------------------------------------------- */

@@ -117,6 +117,8 @@ typedef struct host {
     int  (*key)(struct host *h);            /* BIOS-style code, -1 = EOF */
     int  (*keyq)(struct host *h);
     int  (*eof)(struct host *h);               /* input has ended (batch) */
+    int  stream;                                /* output is a text stream: put gets
+                                                   whole strings, never clipped */
     void (*flush)(struct host *h);
     /* screen: put n chars at (x,y) with attribute; move the cursor;
        tty-style output at the cursor (handles CR LF BS BEL, scrolls) */
@@ -282,6 +284,7 @@ int   screen_check_resize(vm_t *vm);
 int   screen_take_resize_key(vm_t *vm);
 void  screen_unget_key(vm_t *vm, int k);
 int   screen_unget_take(vm_t *vm);
+int   scr_unget_peek(vm_t *vm);
 void  screen_cursor(vm_t *vm, int *x, int *y);
 int   screen_cols(vm_t *vm);
 int   screen_rows(vm_t *vm);
