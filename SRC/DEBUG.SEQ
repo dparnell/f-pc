@@ -208,31 +208,13 @@ headers
 
 : ?nest         ( cfa -- )      \ try to nest the word "cfa"
                 recursive       \ this is a recursive definition
-                dup @
-                case
-                CT-NEST         of      dup dup >body @ nest1   endof
-                CT-DOUSERDEFER  of      >user@  ?nest           endof
-                CT-DODEFER      of      >body @ ?nest           endof
-                                >r
-                                case
-                                ['] execute of  ccr ." EXECUTE: nest at the target" endof
-                                ['] perform of  ccr ." PERFORM: nest at the target" endof
-                                        \ *** DOES> test ***
-                                        dup does? nip
-                                        if      dup dup @ does-list ?dup
-                                                if      nest1
-                                                else    drop ccr
-                                                        dup dbgh. n>name.id
-                                                        ."  Is not debugable "
-                                                then
-                                        else    ccr
-                                                dup dbgh. dup n>name.id
-                                                ."  Is not debugable "
-                                        then
-                                        drop
-                                endcase
-                                r>drop
-                endcase ;
+                dup @ CT-NEST =         if  dup >body @ nest1  exit  then
+                dup @ CT-DOUSERDEFER =  if  >user@ ?nest       exit  then
+                dup @ CT-DODEFER =      if  >body @ ?nest      exit  then
+                dup does? nip                   \ *** DOES> test ***
+                if      dup @ does-list ?dup
+                        if  nest1 exit  then
+                then    ccr dup dbgh. n>name.id ."  Is not debugable " ;
 
 : unnest1       ( -- )
                 off> pfaline
@@ -347,9 +329,9 @@ defer .dbg-help         ' noop is .dbg-help
                                                 if      ccr
 ." Definition NAME may not be correct, this is one word of a class of words."
                                                         ccr
-                                                        dup dup @ does-list
+                                                        dup @ does-list
                                                         setdebug
-                                                else    dup dup >body @
+                                                else    dup >body @
                                                         setdebug
                                                 then
                                         else    drop
