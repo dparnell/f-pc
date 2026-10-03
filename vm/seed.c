@@ -48,14 +48,10 @@ typedef struct seed {
 
 /* ---- dictionary space ----------------------------------------------------- */
 static ucell here(vm_t *vm) { return uv(vm, U_DP); }
-/* ALLOT zero-fills: WORD leaves its string at HERE, and F-PC's source
- * assumes buffers made with CREATE ... ALLOT start out clear (the
- * metacompiler built the original kernel in zeroed memory). */
 static void allot(vm_t *vm, cell n)
 {
-    ucell old = here(vm), h = old + (ucell)n;
+    ucell h = here(vm) + (ucell)n;
     if (h < vm->code_base || h > vm->code_end) vm_throw(vm, E_DSTACK_OVER, "Dictionary full");
-    if (n > 0) memset(vm->mem + old, 0, (size_t)n);
     uv_set(vm, U_DP, h);
 }
 static void comma(vm_t *vm, ucell v) { ucell h = here(vm); allot(vm, 4); wr32(vm, h, v); }

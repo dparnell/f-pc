@@ -14,7 +14,9 @@ comment:
 comment;
 
 CREATE FPATH$     160 ALLOT     \ Room for a LOO..NG path.
+FPATH$ 160 ERASE                \ (the metacompiler built the kernel in zeroed memory)
 CREATE PATHHNDL B/HCB ALLOT     \ A temporary handle
+PATHHNDL B/HCB ERASE
 0 VALUE PATHPTR                 \ A pointer into the string of paths
 0 VALUE PATHLEN
 
@@ -90,6 +92,7 @@ CREATE PATHHNDL B/HCB ALLOT     \ A temporary handle
                 abort" Open Error!" ;
 
 CREATE $FILE_BUF 512 ALLOT     \ was 64: room for a host path and a prefix
+$FILE_BUF 512 ERASE
 
 : <$FILE>         ( a1 --- f1 )         \ f1 = true if failed to open
                 dup>r count $file_buf place

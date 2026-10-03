@@ -29,8 +29,9 @@ IBLEN 0 POINTER INBSEG          \ the input buffer
    VARIABLE TOTALLINES
 
      CREATE OUTBUF OBLEN 1+ ALLOT ALIGN \ the line output buffer
+     OUTBUF OBLEN 1+ ERASE
 7 B/HCB * CONSTANT MAXNEST        \  maximum of 7 hcb's
-       CREATE HNDLS MAXNEST B/HCB + ALLOT
+       CREATE HNDLS MAXNEST B/HCB + ALLOT   HNDLS MAXNEST B/HCB + ERASE
         HNDLS !> SEQHANDLE        \ PRESET POINTER
    2VARIABLE FILEPOINTER          \ most recent read
      BUILTIN LOADING              \ Are we in the proccess of loading a file?

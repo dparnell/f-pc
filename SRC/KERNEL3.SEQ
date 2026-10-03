@@ -151,7 +151,7 @@ BUILTIN COMPILE         ( -- )          \ compile the in-line word
 : [COMPILE]     ( -- )
                 ' X,   ; IMMEDIATE
 
-VARIABLE  "BUF 132 ALLOT
+VARIABLE  "BUF 132 ALLOT   "BUF 136 ERASE
 
 : XALIGN        ( -- )          XHERE ALIGNED XDP ! ;
 

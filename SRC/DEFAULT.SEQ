@@ -16,6 +16,7 @@ BUILTIN (FPC-HOME)      ( -- a1 )       \ counted: the installation directory
                 " SRC" HOME-PATH+  " HLP" HOME-PATH+  " TOOLS" HOME-PATH+ ;
 
 CREATE CFGHNDL ," KERNEL.CFG" B/HCB ALLOT
+CFGHNDL COUNT + B/HCB ERASE
 
 : DOS>TIB       ( --- )
                 dos-line count dup #tib ! tib swap cmove >in off ;

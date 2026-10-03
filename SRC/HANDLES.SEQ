@@ -37,7 +37,7 @@ VARIABLE RWERR
         \          |_Address of the array returned by a word
         \            defined with HANDLE.
 
-CREATE DEFEXT 3 C, ASCII S C, ASCII E C, ASCII Q C, 4 ALLOT
+CREATE DEFEXT 3 C, ASCII S C, ASCII E C, ASCII Q C, 4 ALLOT  DEFEXT 4 + 4 ERASE
 
 : ?DEF.EXT      ( handle --- )    \ maybe add an extension to file
                  dup c@ B/FILENAME 4 - > if drop exit then

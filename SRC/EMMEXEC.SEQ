@@ -11,7 +11,9 @@ VARIABLE DSK-STATUS     TRUE DSK-STATUS !
 : DISKOFF       ( -- )          USE-DISK OFF  DSK-STATUS ON ;
 
 CREATE EXEC$      $100 ALLOT    \ the command line: count byte, text
+EXEC$ $100 ERASE
 CREATE EXEC.PARAM $10  ALLOT    \ the EXEC parameter array (unused)
+EXEC.PARAM $10 ERASE
 CREATE CMDPATH    ," /bin/sh" 0 , $40 ALLOT
 
 BUILTIN SYSTEM          ( addr len -- return-code )     \ run via the host shell
