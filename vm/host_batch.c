@@ -3,23 +3,42 @@
  * the order they are made; positions are ignored. */
 #include "vm.h"
 
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 static void b_emit(host_t *h, int c) { (void)h; if (c != '\r') putchar(c); }
 static void b_type(host_t *h, const uint8_t *s, size_t n) { (void)h; fwrite(s, 1, n, stdout); }
+/* KEY? is true only when input is waiting. At end of input it turns true
+ * after many polls, so a loop waiting for a key reaches KEY, which ends
+ * the session, while occasional KEY? checks (SEE, WORDS) see no key. */
+static int pending = -2, eof_polls;
+
+static int b_keyq(host_t *h)
+{
+    (void)h;
+    if (pending != -2) return pending != EOF || ++eof_polls > 1000;
+    struct pollfd p = { 0, POLLIN, 0 };
+    if (poll(&p, 1, eof_polls > 100 ? 10 : 0) <= 0) { eof_polls++; return 0; }
+    pending = getchar();
+    if (pending == EOF) return ++eof_polls > 1000;
+    eof_polls = 0;
+    return 1;
+}
+
 static int  b_key(host_t *h)
 {
     (void)h;
     fflush(stdout);
-    int c = getchar();
+    int c;
+    if (pending != -2) { c = pending; pending = -2; if (c == EOF) pending = EOF; }
+    else c = getchar();
     if (c == EOF) return -1;
     if (c == '\n') return 13;               /* Enter */
     if (c == '\r') return b_key(h);
     if (c == 8 || c == 127) return 0x0E08;  /* Backspace */
     return c & 0xFF;
 }
-static int  b_keyq(host_t *h) { (void)h; return 1; }   /* a read never fails to return */
 static void b_flush(host_t *h) { (void)h; fflush(stdout); }
 static void b_put(host_t *h, int x, int y, const uint8_t *s, size_t n, int attr)
 {

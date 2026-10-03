@@ -1,4 +1,5 @@
 \ DEBUG.SEQ     A high level debugger      Enhancements by Tom Zimmer
+\                                                       F-PC native port
 
 \ The debugger is designed to let the user single step the
 \ execution of a high level definition.  To invoke the
@@ -6,8 +7,13 @@
 \ word you wish to trace.  When XXX executes, you will get
 \ a single step trace showing you the word within XXX that
 \ is about to execute, and the contents of the parameter
-\ stack. This debugger works by patching the NEXT routine,
-\ so it is highly machine and implementation dependent.
+\ stack.
+\
+\ Native port: the original patched the 8086 NEXT routine. The VM has a
+\ trace hook instead: while DBG-ON is set, before running the token at
+\ an IP within [DBG-LO, DBG-HI) the inner interpreter pushes the IP and
+\ calls the word in 'DEBUG (TRACE). IPs are absolute list addresses;
+\ DBSEG holds the start of the token list being debugged.
 
 ONLY FORTH ALSO DEFINITIONS HIDDEN ALSO
 
@@ -46,7 +52,6 @@ headerless
 ' SRCCR IS .SRCCR
 
 DEFER .DEFSRC   ' SHOWSRC IS .DEFSRC    \ display definition source
-
 DEFER DO.SRC    ' .DEFSRC IS DO.SRC
 
 headers
@@ -63,13 +68,13 @@ headerless
 
 ONLY FORTH ALSO DEFINITIONS BUG ALSO
 
-VARIABLE DBSEG
-VARIABLE DBOFF
-VARIABLE CNT
-VARIABLE 'DEBUG   ( Code field for high level trace )
+VARIABLE DBSEG          \ start of the token list being debugged
+
 DEFER DBG.S     ' .S IS DBG.S           \ default DBG.S to the systems .S
 DEFER SKIP_TO   ' NOOP IS SKIP_TO       \ allow skipping to later point in
                                         \ definition.
+0 VALUE SHOWBASE                        \ number base for the stack display
+
 create #pad-save 10 allot
 
 : DEBUG.S       ( -- )                  \ display stack in specified base
@@ -84,12 +89,12 @@ create #pad-save 10 allot
                 restore> base ;
 
 : DBG_RDEPTH    ( -- n1 )
-                                        \ The "14" takes account of debug
-                rp0 @ rp@ - 4 - 14 - 0 max 2/ ;
+\ Return stack depth of the program being debugged: leave out TRACE's own
+\ frames (its return into the debugged word, and the saved attribute).
+                rp0 @ rp@ - cell / 6 - 0 max ;
 
 : .RP           ( -- )
                 hld @
-\                save> hld
                 pad 10 - #pad-save 10 cmove
                 ."  <" dbg_rdepth 0 max dup (.) type ." >" 8 sp>col
                 14 over - 0max 5 * spaces
@@ -97,7 +102,6 @@ create #pad-save 10 allot
                 ?DO      I 3 + rpick space h.4
                 LOOP
                 #pad-save pad 10 - 10 cmove
-\                restore> hld
                 hld ! ;
 
 : DO.SHOW.SOURCE ( -- )
@@ -114,120 +118,53 @@ create #pad-save 10 allot
                 #pad-save pad 10 - 10 cmove
                 restore> hld ;
 
-LABEL FNEXT   ( Fix the >NEXT code back to normal )
-        MOV AX, # $AD26                 \ ES: LODSW
-        MOV >NEXT AX
-        MOV AX, # $E0FF                 \ JMP AX
-        MOV >NEXT 2+ AX
-        RET END-CODE
-
-LABEL DNEXT   ( The Debugger version of a normal >NEXT )
-    ES: LODSW JMP AX
-        END-CODE
-
-LABEL DEBNEXT
-        MOV AX, ES
-        CMP AX, DBSEG                           \ does SEG match?
-        0= IF   MOV AX, IP
-                CMP AX, DBOFF                   \ is offset greater
-                >= IF   INC CNT
-                        CMP CNT # 2             \ gone through twice?
-                        0= IF   MOV CNT # 0
-                                CALL FNEXT
-                                PUSH IP
-                                MOV AX, 'DEBUG
-                                JMP AX
-                        THEN
-                THEN
-        THEN    JMP DNEXT
-        END-CODE
-
-CODE PNEXT   ( -- )
-        MOV AL, # $0E9
-        MOV >NEXT AL
-        MOV AX, # DEBNEXT  >NEXT 3 + -
-        MOV >NEXT 1+ AX
-        NEXT   C;
+: PNEXT         ( -- )          \ re-arm the trace hook
+                DBG-ON ON ;
 
 headers
 
 FORTH DEFINITIONS ALSO HIDDEN ALSO
 
-CODE UNBUG    ( -- )
-        CALL FNEXT
-        NEXT   C;
+: UNBUG         ( -- )          \ disarm the trace hook
+                DBG-ON OFF ;
 
 BUG DEFINITIONS
 
 headerless
 
 CREATE DSTK 100 ALLOT DSTK 100 ERASE
-
 variable slowly
 variable zippy
 variable dcnt
-variable dbcfa
+variable dbcfa                          \ the list being debugged
 
-\ ' >NAME.ID @REL>ABS CONSTANT 'DOCOL
-' KEY   @REL>ABS          CONSTANT 'UDEFER
-' BDOS  @REL>ABS          CONSTANT 'DEFER
-' FORTH @REL>ABS @REL>ABS CONSTANT 'DODOES
+0 value segabove                        \ IP in the routine above current
 
-0 value segabove                        \ segment of routine above current
-
-: find_:        ( a1 n1 -- a2 n2 )   \ find any definition
-                begin   $E9 ( jmp ) scan
-                        over @rel>abs 'docol <> over and
-                while   3 /string
-                repeat  ;
-
-: find_dodoes   ( a1 n1 -- a2 n2 )   \ find any definition
-                begin   $E8 ( call ) scan
-                        over @rel>abs @rel>abs 'dodoes <> over and
-                while   3 /string
-                repeat  ;
-
-headers
-
-: seg>cfa       ( seg -- cfa f1 )       \ find cfa given the physical segment
-                xseg @ - >r
-                $100 here $100 -
-                begin   find_: over >body @ r@ <> over and
-                while   5 /string
-                repeat  dup 0=
-                if      2drop
-                        $100 here $100 -
-                        begin   find_dodoes over @rel>abs
-                                >body @ r@ <> over and
-                        while   5 /string
-                        repeat
-                then    r>drop ;
-
-headerless
+: seg>cfa       ( ip -- cfa f1 )        \ the word whose body holds ip
+                IP>CFA ;
 
 : n>name.id     ( cfa --- )
                 on>  ?defattrib >name.id
                 off> ?defattrib ;
 
 : next_word@    ( -- cfa )
-                dbseg @ pfasav @ @L ;
+                pfasav @ @ ;
 
 : d.id          ( -- )                      \ debugger id dot
                 ccr
                 save> base hex
                 save> hld
                 pad 10 - #pad-save 10 cmove
-                dbseg  @ 4 u.r
-                pfasav @ 3 u.r
+                pfasav @ dbseg @ - 4 u.r        \ offset in the definition
                 #pad-save pad 10 - 10 cmove
                 restore> hld
                 restore> base
-                dcnt @ 0max 16 mod spaces
-                next_word@ dup @rel>abs
+                dcnt @ 0max cell / 2* 16 mod spaces
+                next_word@ dup @
                 case
-                        'docol  of      ."  :  "        endof
-                        'udefer of      ."  Ud "        endof
-                        'defer  of      ."  d  "        endof
+                        CT-NEST         of      ."  :  "        endof
+                        CT-DOUSERDEFER  of      ."  Ud "        endof
+                        CT-DODEFER      of      ."  d  "        endof
                                 over
                                 case
                                 ['] execute of  ."  e  "        endof
@@ -240,25 +177,26 @@ headerless
                 endcase
                 n>name.id 16 nlen @ - spaces ;
 
-: setdebug      ( cfa1 cfa2 -- )        \ cfa1 is for name displaying
-                                        \ cfa2 is for debugging
+headers
+
+: setdebug      ( cfa list -- )         \ cfa is for name displaying
+                                        \ list is the token list to debug
                 swap defcfa !
                 dup dbcfa !
-                >body @ +xseg dbseg !
+                dup dbseg !
+                dup DBG-LO !  BODY-END DBG-HI !
                 off> pfaline off> #empty
-                slowly off 1 CNT ! DBOFF OFF ;
+                slowly off ;
 
 : >user@        ( cfa1 -- cfa2 )
                 >body @ up @ + @ ;
 
 : DSTK0 DSTK 100 ERASE DCNT OFF ;
+: >DS   DCNT @ DSTK + !  CELL DCNT +! ;
+: DS>   DCNT @ CELL < 0= IF CELL NEGATE DCNT +! THEN DCNT @ DSTK + @ ;
 
-: >DS   DCNT @ DSTK + !  2 DCNT +! ;
-
-: DS>   DCNT @ 2 < 0= IF -2 DCNT +! THEN DCNT @ DSTK + @ ;
-
-: nest1         ( cfa1 cfa2 -- )        \ save current debug and nest to
-                ccr                     \ "cfa2". display "cfa1".
+: nest1         ( cfa list -- )         \ save current debug and nest to
+                ccr                     \ "list". display "cfa".
                 over dup dbgh. n>name.id
                 ."  nesting "
                 dbcfa @ >ds
@@ -266,26 +204,27 @@ headerless
                 setdebug ;
 
 : ?docol        ( cfa -- f1 )
-                @rel>abs 'docol = ;
+                @ CT-NEST = ;
 
 : ?nest         ( cfa -- )      \ try to nest the word "cfa"
                 recursive       \ this is a recursive definition
-                dup @rel>abs
+                dup @
                 case
-                'docol  of      dup nest1               endof
-                'udefer of      >user@  ?nest           endof
-                'defer  of      >body @ ?nest           endof
+                CT-NEST         of      dup dup >body @ nest1   endof
+                CT-DOUSERDEFER  of      >user@  ?nest           endof
+                CT-DODEFER      of      >body @ ?nest           endof
                                 >r
                                 case
-                                ['] execute of  dup   ?nest             endof
-                                ['] perform of  dup @ ?nest             endof
-                                ['] exec:   of  dup 1+ 2*
-                                                dbseg @ pfasav @ rot +
-                                                @L    ?nest             endof
+                                ['] execute of  ccr ." EXECUTE: nest at the target" endof
+                                ['] perform of  ccr ." PERFORM: nest at the target" endof
                                         \ *** DOES> test ***
-                                        dup        @rel>abs @rel>abs
-                                        ['] forth  @rel>abs @rel>abs =
-                                        if      dup dup @rel>abs nest1
+                                        dup does? nip
+                                        if      dup dup @ does-list ?dup
+                                                if      nest1
+                                                else    drop ccr
+                                                        dup dbgh. n>name.id
+                                                        ."  Is not debugable "
+                                                then
                                         else    ccr
                                                 dup dbgh. dup n>name.id
                                                 ."  Is not debugable "
@@ -301,7 +240,7 @@ headerless
                 slowly @
                 if      DO.SHOW.SOURCE
                 then    off> slowly off> zippy
-                dcnt @ 4 >=
+                dcnt @ 2 cells >=
                 if      ds> ds> setdebug
                 then    ;
 
@@ -314,13 +253,9 @@ headerless
                         drop
                 endcase ;
 
-
 \ Type "?" while in the debugger to display the following line;
-
 \       C-cont, D-done, F-forth, Q-quit, N-nest, U-unnest:
-
 \ The commands are available while debugging, as follows;
-
 \       C-cont          Continuous, scrolls through words as they
 \                       are executed, stop by pressing <return>.
 \       D-done          We are Done debugging, allow normal execution
@@ -376,17 +311,19 @@ defer .dbg-help         ' noop is .dbg-help
                                 ccr .rp         0=      then
                         'O' 2 pick ?upc =
                         if      order           0=      then
+                        K-RESIZE 2 pick =       \ the terminal changed size
+                        if      do.show.source  0=      then
                         extra-commands
                 while  drop d.id DO.SHOW.SOURCE
                 repeat ?upc ;
-
-0 VALUE SAVESEG
 
 : trace         ( ip - )
                 attrib @ >r 7 attrib c!
                 pfasav ! debug.s d.id
                 slowly @ 0= zippy @ or if DO.SHOW.SOURCE then
-                r> 2r> 2r> over =: segabove 2>r 2>r >r
+                \ return stack: saved attrib, return into the debugged word,
+                \ return into the word above it
+                r> r> r> dup =: segabove >r >r >r
                 ?unnest1
                 slowly @ 0= (key?) or
                 if      slowly off zippy off
@@ -403,17 +340,17 @@ defer .dbg-help         ' noop is .dbg-help
                                 r> attrib !
                                 -1 pfasav ! exit                endof
                         'S' of  skip_to                         endof
-                        'U' of  dcnt @ 4 >=
+                        'U' of  dcnt @ 2 cells >=
                                 if      ds> ds> setdebug
                                 else    segabove seg>cfa        \ -- cfa f1
-                                        if      dup @rel>abs @rel>abs
-                                                'dodoes =
+                                        if      dup does?  nip
                                                 if      ccr
 ." Definition NAME may not be correct, this is one word of a class of words."
                                                         ccr
-                                                        dup @rel>abs
+                                                        dup dup @ does-list
                                                         setdebug
-                                                else    dup setdebug
+                                                else    dup dup >body @
+                                                        setdebug
                                                 then
                                         else    drop
                                                 ccr ." Couldn't find CFA "
@@ -440,10 +377,10 @@ defer .dbg-help         ' noop is .dbg-help
                 begin   DO.SHOW.SOURCE
                         key ?upc
                         case
-                        '+' of 2 pfasav +!               false endof
-                        '-' of pfasav @ 2- 0max pfasav ! false endof
-( ESC )                 27  of                           true  endof
-( Enter )               13  of pfasav @ 2- 0max DBOFF !  true  endof
+                        '+' of cell pfasav +!                       false endof
+                        '-' of pfasav @ cell- dbseg @ max pfasav !  false endof
+( ESC )                 27  of                                      true  endof
+( Enter )               13  of pfasav @ cell- dbseg @ max DBG-LO !  true  endof
                                drop false beep
                         endcase
                 until
@@ -456,7 +393,7 @@ headers
 FORTH DEFINITIONS
 
 : adebug        ( a1 --- )
-                debugable       \ convert inline next to jmp next for debugger.
+                debugable       \ nothing to fix in the VM: kept for TOOLS
                 dstk0                           \ clear debugger stack
                 ?nest                           \ try to nest into definition
                 dcnt @ 0= abort" Aborting.. "
@@ -465,8 +402,7 @@ FORTH DEFINITIONS
                 pnext ;                         \ set debugger active
 
 : debug         ' adebug ;
+
 : dbg           >in @  debug  >in !  ;
 
 ONLY FORTH ALSO DEFINITIONS
-
-
