@@ -9,6 +9,7 @@ vm/fpc -i F-PC.IMG         # run it in the terminal (adapts to the terminal size
 vm/fpc --sdl -i F-PC.IMG   # ... or in an SDL window
 vm/fpc - FLOAD MY.SEQ BYE  # scripted: the rest of the line is F-PC's command line
 make -C vm test            # regression tests; make -C vm test-ui needs pip install pyte
+make -C vm test-tools      # load each TOOLS/*.SEQ add-on
 ```
 
 Things to try:
@@ -16,6 +17,7 @@ Things to try:
 - `DEBUG word`, then run the word (the single-stepping debugger).
 - `FILE name` then `1 EDIT` (SED, the editor); `VIEW word` opens a word's source.
 - F1 (hypertext help), ESC (the menu bar).
+- The add-ons in `TOOLS/`, e.g. `FLOAD FFLOAT.SEQ` (floating point), `FLOAD SPREAD.SEQ` (a spreadsheet), `FLOAD NEW-WFL.SEQ` (a file browser), `FLOAD DISASSEM.SEQ` then `SEE` a CODE word.
 
 How it works:
 - **The VM.** Built-ins are C; the inner interpreter uses computed goto; memory is flat and bounds-checked; images can be saved.

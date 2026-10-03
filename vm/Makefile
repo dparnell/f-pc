@@ -21,6 +21,10 @@ $(OBJS): vm.h prims.def seed.h amops.def
 image: fpc
 	cd ../SRC && ./../vm/fpc --batch - FLOAD F-PC.SEQ FSAVE ../F-PC BYE </dev/null >/dev/null
 
+# load every TOOLS/*.SEQ add-on on the full system, each on its own
+test-tools: fpc image
+	../tools/loadtools.sh
+
 # interactive UI scenarios in a pseudo-terminal (needs python pyte)
 test-ui: fpc image
 	../tools/runtests-ui.sh

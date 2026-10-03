@@ -12,10 +12,11 @@ vm/fpc --sdl -i F-PC.IMG   # the same in an SDL window (PSF console font, resiza
 vm/fpc              # bare kernel, loaded from SRC/KERNEL.SEQ (~6 ms)
 make -C vm test     # regression tests: from source, from an image, without JIT
 make -C vm test-ui  # UI scenarios in a pseudo-terminal (needs: pip install pyte)
+make -C vm test-tools  # load each of the 65 TOOLS/*.SEQ add-ons
 ```
 
 Running `fpc`:
-- `--batch` gives plain stdin/stdout, with no screen control.
+- `--batch` gives plain stdin/stdout, with no screen control and no status line. A load error prints the file, line and a caret, and `fpc` exits with status 1.
 - The remaining arguments are F-PC's DOS command line, for example `vm/fpc - FLOAD MYFILE.SEQ BYE`.
 - Sources are found through `FPATH`, which defaults to the installation directory and its `SRC`, `HLP` and `TOOLS`, so `fpc` works from any directory.
 
@@ -33,6 +34,7 @@ Running `fpc`:
 | M5: terminal UI with live resize | Done. The ANSI host diffs the VM's text screen; `SIGWINCH` drives `RESIZED` and `K-RESIZE`. SED, the status line, menus and the file list follow the terminal size |
 | M6: native CODE words | Done. AM assembler (`SRC/AMASM.SEQ`), interpreter, sljit JIT (about 6x faster than the interpreter) |
 | M7: debugger, multitasker, SDL | Debugger done, on a VM trace hook. Multitasker (`MULTASK.SEQ`, load it with `FLOAD MULTASK.SEQ`) done, switching tasks in high-level Forth. SDL window host done (`fpc --sdl`) |
+| M8: TOOLS add-ons | Done: all 65 `TOOLS/*.SEQ` files load (`make -C vm test-tools`). Floating point (FFLOAT on the VM's IEEE doubles, SFLOAT in software), the AM disassembler and single-stepper, PROFILE, LOCALS, OBJECT, WINDOW, the SPREAD spreadsheet, BLOCK files, the NEW-WFL file browser and more. Notes: `docs/port-notes/tools-T*.md` |
 
 ## What is verified interactively
 
@@ -47,9 +49,10 @@ Running `fpc`:
 
 ## Known gaps / next steps
 
-- **TOOLS/** (66 optional add-ons, including the float packages) is not ported yet.
+- **TOOLS stubs.** RS232IB (serial), XMS, EXPANDED and EMMEXMPL keep their names but do nothing useful; a serial port would need host built-ins.
+- **Float exceptions.** FFLOAT reports invalid/zero-divide/overflow only after `FTRAPS ON` (`?STACK` runs after every word).
 - **Mouse.** Works in xterm-compatible terminals (SGR reporting); the batch host has none.
-- **Popups that assume 80x25.** WFL and some SED popups clip on smaller terminals rather than reflowing.
+- **Popups that assume 80x25.** WFL, NEW-WFL's dialogs, SELECT/COLPLAY boxes and some SED popups clip on smaller terminals rather than reflowing.
 - **PRN.** Printer output goes to `$FPC_PRN` (a file, or `|command` such as `|lpr`); without it, it is discarded unless `PFILE` redirects it.
 - **Performance.** Primitives are C built-ins, with no top-of-stack caching yet; the JIT covers only CODE words.
 
