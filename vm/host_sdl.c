@@ -479,7 +479,7 @@ host_t *host_sdl_new(void)
     sdl_t *t = calloc(1, sizeof *t);
     if (find_font(t) != 0) { fprintf(stderr, "fpc: no PSF font found (set FPC_FONT)\n"); return NULL; }
     synth_glyphs(t);
-    t->scale = getenv("FPC_SCALE") ? atoi(getenv("FPC_SCALE")) : 1;
+    t->scale = getenv("FPC_SCALE") ? atoi(getenv("FPC_SCALE")) : t->cw <= 8 ? 2 : 1;
     if (t->scale < 1) t->scale = 1;
     t->cols = 80; t->rows = 25;
     t->win = SDL_CreateWindow("F-PC", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
