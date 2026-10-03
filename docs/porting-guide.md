@@ -114,10 +114,13 @@ Keyboard and other hardware:
 
 | Word | Port value / behaviour |
 |---|---|
-| `B/HCB` | 76 |
-| `HNDLOFFSET` | 72 (handle cell) |
-| `>ATTRIB` | `68 +`, a cell |
+| `B/HCB` | 140 |
+| `HNDLOFFSET` | 136 (handle cell) |
+| `>ATTRIB` | `132 +`, a cell |
 | `>NAM` | `1+`; the name is a counted, NUL-terminated string |
+| `B/FILENAME` | 127 (it was 64: host paths are longer) |
+
+Use the constants and `>HNDLE`/`>ATTRIB`/`>NAM`, never literal offsets.
 | `HANDLE name` | creates one |
 | User variables (TOS ENTRY LINK SP0 RP0 DP OFFSET BASE HLD PRINTING) and user defers (EMIT KEY? KEY TYPE) | VM-provided |
 | `UP` | a VARIABLE holding the user-area address |

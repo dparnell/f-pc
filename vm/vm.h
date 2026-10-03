@@ -70,7 +70,8 @@ enum {
     X(TICKTIB,"'TIB") X(ENDQ,"END?") X(TOINWORD,">IN_WORD")              \
     X(ATTRIB,"ATTRIB") X(BIOSCHAR,"BIOSCHAR") X(BIOSKEYVAL,"BIOSKEYVAL")   \
     X(COLS,"COLS") X(ROWS,"ROWS") X(CROWS,"CROWS") X(UP,"UP")            \
-    X(CURSOR,"CURSOR-SHAPE") X(VIDEOBUF,"VIDEO-BUF-VAR")
+    X(CURSOR,"CURSOR-SHAPE") X(VIDEOBUF,"VIDEO-BUF-VAR")                 \
+    X(DBGON,"DBG-ON") X(DBGLO,"DBG-LO") X(DBGHI,"DBG-HI") X(TICKDEBUG,"'DEBUG")
 /* these slots are VALUEs (code field DOVALUE), the rest VARIABLEs */
 #define SV_IS_VALUE(i) ((i) == SV_COLS || (i) == SV_ROWS || (i) == SV_CROWS)
 
@@ -169,6 +170,7 @@ struct vm {
     void    *dos;                      /* DOS emulation state              */
     void    *screen;                   /* virtual screen (screen.c)        */
     ucell    resized_xt;               /* RESIZED, run after a resize      */
+    ucell    dbg_last;                 /* trace hook: IP just reported     */
 };
 
 /* ---- memory access -------------------------------------------------------- */

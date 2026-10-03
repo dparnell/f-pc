@@ -235,6 +235,20 @@ void vm_execute(vm_t *vm, ucell xt)
         attend(vm); } } while (0)
 
 next:
+    /* debugger trace hook (DEBUG.SEQ): when DBG-ON and the IP is in
+     * [DBG-LO, DBG-HI), call 'DEBUG with the IP, as if from here. The same
+     * IP is not reported twice in a row (the trace word returns to it). */
+    if (__builtin_expect(rd32(vm, sv_addr(vm, SV_DBGON)) != 0, 0)
+        && ip >= sv(vm, SV_DBGLO) && ip < sv(vm, SV_DBGHI)) {
+        if (ip != vm->dbg_last) {
+            sv_set(vm, SV_DBGON, 0);
+            vm->dbg_last = ip;
+            PUSH(ip);
+            w = sv(vm, SV_TICKDEBUG);
+            goto exec;
+        }
+        vm->dbg_last = 0;                   /* reported last time: run it */
+    }
     w = rd32(vm, ip); ip += 4;
 exec:
     ct = rd32(vm, w);

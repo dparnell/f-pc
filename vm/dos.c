@@ -424,7 +424,7 @@ void p_HDOS4(vm_t *vm)                      /* ( bx cx dx fun -- ax cf ) */
     hdos_result(vm, &r);
 }
 
-#define HNDLOFFSET 72
+#define HNDLOFFSET 136
 static ucell hcb_handle(vm_t *vm, ucell hcb) { return rd32(vm, hcb + HNDLOFFSET); }
 
 static void seek_handle(vm_t *vm, ucell h, int64_t off, int whence, int64_t *pos)

@@ -715,6 +715,46 @@ void p_PFIND(vm_t *vm)          /* ( here alf -- cfa flag | here false ) */
     }
     push(vm, 0);
 }
+/* the start of every colon body and DOES> clause, for BODY-END / IP>CFA */
+static void each_body(vm_t *vm, void (*fn)(vm_t *, ucell body, ucell cfa, void *), void *arg)
+{
+    for (ucell link = sv(vm, SV_VOCLINK); link; link = rd32(vm, link)) {
+        ucell voc = link - NTHREADS * CELL;
+        for (int t = 0; t < NTHREADS; t++)
+            for (ucell lfa = rd32(vm, voc + (ucell)t * 4); lfa; lfa = rd32(vm, lfa)) {
+                ucell cfa = nfa_cfa(vm, lfa + 4);
+                ucell ct = rd32(vm, cfa);
+                if (ct == T_NEST) fn(vm, rd32(vm, cfa + 4), cfa, arg);
+                else if (ct >= T_NBUILTIN && ct < vm->nhandlers && vm->handlers[ct].kind == HK_DOES)
+                    fn(vm, vm->handlers[ct].data, cfa, arg);
+            }
+    }
+}
+typedef struct { ucell ip, best, cfa; } near_t;
+static void near_above(vm_t *vm, ucell body, ucell cfa, void *a)
+{
+    near_t *n = a; (void)vm; (void)cfa;
+    if (body > n->ip && body < n->best) n->best = body;
+}
+static void near_below(vm_t *vm, ucell body, ucell cfa, void *a)
+{
+    near_t *n = a; (void)vm;
+    if (body <= n->ip && (body > n->best || !n->cfa)) { n->best = body; n->cfa = cfa; }
+}
+void p_BODYEND(vm_t *vm)        /* ( body -- end ) start of the next body */
+{
+    near_t n = { pop(vm), sv(vm, SV_XDP), 0 };
+    each_body(vm, near_above, &n);
+    push(vm, n.best);
+}
+void p_IPTOCFA(vm_t *vm)        /* ( ip -- cfa true | ip false ) the word running */
+{
+    near_t n = { top(vm), 0, 0 };
+    each_body(vm, near_below, &n);
+    if (!n.cfa) { push(vm, 0); return; }
+    wr32(vm, vm->sp, n.cfa);
+    push(vm, TRUE_F);
+}
 void p_NEWDOES(vm_t *vm) { push(vm, vm_add_handler(vm, HK_DOES, NULL, pop(vm), NULL)); }
 void p_TOLINK(vm_t *vm)   { ucell n = cfa_to_nfa(vm, pop(vm)); push(vm, n ? n - 4 : 0); }
 void p_TOBODY(vm_t *vm)   { push(vm, pop(vm) + 4); }

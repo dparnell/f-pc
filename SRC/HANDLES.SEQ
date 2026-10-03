@@ -6,9 +6,9 @@
 
 DECIMAL
 
-76 CONSTANT B/HCB
-72 CONSTANT HNDLOFFSET
-64 CONSTANT B/FILENAME
+140 CONSTANT B/HCB
+136 CONSTANT HNDLOFFSET
+127 CONSTANT B/FILENAME         \ was 64: host paths are longer
 
 VARIABLE RWERR
 
@@ -16,7 +16,7 @@ VARIABLE RWERR
                 \ Attrib may be set to one (1) for Write ONLY.
                 \ Attrib may be set to two (2) for Read  ONLY.
 
-: >ATTRIB       ( handle --- attrib-addr )      68 + ;
+: >ATTRIB       ( handle --- attrib-addr )      132 + ;
 : >HNDLE        ( handle --- handle-addr )      HNDLOFFSET + ;
 : >NAM          ( handle --- name-string-addr ) 1+   ;
 
@@ -28,9 +28,9 @@ VARIABLE RWERR
 
         \       The HANDLE memory data structure is as shown here.
         \
-        \         1byte    65 bytes      cell       cell
+        \         1byte    131 bytes     cell       cell
         \       [ count  ] [ name....0 ] [ attrib ] [ handle > -1 ]
-        \         addr       addr+1        addr+68    addr+72
+        \         addr       addr+1        addr+132   addr+136
         \          |          |             |          |
         \          |          |_>NAM        |_>ATTRIB  |_>HNDLE
         \          |
@@ -40,7 +40,7 @@ VARIABLE RWERR
 CREATE DEFEXT 3 C, ASCII S C, ASCII E C, ASCII Q C, 4 ALLOT
 
 : ?DEF.EXT      ( handle --- )    \ maybe add an extension to file
-                 dup c@ 60 > if drop exit then
+                 dup c@ B/FILENAME 4 - > if drop exit then
                  >r true r@ count over + 1- over umax
                ?do      i c@ ASCII . =
                         if      drop false leave
@@ -86,7 +86,7 @@ CREATE DEFEXT 3 C, ASCII S C, ASCII E C, ASCII Q C, 4 ALLOT
                 loop    ; \ points to final decimal point if present
 
 : $>EXT         ( string-extension handle --- )
-                dup c@ 60 > if 2drop exit then
+                dup c@ B/FILENAME 4 - > if 2drop exit then
                 dup>r handle>ext
                 ASCII . over c! 1+ >r count r@ over >r
                 swap cmove r> r> + 0 over c! r@ - 1- r> c! ;
