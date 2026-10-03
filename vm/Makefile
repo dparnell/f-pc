@@ -9,6 +9,10 @@ fpc: $(OBJS)
 
 $(OBJS): vm.h prims.def seed.h amops.def
 
+# the full F-PC system image, as EXTEND.BAT made F-PC.EXE
+image: fpc
+	cd ../SRC && ./../vm/fpc --batch - FLOAD F-PC.SEQ FSAVE ../F-PC BYE </dev/null >/dev/null
+
 sljitLir.o: sljit/sljitLir.c
 	$(CC) $(CFLAGS) -w -DSLJIT_CONFIG_AUTO=1 -c -o $@ sljit/sljitLir.c
 
@@ -25,4 +29,4 @@ test: fpc
 clean:
 	rm -f fpc $(OBJS) test.img
 
-.PHONY: test clean
+.PHONY: test clean image

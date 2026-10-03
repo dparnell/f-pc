@@ -111,6 +111,11 @@ int image_load(vm_t *vm, const char *path, char *err, size_t errsz)
     uint32_t hfree, nh;
     if (get32(f, &hfree) || get32(f, &nh)) { snprintf(err, errsz, "%s: truncated", path); fclose(f); return -1; }
     vm->heap_free = hfree;
+    if (hfree) {                /* the free tail of the heap is not saved */
+        ucell b = hfree;
+        while (b < vm->heap_end && rd32(vm, b)) b += rd32(vm, b);
+        if (b < vm->heap_end) { wr32(vm, b, (vm->heap_end - b) & ~15u); wr32(vm, b + 4, 0); }
+    }
     vm->nhandlers = T_NBUILTIN;
     for (uint32_t i = 0; i < nh; i++) {
         int kind = fgetc(f);
