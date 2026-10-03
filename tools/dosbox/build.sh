@@ -7,7 +7,8 @@
 #
 # The original tree (git tag fpc-3.6-original, or $ORIG) is copied to
 # <workdir>/dos/FPC and mounted as C:\FPC (the FPATH in F-PC.CFG / KERNEL.CFG
-# expects that location). Sources are not modified. Results land in <workdir>/dos/FPC: KERNEL.COM, F-PC.EXE, META.LOG.
+# expects that location). Sources are not modified. Results land in
+# <workdir>/dos/FPC: KERNEL.COM, F-PC.EXE, META.LOG.
 #
 # Gotchas this script works around:
 #  - A DOS command tail is limited to 127 characters; a longer F-PC command
