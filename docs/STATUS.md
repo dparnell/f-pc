@@ -31,7 +31,7 @@ Running `fpc`:
 | M4: all `F-PC.SEQ` extensions | Done: all 88 files load (12,136 lines in about 0.1 s) |
 | M5: terminal UI with live resize | Done. The ANSI host diffs the VM's text screen; `SIGWINCH` drives `RESIZED` and `K-RESIZE`. SED, the status line, menus and the file list follow the terminal size |
 | M6: native CODE words | Done. AM assembler (`SRC/AMASM.SEQ`), interpreter, sljit JIT (about 6x faster than the interpreter) |
-| M7: debugger, multitasker, SDL | Debugger done, on a VM trace hook. Multitasker (`MULTASK.SEQ`, not loaded by default) and SDL not started |
+| M7: debugger, multitasker, SDL | Debugger done, on a VM trace hook. Multitasker (`MULTASK.SEQ`, load it with `FLOAD MULTASK.SEQ`) done, switching tasks in high-level Forth. SDL not started |
 
 ## What is verified interactively
 

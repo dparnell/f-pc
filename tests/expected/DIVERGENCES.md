@@ -63,3 +63,7 @@ vocabularies, FOR/NEXT, DEFINED, DEFER/IS, EXEC:, pictured output and .S.
 ## amasm
 New test for the port (no oracle): CODE words on the abstract machine, local labels,
 ;CODE, and the error for an undefined label.
+
+## tasks (tests/full)
+New test for the port (no oracle): the multitasker (SRC/MULTASK.SEQ) on the VM. Tests in
+tests/full/ run against the full system image F-PC.IMG; its status line is filtered out.

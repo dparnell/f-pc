@@ -12,7 +12,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 FPC=${FPC:-$ROOT/vm/fpc}
 record=0
 [ "${1:-}" = --record ] && { record=1; shift; }
-tests=("$@"); [ ${#tests[@]} -eq 0 ] && tests=("$ROOT"/tests/*.seq)
+tests=("$@"); [ ${#tests[@]} -eq 0 ] && tests=("$ROOT"/tests/*.seq "$ROOT"/tests/full/*.seq)
+IMG=${FULL_IMAGE:-$ROOT/F-PC.IMG}
 mkdir -p "$ROOT/tests/expected"
 out=$(mktemp -d)
 pass=0 fail=0 skip=0
@@ -20,7 +21,14 @@ for t in "${tests[@]}"; do
     base=$(basename "$t" .seq)
     if grep -qx "$base" "$ROOT/tests/expected/SKIP" 2>/dev/null; then skip=$((skip+1)); continue; fi
     exp=$ROOT/tests/expected/$base.out
-    (cd "$(dirname "$t")" && timeout 20 "$FPC" --batch - FLOAD "$base.seq" BYE < /dev/null) > "$out/$base.out" 2>&1
+    args=()
+    if [ "$(basename "$(dirname "$t")")" = full ]; then  # needs the full system
+        if [ ! -f "$IMG" ]; then skip=$((skip+1)); echo "$base: skipped (no $IMG)"; continue; fi
+        args=(-i "$IMG")
+    fi
+    # the full system's status line goes to the batch stream: drop it
+    (cd "$(dirname "$t")" && timeout 20 "$FPC" --batch "${args[@]}" - FLOAD "$base.seq" BYE < /dev/null) \
+        | sed -e 's/ C - [0-9]*k : - [0-9]*k .*[0-9][0-9]:[0-9][0-9] //g' > "$out/$base.out" 2>&1
     if [ $record = 1 ]; then
         cp "$out/$base.out" "$exp"; echo "$base: recorded"
     elif [ ! -f "$exp" ]; then

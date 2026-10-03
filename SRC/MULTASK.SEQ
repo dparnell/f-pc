@@ -1,4 +1,4 @@
-\\ MULTASK.SEQ   Multi tasking code for Forth.  jm edit text  91-06-12 15:56
+\\ MULTASK.SEQ   Multi tasking code for Forth.   F-PC native port
     91-06-12, -21 add more refs.   91-07-29,  91-08-09, -12   more edit.
     All running code is identical to Zimmer's MULTASK.SEQ of 91-02-19 20:36.
     jmod  91-12-20 12:51 edit; add TZ's new word MAKEUSER.
@@ -53,14 +53,7 @@ independently, STIME needs to be a USER VARIABLE.
 variable (such as STIME) into a user variable.
 
 
-{
-: MAKEUSER   ( -<name>- )
-   ['] base @rel>abs
-   ' dup>r  >body
-   - r@  1+  !
-   #user  @  r>  >body !
-   2 #user  +! ;
-}
+   (MAKEUSER is defined, for the native port, at the end of the code.)
 EXAMPLE: Convert STIME to a user variable.
 
         makeuser stime
@@ -111,162 +104,108 @@ prevented FSAVEd systems from running because multi-tasking was not
 relocatable. It is now!. Of course there was a small performance penalty.
 
 {
-PREFIX
 ONLY FORTH ALSO DEFINITIONS
 DECIMAL
 }
-
-PAUSE is a NOP that can be patched, defined in Kernel1.
-UP   is SYSTEM VARIABLE pointing to the current USER area for multitasking.
-
+   F-PC native port: the 8086 version switched tasks in machine code
+(RESTART, ENTRY holding a jump) and patched PAUSE. Here the switch is high
+level: (PAUSE) saves SP and RP in the task's user area, follows LINK to the
+next task whose ENTRY is non-zero (awake), and restores that task's UP, RP
+and SP; returning from (PAUSE) then resumes that task. LINK holds the
+address of the next task's user area. MULTI and SINGLE set the PAUSE
+deferred word. Task stacks live in the task's dictionary space.
 {
-CODE (PAUSE)    ( -- )
-                mov ax, es
-                sub ax, xseg
-                push ax
-                PUSH IP
-                PUSH RP
-                MOV BX, UP      \ make BX point to user area
-                MOV 0 [BX], SP  \ save SP in user area offset 0
-                ADD BX, # 4     \ adjust BX to point to LINK
-                ADD BX, 0 [BX]  \ Add value in LINK to BX, pointing it to
-                                \ next tasks user area offset 0
-                ADD BX, # 2     \ bump BX 2 to point to ENTRY
-                JMP BX          \ jump to next tasks entry point
-                END-CODE
-
-CODE RESTART    ( -- )
-                POP BX          \ pop address of where we came from
-                MOV AX, # -4
-                ADD BX, AX      \ adjust to beginning of user area
-                MOV UP BX       \ set UP to point to begin of user area
-                POP AX          \ pop off old PC
-                POPF            \ restore status register
-                MOV SP, 0 [BX]  \ restore SP (stack pointer)
-                POP RP          \ restore RP, IP, and ES
-                POP IP
-                pop ax
-                add ax, xseg
-                mov es, ax
-                NEXT            END-CODE
-
-$0E9 CONSTANT INT#
-}
-Two user variables for the Multitasker are defined in Kernel2:
-ENTRY is the entry point; it contains machine code.
-LINK  is the link to the next task.
-{
+USER VARIABLE RSAVE  FORTH     \ a task's saved return stack pointer
 
 : LOCAL         ( base addr -- addr' )   UP @ -   +   ;
-: @LINK         ( -- addr ) LINK DUP @ +   2+   ;
-: !LINK         ( addr -- ) LINK 2+ -   LINK !   ;
-}
 
+: AWAKE?        ( task -- f )   ENTRY SWAP LOCAL @ ;
+: NEXT-TASK     ( task -- task' )  LINK SWAP LOCAL @ ;
+
+: (PAUSE)       ( -- )
+                SP@ TOS !  RP@ RSAVE !
+                UP @ BEGIN  NEXT-TASK DUP AWAKE?  UNTIL
+                UP !  RSAVE @ RP!  TOS @ SP! ;
+}
 Stop the execution of <taskname>.
-ENTRY is a USER VARIABLE containing machine code that executes a task if it
-is awake, or skips to the next task if it is asleep.
 {
-: SLEEP         ( <taskname> -- ) $0E990 SWAP ENTRY LOCAL !   ;
+: SLEEP         ( <taskname> -- ) 0 ENTRY ROT LOCAL ! ;
 }
-
 Start the execution of <taskname>.
 {
-: WAKE          ( <taskname> -- ) $0E9CD SWAP ENTRY LOCAL !   ;
+: WAKE          ( <taskname> -- ) TRUE ENTRY ROT LOCAL ! ;
 }
-
 Put the running task to sleep after it is completed (optional).
 If STOP is the last word in a definition before the semicolon, that word can
 only be executed once. A second execution will hang or crash the system. In
 that case, put the STOP inside a loop, such as
       begin ... <words to do task once> stop again
-
 {
 : STOP          ( -- )      UP @ SLEEP   PAUSE   ;
 }
-
 Disable the multi-tasker.
 {
-: SINGLE        ( -- )
-                $0E9  ['] PAUSE C!              \ set JMP in PAUSE
-                >NEXT ['] PAUSE >BODY -         \ get offset to NEXT
-                      ['] PAUSE 1+ ! ;          \ store in PAUSE + 1
+: SINGLE        ( -- )      ['] NOOP IS PAUSE ;
 }
 Enable the multi-tasker
 {
-CODE MULTI      ( -- )
-                MOV ' PAUSE # $0E9
-                MOV BX, # ' (PAUSE) ' PAUSE 3 + -       \ relative I hope!
-                MOV ' PAUSE 1+ BX
-                MOV BX, # ' RESTART
-                MOV AX, DS
-                PUSH AX
-                SUB AX, AX      MOV DS, AX
-                MOV AX, CS      MOV INT# 4 * 2+ AX
-                                MOV INT# 4 *    BX
-                POP AX
-                MOV DS, AX      NEXT
-                END-CODE
+: MULTI         ( -- )      ['] (PAUSE) IS PAUSE ;
 
-UP @ WAKE   ENTRY !LINK
+UP @ WAKE   UP @ LINK !     \ the main task: awake, linked to itself
 }
-
 Test to see if the Multitasker is enabled.
 {
 : ?MULTI        ( -- f1 )       \ f1 = true if MULTI tasking
-                ['] (PAUSE) ['] PAUSE @REL>ABS = ;
-
+                ['] PAUSE >BODY @ ['] (PAUSE) = ;
 }
-Name, initialize, and allocate a new task.
+Name, initialize, and allocate a new task. Size is the bytes for its two
+stacks (the data stack in the lower half, the return stack above it).
 {
+VARIABLE NEWTASK
+
 : TASK:         ( size -<name>- )
-                CREATE   TOS HERE #USER @ CMOVE    \ Copy the USER Area
-                @LINK  UP @ -ROT  HERE UP !  !LINK \ I point where he did
-                DUP HERE +   DUP RP0 !   100 - SP0 !  SWAP UP !
-                HERE ENTRY LOCAL !LINK             \ He points to me
-                HERE #USER @ +  HERE DP LOCAL !
-                HERE SLEEP   ALLOT   ;
-
+                CREATE  HERE NEWTASK !
+                TOS HERE #USER @ CMOVE          \ Copy the USER Area
+                LINK @  LINK HERE LOCAL !       \ he points where I did
+                HERE LINK !                     \ I point to him
+                #USER @ ALLOT  ALIGN
+                DUP ALLOT  HERE                 ( size end )
+                DUP RP0 NEWTASK @ LOCAL !       \ return stack at the top
+                SWAP 2/ -  ALIGNED
+                SP0 NEWTASK @ LOCAL !           \ data stack below it
+                NEWTASK @ SLEEP ;
 }
-Assign an existing task to the code at ip.
+Assign an existing task to the code at ip (a token list address).
 {
-: SET-TASK      ( ES ip task -- )       \ NOTE: both ES and IP are passed
-                                        \ to SET-TASK.
-                >R SWAP R>
-                DUP SP0 LOCAL @                 \ Top of Stack
-                2- ROT xseg @ - OVER !          \ Initial ES
-                2- ROT OVER !                   \ Initial IP
-                2- OVER RP0 LOCAL @ OVER !      \ Initial RP
-                SWAP TOS LOCAL !  ;
-
+: SET-TASK      ( ip task -- )
+                >R  RP0 R@ LOCAL @ CELL-  TUCK !        \ ip on its rstack
+                RSAVE R@ LOCAL !
+                SP0 R@ LOCAL @  TOS R> LOCAL ! ;
 }
 Assign an existing <taskaddr> to perform the following ordinary word <name>.
 Where <name> and activate are used ONLY in a ":" definition, as in:
-
         : xyz   ( -- )  thetask ACTIVATE thefunction stop ;
-
 Here, the background task "thetask" is assigne a new function "thefunction"
 to perform, and it is activated.
 {
-
 : ACTIVATE      ( <taskaddr> -<name>- )
-                DUP
-                2R> ROT SET-TASK   WAKE  ;
-
+                R> OVER SET-TASK   WAKE  ;
 }
 Name and define a new background task. When <taskname> is later executed, it
 leaves on the stack the address of its user area, for use by WAKE or SLEEP.
 {
 : BACKGROUND:   ( -<taskname>- )
-                400 TASK:               \ assign 400 bytes to the task for
-                                        \ stacks
-                XHERE @LINK 2-          \ get address of new task, note that
-                                        \ XHERE returns SEGMENT and OFFSET,
-                                        \ which is used by SET-TASK
+                4096 TASK:              \ 4096 bytes for the task's stacks
+                XALIGN XHERE NEWTASK @  \ its code is compiled from here on
                 SET-TASK  !CSP  ]  ;    \ set the task, and continue
                                         \ compiling upto ';'
-
 }
-
+Convert an existing VARIABLE into a USER variable (see above).
+{
+: MAKEUSER      ( -<name>- )
+                ' DUP CT-DOUSER SWAP !
+                #USER @ SWAP >BODY !  CELL #USER +! ;
+}
    Here is a sample of how to create a background task that will do a listing
 of the current file, with the hypothetical word FUNCTION1.  Create the task
 MYTASK, and assign the default function FUNCTION1 to it. Put FUNCTION1 to
