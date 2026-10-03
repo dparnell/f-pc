@@ -5,9 +5,9 @@
 # usage: tools/dosbox/build.sh [workdir]
 #        env: TIMEOUT (seconds, default 300), CYCLES (default 6000)
 #
-# The repo tree is copied to <workdir>/dos/FPC and mounted as C:\FPC (the
-# FPATH in F-PC.CFG / KERNEL.CFG expects that location). Sources are not
-# modified. Results land in <workdir>/dos/FPC: KERNEL.COM, F-PC.EXE, META.LOG.
+# The original tree (git tag fpc-3.6-original, or $ORIG) is copied to
+# <workdir>/dos/FPC and mounted as C:\FPC (the FPATH in F-PC.CFG / KERNEL.CFG
+# expects that location). Sources are not modified. Results land in <workdir>/dos/FPC: KERNEL.COM, F-PC.EXE, META.LOG.
 #
 # Gotchas this script works around:
 #  - A DOS command tail is limited to 127 characters; a longer F-PC command
@@ -32,7 +32,7 @@ TIMEOUT=${TIMEOUT:-300}
 FPC=$WORK/dos/FPC
 
 rm -rf "$FPC"; mkdir -p "$FPC"
-(cd "$ROOT" && git ls-files | tar -cf - -T -) | tar -xf - -C "$FPC"
+git -C "$ROOT" archive "${ORIG:-fpc-3.6-original}" | tar -xf - -C "$FPC"
 mv "$FPC/KERNEL.COM" "$FPC/KERNEL.ORI"
 cp "$FPC/F-PC.EXE"   "$FPC/F-PC.ORI"   # stage 1 runs on the shipped F-PC.EXE
 

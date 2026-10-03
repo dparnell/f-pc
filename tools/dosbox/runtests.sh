@@ -4,7 +4,8 @@
 #
 # usage: tools/dosbox/runtests.sh [--record] [--host KERNEL|F-PC] [test.seq ...]
 #        default: all tests/*.seq, host KERNEL (KERNEL.COM)
-#        env: TIMEOUT (seconds per batch, default 120), WORK (scratch dir)
+#        env: TIMEOUT (seconds per batch, default 120), WORK (scratch dir),
+#             ORIG (git rev of the original sources, default fpc-3.6-original)
 #
 # Each test runs in a fresh F-PC process. Its console output is copied to a
 # log file with the PRINTING mechanism and compared against
@@ -30,7 +31,7 @@ WORK=${WORK:-$(mktemp -d)}
 TIMEOUT=${TIMEOUT:-120}
 FPC=$WORK/dos/FPC
 rm -rf "$FPC"; mkdir -p "$FPC"
-(cd "$ROOT" && git ls-files | grep -v '^tests/' | tar -cf - -T -) | tar -xf - -C "$FPC"
+git -C "$ROOT" archive "${ORIG:-fpc-3.6-original}" | tar -xf - -C "$FPC"
 
 crlf() { printf '%s\r\n' "$@"; }
 crlf ": LOGTO  ( | name -- )" \
