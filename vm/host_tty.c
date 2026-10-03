@@ -63,6 +63,7 @@ typedef struct {
     int eof;
     int waiting;                /* VM is blocked in key() */
     int shift;                  /* modifiers of the last key */
+    int mouse, mx, my, mbuttons; /* xterm SGR mouse reporting */
     vm_t *vm;
 } tty_t;
 
@@ -136,6 +137,7 @@ static void enter_screen(tty_t *t)
     tcsetattr(0, TCSAFLUSH, &raw);
     t->raw = 1;
     outs(t, "\033[?1049h\033[H\033[2J\033[?7l");   /* alt screen, clear, no autowrap */
+    if (t->mouse) outs(t, "\033[?1002h\033[?1006h");
     t->cur_attr = -1;
     flushout(t);
     free(t->shadow); t->shadow = NULL;           /* force a full redraw */
@@ -144,7 +146,7 @@ static void enter_screen(tty_t *t)
 static void leave_screen(tty_t *t)
 {
     if (!t->raw) return;
-    outs(t, "\033[0m\033[?7h\033[?25h\033[?1049l");
+    outs(t, "\033[0m\033[?7h\033[?25h\033[?1002l\033[?1006l\033[?1049l");
     flushout(t);
     tcsetattr(0, TCSAFLUSH, &t->saved);
     t->raw = 0;
@@ -242,13 +244,31 @@ static void *reader(void *arg)
             int c2 = rd(40);
             if (c2 < 0) { k = 0x011B; }                         /* plain Esc */
             else if (c2 == '[' || c2 == 'O') {
-                int p[4] = { 0, 0, 0, 0 }, np = 0, f;
+                int p[4] = { 0, 0, 0, 0 }, np = 0, f, sgr = 0;
                 for (;;) {
                     f = rd(40);
                     if (f < 0) break;
+                    if (f == '<' && np == 0 && p[0] == 0) { sgr = 1; continue; }
                     if (f >= '0' && f <= '9') { p[np] = p[np] * 10 + (f - '0'); continue; }
                     if (f == ';') { if (np < 3) np++; continue; }
                     break;
+                }
+                if (sgr && (f == 'M' || f == 'm')) {        /* mouse report */
+                    int b = p[0];
+                    if (b & 64) {                           /* wheel: arrow keys */
+                        enqueue(t, (b & 1) ? 0x5000 : 0x4800);
+                        continue;
+                    }
+                    pthread_mutex_lock(&t->mu);
+                    t->mx = p[1] - 1; t->my = p[2] - 1;
+                    if (!(b & 32)) {                        /* press / release */
+                        static const int bit[3] = { 1, 4, 2 }; /* left, middle, right */
+                        int which = bit[(b & 3) < 3 ? (b & 3) : 0];
+                        if (f == 'M' && (b & 3) != 3) t->mbuttons |= which;
+                        else t->mbuttons &= ~which;
+                    }
+                    pthread_mutex_unlock(&t->mu);
+                    continue;
                 }
                 if (np >= 1) mod = p[1] ? p[1] : 1;
                 if (f == '~') k = tilde_key(p[0], mod);
@@ -355,6 +375,25 @@ static void t_type(host_t *h, const uint8_t *s, size_t n) { (void)h; (void)s; (v
 static void t_flush(host_t *h) { tty_t *t = (tty_t *)h; if (t->vm) t_refresh(h, t->vm, 0); }
 static void t_size(host_t *h, int *c, int *r) { (void)h; term_size(c, r); }
 static int  t_shift(host_t *h) { return ((tty_t *)h)->shift; }
+static int t_mouse_enable(host_t *h)
+{
+    tty_t *t = (tty_t *)h;
+    if (!t->mouse) {
+        t->mouse = 1;
+        outs(t, "\033[?1002h\033[?1006h");       /* button + drag, SGR coordinates */
+        flushout(t);
+    }
+    return 1;
+}
+
+static void t_mouse_state(host_t *h, int *x, int *y, int *b)
+{
+    tty_t *t = (tty_t *)h;
+    pthread_mutex_lock(&t->mu);
+    *x = t->mx; *y = t->my; *b = t->mbuttons;
+    pthread_mutex_unlock(&t->mu);
+}
+
 static void t_suspend(host_t *h, int on)
 {
     tty_t *t = (tty_t *)h;
@@ -368,6 +407,7 @@ host_t *host_tty_new(void)
     host_t *h = &t->h;
     h->emit = t_emit; h->type = t_type; h->key = t_key; h->keyq = t_keyq; h->flush = t_flush;
     h->size = t_size; h->refresh = t_refresh; h->suspend = t_suspend; h->shift = t_shift;
+    h->mouse_enable = t_mouse_enable; h->mouse_state = t_mouse_state;
     tcgetattr(0, &t->saved);
     pthread_mutex_init(&t->mu, NULL);
     pthread_cond_init(&t->cv, NULL);

@@ -128,6 +128,8 @@ typedef struct host {
     void (*scrolled)(struct host *h, int n, int down);
     void (*cursor_shape)(struct host *h, int shape);
     int  (*shift)(struct host *h);             /* BIOS shift-state flags */
+    int  (*mouse_enable)(struct host *h);      /* 1 if mouse input works */
+    void (*mouse_state)(struct host *h, int *x, int *y, int *buttons);
     void *priv;
 } host_t;
 

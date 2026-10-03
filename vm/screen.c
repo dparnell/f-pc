@@ -271,11 +271,24 @@ void p_REFRESH(vm_t *vm)                    /* ( -- ) show the screen now */
     vm->host->flush(vm->host);
 }
 
-/* ---- mouse (MOUSE.SEQ). No host delivers mouse input yet: report none,
- * but remember a position set with MOUSE! so MOUSE@ returns it. ---------- */
-static int mouse_x, mouse_y;
-void p_MOUSEPRESENTQ(vm_t *vm) { push(vm, 0); }
-void p_MOUSEFETCH(vm_t *vm) { push(vm, (ucell)mouse_x); push(vm, (ucell)mouse_y); push(vm, 0); }
+/* ---- mouse (MOUSE.SEQ). Positions are in character cells. A host that
+ * cannot report the mouse says so; MOUSE! positions are remembered so that
+ * MOUSE@ returns them until the mouse moves. ---------------------------- */
+static int mouse_x, mouse_y, mouse_on;
+void p_MOUSEPRESENTQ(vm_t *vm)
+{
+    mouse_on = vm->host->mouse_enable && vm->host->mouse_enable(vm->host);
+    push(vm, mouse_on ? TRUE_F : 0);
+}
+void p_MOUSEFETCH(vm_t *vm)
+{
+    int b = 0;
+    if (mouse_on && vm->host->mouse_state) vm->host->mouse_state(vm->host, &mouse_x, &mouse_y, &b);
+    screen_t *s = scr(vm);
+    if (mouse_x >= s->cols) mouse_x = s->cols - 1;
+    if (mouse_y >= s->rows) mouse_y = s->rows - 1;
+    push(vm, (ucell)mouse_x); push(vm, (ucell)mouse_y); push(vm, (ucell)b);
+}
 void p_MOUSESTORE(vm_t *vm)
 {
     int y = (int)pop(vm), x = (int)pop(vm);
