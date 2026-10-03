@@ -1,6 +1,6 @@
 # F-PC native port: kernel design
 
-Status: draft for review (2026-10-03). Inputs: [inventory/code-words.md](inventory/code-words.md),
+Status: accepted with revisions (2026-10-03: flat memory, C seed). Inputs: [inventory/code-words.md](inventory/code-words.md),
 [inventory/memory-and-cells.md](inventory/memory-and-cells.md), [inventory/os-interface.md](inventory/os-interface.md),
 and the DOSBox oracle (`tools/dosbox/`, `tests/golden/`).
 
@@ -40,41 +40,52 @@ New words for cell-size-neutral source: `CELL` (4), `CELL+`, `CELL-`, `CELLS`, `
 
 ## 2. Memory model
 
-### 2.1 One flat space, with segments kept as paragraph numbers
+### 2.1 Flat addresses (decided)
 
-All VM memory is one byte array `vm->mem[0 .. memsize)`. VM addresses are 32-bit offsets into it and never host pointers, which keeps images relocatable and accesses bounds-checkable.
+All VM memory is one byte array, `vm->mem[0 .. memsize)`. A VM address is a 32-bit offset into it, never a host pointer, so images stay relocatable and every access can be bounds-checked.
 
-F-PC's segment vocabulary is kept, with one rule:
+**Every address is a single cell.** `@ ! C@ C! CMOVE FILL` work on any region.
 
-> **A "segment" is a paragraph number: `flat = seg * 16 + off`**, where `off` is now a full 32-bit cell.
+**The segment vocabulary is removed and its uses are rewritten.** Removed words:
+- `@L !L C@L C!L CMOVEL CMOVEL> LFILL COUNTL PLACEL +PLACEL`;
+- `?CS: ?DS: ?ES: SSEG ES0 XSEG YSEG XDPSEG +XSEG PARAGRAPH DPARAGRAPH U16/ UD16/ CMOVE-PARS`;
+- `Y@ Y! YC@ YC! YS: XS:`.
 
-As a result:
+How uses change:
+- **Seg:off pairs become one address.** For example `TYPEL` is replaced by `TYPE`, and `EXHREAD ( a n h seg -- )` becomes `HREAD ( a n h -- )`.
+- **Code that reads head space** uses `@`/`C@` directly.
 
-- **Code/data space is segment 0.** `?CS:` = `?DS:` = 0, so a code-space address *is* a flat address, and `@`, `!` and `C@` take flat addresses.
-- **The far words become one-liners in C.** `@L ( seg off -- n )` is `@ (seg*16+off)`, and the same pattern covers `!L C@L C!L CMOVEL CMOVEL> LFILL COUNTL PLACEL TYPEL EXHREAD EXHWRITE`.
-- **Paragraph-based source keeps working unchanged:** `PARAGRAPH`, `+XSEG`, `CMOVE-PARS`, POINTER's paragraph heap, the SED editor's one-line-per-paragraph storage, and the colon-body idiom `XHERE PARAGRAPH + DUP XDPSEG ! XSEG @ - ,`. The inventory counts about 860 high-level lines that use segment words. Under this rule, most of them need no change at all.
-- Addressable memory is 4 GB, which is ample.
+The inventory puts this at about 355 kernel lines and 503 extension lines (memory-and-cells §1.4), and they are reviewed together with the cell-size edits (§8). The other segment idioms change like this:
 
-The alternative, fully flat with no segments, would mean rewriting all of those sites and gains nothing at run time. It stays available as a later cleanup (§11).
+| Idiom | Becomes |
+|---|---|
+| Colon body = relative list paragraph (`XHERE PARAGRAPH + DUP XDPSEG ! XSEG @ - ,`) | Body cell = flat address of the token list (`XHERE ,`); no alignment padding |
+| `>BODY @ +XSEG` readers (DECOM, DEBUG, DEFERS, DUMP, REF, LEDIT, MENUS, SEDIT2, SEDCHARS, MOUSEY) | `>BODY @` |
+| POINTER heap of paragraphs | Byte-addressed blocks. `%UNPOINTER` compaction keeps working with `CMOVE`; sizes are in bytes. |
+| SED line-per-paragraph storage | Byte addresses, with each line cell-aligned |
+| `VIDEO-SEG` + `CMOVEL` screen save/restore | `VIDEO-BUF` (an address) + `CMOVE` |
+| Command tail at `CS:80`, environment at `CS:2C` | Host words `CMDTAIL ( -- a n )` and `GETENV ( a n -- a' n' f )` |
+| BIOS data area peeks (`0:417`, `$40:xx`, `0:460`) | Host words (`SHIFT-STATE`, `CURSOR-SHAPE@`, …) |
 
 ### 2.2 Regions
 
-The address space is laid out by the image header and defaults like this:
+F-PC's three dictionary spaces stay as **logical regions inside the one address space**, each with its own allocation pointer:
 
 ```
-0x00000000  PSP shadow (256 bytes)    command tail at $80, environment "segment" cell at $2C,
-                                      filled in by the host at start-up (DEFAULT.SEQ, ENVIRON.SEQ)
-0x00000100  CODE/DATA region          dictionary bodies, variables, user area, TIB, data
-                                      stack, return stack, FIRST/LIMIT buffers
-                                      (#CODESEGS paragraphs; default 4 MB instead of 64 KB)
-XSEG*16     LIST region               colon-definition token lists, paragraph-aligned bodies
-YSEG*16     HEAD region               headers plus the >NAME hash table
-HEAP        POINTER/ALLOC arena       paragraph allocator (DOS_ALLOC/SETBLOCK/DEALLOC replacement)
+0x00000000  reserved, zero, never allocated (so 0 is never a valid address or xt)
+0x00000100  CODE/DATA   HERE  ,  C,  ALLOT   bodies, variables, user area, TIB, stacks,
+                                             FIRST/LIMIT buffers
+LISTBASE    LIST        XHERE X, XC,         colon-definition token lists
+HEADBASE    HEAD        YHERE Y, (=, C,)     headers + >NAME hash table
+HEAPBASE    HEAP        ALLOC/FREE/RESIZE    POINTER blocks, editor buffers, screen buffer
 ```
 
-- Region sizes stay parameters (`#CODESEGS`, `#LISTSEGS`, `#HEADSEGS`), as now.
-- The stacks stay in VM memory, because F-PC uses `SP@` as a buffer address (`FEMIT`, `ROLL`).
-- There is **no** synthetic BIOS data area and no `B800` video segment. The few dozen sites that peek at `0:417` / `$40:xx` / `0:460` get small host words instead (§6). `VIDEO-SEG` points at the virtual screen buffer, which the host keeps in VM memory so `CMOVEL` screen save/restore still works.
+The separation is worth keeping:
+- **Headers stay in their own region.** `BEHEAD`, headerless definitions and `TURNKEY` drop heads simply by dropping that region.
+- **Data and code stay distinct.** The decompiler and the size statistics rely on token lists (`X,`) being separate from data (`,`).
+- **Per-region overflow checks** (`SPCHECK`) keep working.
+
+Region bases and sizes are image-header parameters; the defaults are 4 MB code, 4 MB list, 2 MB head and 16 MB heap. The stacks stay in VM memory, because F-PC uses `SP@` as a buffer address (`FEMIT`, `ROLL`).
 
 ## 3. Execution model
 
@@ -107,15 +118,15 @@ Effect on the source:
 
 | Handler | Body layout | Action |
 |---|---|---|
-| `NEST` | cell: list paragraph relative to XSEG | push IP; IP = (XSEG + body) × 16 |
+| `NEST` | cell: address of the token list | push IP; IP = body cell |
 | `DOVAR` | data | push PFA (replaces `CALL >NEXT`) |
 | `DOCONST`, `DOVALUE` | cell | push the cell |
 | `DODEFER` | xt cell | execute it |
 | `DOUSER-VAR`, `DOUSER-DEFER` | user-area offset | UP-relative |
-| `DODOES` | cell: DOES>-part list paragraph; then data | push PFA (the second body cell); NEST into the DOES> list |
+| `DODOES` | cell: address of the DOES> token list; then data | push PFA (the second body cell); NEST into the DOES> list |
 | `DOCODE` | AM op stream | run via JIT or the AM interpreter (§5) |
 
-- **Colon bodies keep the paragraph indirection.** Body = relative list paragraph, as in the original. That keeps the `>BODY @ +XSEG` readers working unchanged: DEFERS, DUMP, DEBUG, DECOM, REF, LEDIT, MENUS, SEDIT2, SEDCHARS and MOUSEY.
+- **A colon body is one cell: the flat address of its token list** in the LIST region. The `>BODY @ +XSEG` readers become `>BODY @` (§2.1).
 - **DOES> no longer uses the two-level CALL stub.** Instead the child's code field is `DODOES`, its first body cell names the DOES> list, and its data follows. `(;CODE)`/`(;USES)` become `!CT` on the latest word.
 
 ### 3.3 Threading, IP and the return stack
@@ -130,7 +141,7 @@ Effect on the source:
 - **IP is a flat address.** Return-stack frames are **one cell**, where the original used two (ES, IP).
 - **Inline operands** follow the token: literals, branch targets and the xts read by `<'>`, `%xx>`, `GOTO` and `EXEC:`.
 - **Branch targets are flat addresses.**
-  - `>MARK`, `>RESOLVE`, `<MARK` and `<RESOLVE` move to flat list addresses through a new `XHERE-ADDR ( -- addr )`. These words are in the kernel, which is being edited anyway.
+  - `>MARK`, `>RESOLVE`, `<MARK` and `<RESOLVE` use `XHERE ( -- addr )`, which now returns a single address.
   - The DO frame becomes `[leave-addr][limit-bias][index-bias]`, three cells.
 - **Inline-data sites are edited by hand.** About 50 high-level places read inline data from the return stack. The rewrites are `2R@ @L` → `R@ @`, `R> 2+ >R` → `R> CELL+ >R` and `2R>` → `R>`. The affected words include COMPILE, `(")`, `(.")`, `(ABORT")`, `CRASH`, `(IS)`, `X>"BUF`, DEBUG, MACROS, NEWLAB, WFL, BROWSEPR and TIMESTUF. They are listed in memory-and-cells §1.2, and a search for `2+` would not find them, so each one is checked by hand.
 
@@ -141,7 +152,6 @@ typedef struct vm {
     uint8_t  *mem;  uint32_t memsize;
     uint32_t ip, w, sp, rp, up;        /* sp/rp/up are VM addresses */
     uint32_t sp0, rp0;
-    uint32_t xseg, yseg;               /* paragraphs; also mirrored in the XSEG/YSEG variables */
     volatile sig_atomic_t interrupt;   /* Ctrl-Break / SIGINT */
     uint32_t trace_xt;                 /* debugger hook, 0 = off */
     vm_handler *handlers; uint32_t nhandlers;
@@ -157,7 +167,7 @@ typedef struct vm {
 
 | Original | Port |
 |---|---|
-| NESTPATCH/DOESPATCH (XSEG patched into code at cold start) | `vm->xseg` |
+| NESTPATCH/DOESPATCH (XSEG patched into code at cold start) | Not needed: bodies hold flat addresses |
 | Ctrl-Break overwriting `>NEXT` (BIOSBK/ABNORM/SETBRK) | A SIGINT handler sets `vm->interrupt`. It is tested in `NEST`, `BRANCH`, `?BRANCH`, `(LOOP)` and `(+LOOP)`, so tight loops still break out, and it vectors to WARM through the existing high-level path. |
 | Debugger patching `>NEXT` (DEBUG.SEQ FNEXT/DNEXT/PNEXT, DBGFIX) | `vm->trace_xt`. When non-zero, a second dispatch loop calls it before each token, with IP available. DBGFIX is dropped. DEBUG.SEQ keeps its high-level UI. |
 | `PAUSE` NOP patch (MULTASK) | `PAUSE` becomes a DEFER (default `NOOP`). Tasks are user areas plus saved sp/rp/ip, switched by a built-in. |
@@ -180,7 +190,7 @@ The kernel has 293 native words, about half its lines.
 |---|---|---|
 | PRIM, RUNTIME | ~110 | C built-ins (inventory §4.3–4.4) |
 | PERF | ~115 | C built-ins where hot or trivial (inventory §4.5). Otherwise high-level Forth, often from the original's own comments. |
-| SEG | ~86 | C built-ins under the §2.1 rule; mostly one-liners |
+| SEG | ~86 | Mostly gone (§2.1). What remains (string compare and search, header traversal) becomes ordinary flat C built-ins. |
 | DOS, BIOS, VIDEO, HW | ~60 | C built-ins at the existing seams, calling the host (§6) |
 | SELFMOD and start-up | ~25 | Removed (§3.5) |
 
@@ -205,7 +215,7 @@ The kernel has 293 native words, about half its lines.
   - VM registers: `IP SP RP W UP`.
   - Six scratch registers `R0–R5`.
   - `T`, a cached-TOS view that only exists inside a CODE body.
-- **Operations.** Load and store (cell, half and byte, plus far `seg:off`); `add sub and or xor shl shr sar mul divmod`; compare-and-branch to local labels; push and pop on either stack; `NEXT`; `EXECUTE`; `HOST <n>`. AM code addresses VM memory only, so it can't escape the sandbox, and every access is bounds-checked in the interpreter.
+- **Operations.** Load and store (cell, half and byte, flat addresses); `add sub and or xor shl shr sar mul divmod`; compare-and-branch to local labels; push and pop on either stack; `NEXT`; `EXECUTE`; `HOST <n>`. AM code addresses VM memory only, so it can't escape the sandbox, and every access is bounds-checked in the interpreter.
 - **Encoding.** A `CODE` word compiles an **AM op stream into its own body**; the code field is `DOCODE`. The op stream is ordinary VM data, so it is saved in images (§7).
 - **Execution.**
   - The first time a word runs, or at image load, sljit compiles the stream into a `vm_cfn`, and the handler entry is switched from interpret to JIT.
@@ -227,9 +237,9 @@ The default is `host_tty` when stdout is a terminal and `host_batch` otherwise. 
 | Area | Seam words (unchanged names) | Implementation |
 |---|---|---|
 | Files | `<BDOS>` `BDOS2` `HDOS1/3/4` `MOVEPOINTER` `ENDFILE` `CURPOINTER` `<HRENAME>` `FIND-FIRST/NEXT` `DTA@/!` | C built-ins that **dispatch on the DOS function numbers the call sites already pass** (`$3D00 HDOS1` and so on). About 30 INT 21h functions are emulated over POSIX. Paths are mapped by dropping the drive letter, translating `\`→`/` and matching names case-insensitively. Handles are host fds. The HCB layout is widened to cell-sized fields, with all access going through `>HNDLE`, `>ATTRIB` and `>NAM`. |
-| Memory | `DOS_ALLOC` `DOS_DEALLOC` `DOS_SETBLOCK` `DOS_MAXBLOCK` | A paragraph allocator over the HEAP region |
+| Memory | `DOS_ALLOC` `DOS_DEALLOC` `DOS_SETBLOCK` `DOS_MAXBLOCK` | Replaced by `ALLOCATE`/`FREE`/`RESIZE` (byte addresses) over the HEAP region; callers are updated |
 | Keyboard | `BIOSKEY?` `BIOSKEY` | The host returns BIOS-style `scan<<8 \| ascii` values, so `(KEY)`'s `128 OR scan` encoding and every key table stay as they are. Escape sequences are decoded into scan codes in the host. A new `SHIFT-STATE` word replaces reads of `0:417`. |
-| Screen | `VIDEO-TYPEL` `VIDEO-TYPE` `?VMODE` `IBM-AT` `IBM-AT?` `SET-CURSOR` `IBM-DARK` `IBM--LINE` | A virtual text screen (COLS×ROWS cells of char+attr) held **in VM memory** at `VIDEO-SEG`. There is a single cursor shared by the `TYPE` path (direct write, clipped) and the `EMIT`/`CR` path (TTY: wraps and scrolls). The host diff-renders on `KEY`/`KEY?`/idle. |
+| Screen | `VIDEO-TYPEL` `VIDEO-TYPE` `?VMODE` `IBM-AT` `IBM-AT?` `SET-CURSOR` `IBM-DARK` `IBM--LINE` | A virtual text screen (COLS×ROWS cells of char+attr) held **in VM memory** at `VIDEO-BUF`. There is a single cursor shared by the `TYPE` path (direct write, clipped) and the `EMIT`/`CR` path (TTY: wraps and scrolls). The host diff-renders on `KEY`/`KEY?`/idle. |
 | Time | DOS `2Ch`/`2Ah` via `<BDOS>`; `MS` busy loop | Host clock; `MS` = `host_sleep_ms` |
 | Break | INT 1Bh/23h | SIGINT → `vm->interrupt` (§3.5) |
 | Process | `<EXTEXEC>` and the shell/EXEC words | `host_system()`. EMS image swapping is dropped. |
@@ -241,8 +251,8 @@ The default is `host_tty` when stdout is a terminal and `host_batch` otherwise. 
 
 ```
 header   magic "FPCIMG\0\1", cell size (4), endianness (LE), region table
-         (base paragraph + used length for CODE, LIST, HEAD, HEAP), entry xts
-         (COLD, WARM), VM register seeds (sp0, rp0, up, xseg, yseg)
+         (base address + used length for CODE, LIST, HEAD, HEAP), entry xts
+         (COLD, WARM), VM register seeds (sp0, rp0, up)
 handlers table of (token, kind, name, src): one row per non-built-in token
          plus the names of all built-in tokens used, for validation
 regions  raw bytes of each region's used part
@@ -257,9 +267,9 @@ regions  raw bytes of each region's used part
 
 The process is mechanical where it can be and reviewed by hand everywhere else:
 
-1. **Lint script.** `tools/cellscan` flags cell-size idioms per line: `2+ 2- 2* 2/` near addresses, `2 ALLOT`, `3 +`, `>BODY` arithmetic, `232`/`233`, `$FFFF`, `$8000`, `FLIP`, `SPLIT`, `JOIN`, `2R@ @L`, `R> 2+ >R`, and fixed structure offsets. Its output is the work list. A file counts as ported when every hit is either fixed or annotated `\ cell-ok`.
+1. **Lint script.** `tools/cellscan` flags segment words (§2.1) and cell-size idioms per line: `2+ 2- 2* 2/` near addresses, `2 ALLOT`, `3 +`, `>BODY` arithmetic, `232`/`233`, `$FFFF`, `$8000`, `FLIP`, `SPLIT`, `JOIN`, `2R@ @L`, `R> 2+ >R`, and fixed structure offsets. Its output is the work list. A file counts as ported when every hit is either fixed or annotated `\ cell-ok`.
 2. **Fixed structures** move to cell fields: the user area, the POINTER body, the HCB, the header (VFA, LFA and CFA-pointer become cells), the vocabulary threads, and `FILEPOINTER`, which becomes a `2VARIABLE`.
-3. **Head space.** `CNHASH` becomes `CFA 9 RSHIFT CELLS`, with the >NAME table sized from `#CODESEGS`. `CNSRCH`, `(FIND)`, `HASH`, `YHASH` and `TRAVERSE` become C built-ins with no 16-bit tricks.
+3. **Head space.** `CNHASH` becomes `CFA 9 RSHIFT CELLS`, with the >NAME table sized from the CODE region. `CNSRCH`, `(FIND)`, `HASH`, `YHASH` and `TRAVERSE` become C built-ins with no 16-bit tricks.
 4. **Doubles.** Mostly unchanged in meaning. Only code that relies on 16-bit overflow (`UM* DROP` idioms, `$FFFF 0 DMIN`) needs review.
 5. **Order.** Kernel first (M2), then the extensions in `F-PC.SEQ` order, deferring SED and the screen UI to M5.
 
@@ -283,10 +293,17 @@ The process is mechanical where it can be and reviewed by hand everywhere else:
 | M6 | AM assembler, interpreter, sljit backend; SEDCODE ported to AM | JIT and interpreter cross-check passes; works with JIT disabled |
 | M7 | Trace-hook debugger, multitasker, `host_sdl` | DEBUG steps a word |
 
-## 11. Deferred simplifications and open questions
+## 11. Decisions and deferred items
 
-- **Keep `seg*16+off`, or go fully flat?** The paragraph rule (§2.1) is chosen for minimal source churn. Going fully flat later would mean retiring `@L`-style words file by file. Recommendation: keep it, and revisit after M5.
-- **Bootstrap.** The C seed (§4.3) is chosen over porting META86. A self-hosted META32 would restore the original "the system builds itself" property. It is optional and would come after M3.
-- **Port in place, or keep a parallel tree?** In place, with the original tagged (§4.1), is the recommendation.
+**Decided (2026-10-03)**
+
+- 32-bit cells.
+- Flat memory with logical regions (§2). The segment words are removed rather than emulated.
+- C seed bootstrap (§4.3). META86 is not ported.
+- `SRC/` is edited in place, freely. The original lives at the `fpc-3.6-original` tag and elsewhere. It is used only as the DOSBox oracle, not preserved in the working tree.
+
+**Open**
+
 - **`CMOVE`** changes to byte semantics (§1). If any extension turns out to depend on word-wise moves, it gets an explicit `WMOVE` instead.
 - **Case sensitivity of file names** on case-sensitive hosts. The plan is a case-insensitive lookup when opening; creating a file uses the case as written.
+- **A self-hosted metacompiler** (the 32-bit kernel building itself) is optional, after M3.
