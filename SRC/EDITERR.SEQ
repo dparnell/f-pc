@@ -1,4 +1,4 @@
-\ EDITERR.SEQ   Automatically enter editor on compile error
+\ EDITERR.SEQ   Automatically enter editor on compile error   F-PC native port
 
 defined ed nip 0= #if \s  #endif        \ if ED not defined, stop loading
 
@@ -14,7 +14,8 @@ create wordsave 32 allot
                 >in @ 1- here c@ - 0MAX =: screenchar
                 here count 31 min wordsave place
                 0 rows 1- at
-                30 here c@ msgsave c@ + 2/ - spaces ." ллллл>  "
+                cols 2/ 10 -            \ centre on the screen, any width
+                here c@ msgsave c@ + 2/ - 0max spaces ." ллллл>  "
                 wordsave count type 2 spaces
                 msgsave count type ."   <ллллл  "
                 edinit

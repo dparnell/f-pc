@@ -1,4 +1,8 @@
-\ PRINTING.SEQ  Export & Import for SED.           by 1987 Tom Zimmer
+\ PRINTING.SEQ  Export & Import for SED.           F-PC native port
+\                                                  by 1987 Tom Zimmer
+
+\ Native port: printing goes to PRNHNDL (DOS handle 4, discarded by the VM)
+\ unless redirected to a file with PFILE, or with S in the Alt-P menu.
 
 editor definitions
 
@@ -124,14 +128,19 @@ comment;
 
 \ None of existing DOS calls pass the needed registers, so a new one is needed.
 
-code get_file_date&time       ( handle# -- file-time file-date )
-               pop bx                   \ handle# -> bx
-               mov ah, # $057           \ Function 57 -> ah
-               mov al, # 0              \ 0 -> al for "get"
-               int $21                  \ gets the time & date
-               push cx                  \ the time to the stack
-               push dx                  \ the date over it
-               next     end-code
+\ Native port: none of the INT 21h seams take BX and return CX DX, so the
+\ file's date and time are read from the DTA of a FIND-FIRST on its name
+\ (DOS DTA layout: time at offset 22, date at 24). Only names that fit 8.3
+\ are found; otherwise the date and time are zero.
+
+create fdta 44 allot            \ a private DTA
+
+: get_file_date&time    ( hcb -- file-time file-date )
+               dta@ >r fdta dta!
+               >nam 0 find-first                \ false = found
+               if       0 0
+               else     fdta 22 + w@  fdta 24 + w@
+               then     r> dta! ;
 
 : convert_file_date     ( file-date -- Y MD )  \ File-date format to DOS fmt.
                0 $0200  um/mod          \ high 7 bits are ( year - 80 )
@@ -150,13 +159,8 @@ code get_file_date&time       ( handle# -- file-time file-date )
                00       ;     \ Not using seconds, so put in zero
 
 : setfile_date&time     ( --- )
-                ed1hndl hopen 0=
-        if      ed1hndl   \ gets beginning of handle stack = currently open
-                >hndle @    \ move to handle number & fetch it
-                get_file_date&time =: file-date-val =: file-time-val
-                ed1hndl hclose drop
-        else    off> file-date-val off> file-time-val
-        then    ;
+                ed1hndl get_file_date&time      \ by name, no need to open
+                =: file-date-val =: file-time-val ;
 
 : .file_date    ( --- )
                 file-date-val
@@ -194,7 +198,8 @@ code get_file_date&time       ( handle# -- file-time file-date )
                 ?paginate @ 0= ?exit
                 pcr
                 ?head/foot @
-                if      0 #lineseg 1 over 0 c@l >r ?cs: pad r@ cmovel
+                if      0 #lineseg count >r pad r@ cmove \ port: #LINESEG
+                                                \ is the line's address
                         lmargin @ pspaces
                         pad r> ptype
                         .underline
@@ -276,23 +281,23 @@ value pitems
 
 : showpdata     ( --- )
                 >rev    prtmenu 5 0      \ first 5 items are numbers
-                do      dup 2@ swap at
-                        4 + count + dup @ @ space 4 .l 2+
+                do      dup 2@ swap at          \ items: x y "text" var
+                        2 cells + count + dup @ @ space 4 .l cell+
                 loop    dup 2@ swap at
-                        4 + count + dup @ @
+                        2 cells + count + dup @ @
                         if      ."  ON  "
                         else    ."  OFF "
-                        then    2+
+                        then    cell+
                         dup 2@ swap at
-                        4 + count + dup @ @
+                        2 cells + count + dup @ @
                         if      ."  YES "
                         else    ."  NO  "
-                        then    2+
+                        then    cell+
                         dup 2@ swap at
-                        4 + count + dup @ @
+                        2 cells + count + dup @ @
                         if      ."  YES "
                         else    ."  NO  "
-                        then    2+
+                        then    cell+
                 drop >norm ;
 
 : showcmds      ( --- )
@@ -310,13 +315,13 @@ value pitems
                 17 7 at ." \3Use Enter or Arrows to move between fields"
                 24 8 at ." \3Use + or - to change values"
                 prtmenu pitems 0
-                do      dup 2@ 2 pick 4 + c@ - 1- swap at
-                        4 + count 2dup type + 2+
+                do      dup 2@ 2 pick 2 cells + c@ - 1- swap at
+                        2 cells + count 2dup type + cell+
                 loop    drop 64 9 at ." 0=no #'s" showcmds ;
 
 : >pitem        ( --- a1 )
                 prtmenu pitem @ 0
-                ?do     4 + count + 2+
+                ?do     2 cells + count + cell+
                 loop    ;
 
 : sc            ( --- )
@@ -334,7 +339,7 @@ value pitems
                 then    ;
 
 : pincr         ( c1 --- c1 ) dup 43 =  \ plus "+" sign
-                if      >pitem  4 + count + @
+                if      >pitem  2 cells + count + @
                          pitem  @ 4 >   \ greater than item 4 (fifth item)
                         if      dup @ 0= swap !
                         else    incr
@@ -343,7 +348,7 @@ value pitems
 
 : pdecr         ( c1 --- c1 )
                 dup 45 =        \ minus "-" sign
-                if      >pitem  4 + count + @
+                if      >pitem  2 cells + count + @
                         dup @ 1- 0MAX swap !
                         showpdata sc showpcur drop 0
                 then    ;
@@ -364,14 +369,14 @@ value pitems
 : pbkspace      ( c1 --- c1 )
                 dup 8 =         \ back space
                 if      pnumval off
-                        >pitem  4 + count + @ off
+                        >pitem  2 cells + count + @ off
                         showpdata sc showpcur drop 0
                 then    ;
 
 : pnum          ( c1 --- c1 )   \ number between 0 and 9
                 dup '0' >= over '9' <= and
                 if      dup '0' - pnumval @ 10 * + 199 min
-                        dup pnumval ! >pitem 4 + count + @ !
+                        dup pnumval ! >pitem 2 cells + count + @ !
                         showpdata sc showpcur drop 0
                 then    ;
 
@@ -397,6 +402,12 @@ value pitems
                         showpcur cursor-on
                 then    ;
 
+: presize       ( c1 --- c1 )   \ terminal was resized: redraw the menu
+                dup k-resize =
+                if      sresize showpform showpdata sc showpcur
+                        drop 0
+                then    ;
+
 : pmenu         ( --- )         \ print menu
                 ['] pbutton save!> dobutton
                 savescr
@@ -405,7 +416,8 @@ value pitems
                 begin   key dup 27 <>     over
 ( Alt-P )                      153 <> and over bl or
                                'p' <> and
-                while   penter  pincr  pdecr  pnum  pbkspace
+                while   presize
+                        penter  pincr  pdecr  pnum  pbkspace
                         prright prup   pset
                         if toblnk showcmds torev beep showpcur
                         then

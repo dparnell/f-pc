@@ -1,4 +1,5 @@
 \ SEDITOR.SEQ   Sequential EDitor          Written by 1987 Tom Zimmer
+\                                                       F-PC native port
 
 comment:
 
@@ -18,6 +19,10 @@ Hello -
 comment;
 
 decimal         \ always use default to decimal
+
+\ TODO-PORT: the pop-up boxes (BOX&FILL and the AT positions inside them)
+\ and the status line fields at columns 30 45 59 still assume a screen of
+\ at least 80x25; only the edit window follows COLS and ROWS.
 
 editor definitions
 
@@ -94,10 +99,11 @@ defer reset_defered     \ set later to DEFERRESET
 0 value vstaton
 0 value statcnt
 
-: ?capslock     ( --- f1 ) 0 $417 c@l $40 and 0<> ;
-: ?altkey       ( --- f1 ) 0 $417 c@l $08 and 0<> ;
-: ?ctrlkey      ( --- f1 ) 0 $417 c@l $04 and 0<> ;
-: ?shiftkey     ( --- f1 ) 0 $417 c@l $03 and 0<> ;     \ 05/25/90 tjz
+\ F-PC native port: SHIFT-STATE replaces reading the BIOS flags at 0:417.
+: ?capslock     ( --- f1 ) shift-state $40 and 0<> ;
+: ?altkey       ( --- f1 ) shift-state $08 and 0<> ;
+: ?ctrlkey      ( --- f1 ) shift-state $04 and 0<> ;
+: ?shiftkey     ( --- f1 ) shift-state $03 and 0<> ;    \ 05/25/90 tjz
 
 create  linebuf ( linebuf.len ) 300 allot
         linebuf ( linebuf.len ) 300 blank
@@ -122,7 +128,10 @@ $bb gremit '||  $c9 gremit ||'
 
 : -s    ( n1 --- )
         --'s.buf 132 ?browse if $cd else $c4 then fill
-        --'s.buf swap type ;
+        begin   dup 0>                  \ port: a line can be wider than
+        while   --'s.buf over 132 min type      \ the buffer now
+                132 -
+        repeat  drop ;
 
 : .g|          ( --- )         \ display a virtical bar character
                 ?browse
@@ -157,16 +166,26 @@ $bb gremit '||  $c9 gremit ||'
 : .l           ( n1 n2 --- )   \ Print left justified in fld
                 >r (u.) dup>r type r> r> swap - spaces ;
 
+\ F-PC native port: the terminal can be resized at any KEY or KEY? point.
+\ RESIZED only notes it in SRESIZED; the key loop in <REEDIT> then lays the
+\ window out again and redraws (SRESIZE, at the end of this file).
+
+0 value sresized        \ true when the screen changed size
+
+: sed-resized   ( -- )
+                defers resized
+                on> sresized ;
+
+' sed-resized is resized
+
+\ F-PC native port: the BIOS keyboard buffer (0:41A 0:41C) can't be
+\ inspected, so all typeahead is discarded (the original kept one key when
+\ not using DOS I/O). A resize swallowed here is not lost: RESIZED has
+\ already set SRESIZED (below), and the key loop redraws.
 : emptykbd  ( --- )     \ empty any keyboard typeahead
-            ?DOSIO
-            if    begin       key?
-                  while       (key) drop
-                  repeat
-            else  begin       0 $41A @L
-                              0 $41C @L - abs 2 >     \ keyboard depth > 1 key
-                  while       bioskey drop
-                  repeat
-            then  ;
+            begin       key?
+            while       bioskey drop
+            repeat  ;
 
                 \ $02 = Shift key, $08 = Alt key, $40 = Caps lock.
 
@@ -215,13 +234,14 @@ create  end-spcs 80 allot
                 off> curline                    \ clear current line
                 off> lastline                   \ and total lines
                 tsegb lineptr tl:!              \ first segment setup
-                ?cs: nfil tsegb 0 3 cmovel      \ move in a counted CRLF $
+                nfil tsegb 3 cmove              \ move in a counted CRLF $
                 incr> lastline                  \ inrement total lines
                 5 tenths ;
 
 : ?softerror   ( bool a1 n1 --- )      \ bool = false if OK, else type msg
                 rot
-                if      >r 36 r@ 2/ - 6 over r@ + 2 + 9 box&fill
+                if      >r cols 2/ 4 - r@ 2/ - 0max     \ port: centred
+                        6 over r@ + 2 + 9 box&fill
                         space r> \type
                         bcr ."   \1 Press - \2 ESC "
                         cursor-off
@@ -235,19 +255,19 @@ create  end-spcs 80 allot
 
 : placeline    ( a1 --- )
                 >r                      \ save line address
-                ?cs: r@                 \ moving from line seg & address
-                lineptr tl:@ 0          \ to text line seg and offset = 0
+                r@                      \ moving from line address
+                lineptr tl:@            \ to text line address
                 r@ c@ len-accum         \ sum in length to total file size
-                1+ cmovel               \ move the data
-                r> c@ 1+ paragraph      \ calculate segments to next line
-                lineptr tl:@ +          \ add to current lines segment
+                1+ cmove                \ move the data
+                r> c@ 1+ aligned        \ calculate bytes to next line
+                lineptr tl:@ +          \ add to current lines address
                 incr> curline           \ bump to next line
-                lineptr tl:!            \ save seg in line pointer table.
+                lineptr tl:!            \ save addr in line pointer table.
                 incr> lastline ;        \ add a line to total lines
 
 : ?0fix        ( a1 -- a1 )            \ fix files of zero length
                 dup c@ 0=               \ if line is of length zero
-                if      2573 over 1+ !  \ fill in a CRLF
+                if      2573 over 1+ w! \ fill in a CRLF
                         2 over c!       \ and set line length to 2
                 then    ;
 
@@ -268,7 +288,7 @@ create  end-spcs 80 allot
                 0.0 currentsize 2!
                 off> rmmax
                 tsegb lineptr tl:!      \ first segment setup
-                tsegb #edsegs + $100 - =: tend
+                tsegb #edsegs + $1000 - =: tend \ port: bytes ($100 paras)
                 lineread ?0fix placeline
                 begin   lineread rmsave endtst? and
                 while   placeline
@@ -335,8 +355,9 @@ create  end-spcs 80 allot
                 renaming 0=
                 if      currentsize 2@ d+
                 then    128 um/mod nip UM*      \ 05/25/90 tjz
-                #edsegs tend toff - - 5 / 4 * 8 / 0 d< dup
-                                        \ * .8 / 8 to 128 bytes units
+                #edsegs tend toff - - 128 / 0 d< dup
+                                        \ port: text bytes in 128 byte units
+                                        \ (was paragraphs * .8 / 8)
                 if      savescr cursor-off
                         8 4 72 14 box&fill
                         bcr ." \s24\4 WARNING !! \b\:03"
@@ -348,12 +369,12 @@ create  end-spcs 80 allot
                                 \ n1 = edit file line number
                                 \ f1 = true if error
 : linewrite    ( n1 --- f1 )   \ write a text line and return flag
-                >lineptr tl:@ dup>r 1   \ source segment & offset
-                wseg wblen              \ dest   segment & offset
-                r> 0 c@l dup>r cmovel   \ length and move it
+                >lineptr tl:@ count     \ source address & length
+                dup>r wseg wblen + swap \ dest   address
+                cmove                   \ move it
                 r> +!> wblen            \ bump length
                 wblen writelim >
-                if      0 wblen ed2hndl wseg exhwrite wblen = dup
+                if      wseg wblen ed2hndl hwrite wblen = dup
                         if      off> wblen
                         then    0=
                 else    false
@@ -361,7 +382,7 @@ create  end-spcs 80 allot
 
 : flushwrite   ( --- f1 )      \ write the remainder of the write buffer
                 wblen 0<>
-                if      0 wblen ed2hndl wseg exhwrite wblen = dup
+                if      wseg wblen ed2hndl hwrite wblen = dup
                         if      off> wblen
                         then    0=
                 else    false
@@ -397,18 +418,21 @@ create  end-spcs 80 allot
 : put           ( --- )         \ save a file
                 write.file ;
 
-: linebuf:      ( --- seg a1 )  \ a useful primitive
-                ?cs: linebuf ;
+\ F-PC native port: no segments, so LINEBUF: LINESEGINFO and #LINESEGINFO
+\ return one cell less than before.
 
-: lineseginfo   ( --- seg a1 n1 )   \ segment of current line & length
-                curline #lineseg 1 over 0 c@l ;
+: linebuf:      ( --- a1 )      \ a useful primitive (was seg a1)
+                linebuf ;
+
+: lineseginfo   ( --- a1 n1 )   \ text address of current line & length
+                curline #lineseg count ;        \ (was seg a1 n1)
 
 : showcur       ( --- )         \ display cursor at proper loc
                 screenchar winoff - first.textcol +
                 window.left max window.right min screenline at ;
 
-: #lineseginfo  ( n1 --- seg a1 n2 )
-                #lineseg 1 over 0 c@l ;
+: #lineseginfo  ( n1 --- a1 n2 )     \ text address of line n1 & length
+                #lineseg count ;
 
 : stripbl's     ( --- )         \ strip off trailing blanks
                 linebuf count -trailing linebuf c! drop ;
@@ -482,10 +506,10 @@ editor also
 : getline       ( --- )         \ get current line to linebuf.
                 linebuf linebuf.len blank
                 lineseginfo >r
-                linebuf: 1+ r@ ch/l 2+ min cmovel  ( --- )
+                linebuf 1+ r@ ch/l 2+ min cmove  ( --- )
                 r@ 2- =: linelen
-                r> linebuf + 1- dup @ crlfval =
-                if      blbl swap !
+                r> linebuf + 1- dup w@ crlfval =        \ port: 16 bit
+                if      blbl swap w!
                 else    drop  2 +!> linelen
                 then    ?expand_tabs
                 ch/l linebuf c!
@@ -496,27 +520,27 @@ editor also
                 lchng 0= ?exit          \ only save if changed
                 gotten 0= ?exit
                 stripbl's               \ restore linebuf to file
-                crlfval linebuf count + !
+                crlfval linebuf count + w!
                 2 linebuf c+!
-                lineptr tl:@ 0 c@l      \ Get OLD line length
+                lineptr tl:@ c@         \ Get OLD line length
                 linebuf c@ - negate     \ NEW length from OLD = Difference
                 s>d currentsize D+!     \ adjust file size for NEW line
                 linebuf:                \ source in line buffer
-                lineptr dup tl+ tl:@    \ next line segment
-                linebuf c@ 1+ paragraph - \ minus segment for current line
-                dup rot tl:!            \ seg current line segment
+                lineptr dup tl+ tl:@    \ next line address
+                linebuf c@ 1+ aligned - \ minus space for current line
+                dup rot tl:!            \ set current line address
                 dup =: tend             \ set TEND
-                0 linebuf c@ 1+ cmovel  \ move the data into text segment
+                linebuf c@ 1+ cmove     \ move the data into text buffer
                 off> gotten ;
 
 : toline-       ( n1 --- )
                 0MAX
                 curline over <= if drop exit then
-                dup>r #lineseg                  \ source line segment
+                dup>r #lineseg                  \ source line address
                 toff over - >r                  \ amount moved is saved
-                tend r@ -                       \ destination line segment
+                tend r@ -                       \ destination line address
                 2dup - negate r@ swap >r        \ save distance moved
-                cmove-pars>                     \ move the segments
+                cmove>                          \ move the lines up
                 r> curline r> r@ swap >r
                 adj_ptr_lines                   \ adjust the line ptr tbl
                 r> negate dup +!> toff +!> tend
@@ -526,11 +550,11 @@ editor also
                 lastline min
                 curline over >= if drop exit then
                 >r
-                curline  #lineseg               \ start segment
+                curline  #lineseg               \ start address
                 r@ #lineseg over - >r           \ amount moved is saved
-                toff                            \ destination segment
+                toff                            \ destination address
                 2dup - negate r@ swap >r        \ save distance moved
-                cmove-pars                      \ move the segments
+                cmove                           \ move the lines down
                 r> r> r@ swap >r curline
                 adj_ptr_lines                   \ adjust the line ptr tbl
                 r> dup +!> toff +!> tend
@@ -538,16 +562,16 @@ editor also
 
 : curline+      ( --- )         \ move down one line in text
                 curline lastline = ?exit
-                lineseginfo 1+ >r 1- toff 0 r@ cmovel
-                toff lineptr tl:! r> paragraph +!> toff
+                lineseginfo 1+ >r 1- toff r@ cmove
+                toff lineptr tl:! r> aligned +!> toff
                 incr> curline lineptr tl:@ =: tend ;
 
 : curline-      ( --- )         \ move up one line in text
                 curline 0= ?exit
-                curline 1- >lineptr tl:@ dup 0 c@l 1+ >r 0
-                lineptr tl:@ r@ paragraph - 0 r@ cmovel
-                r@ paragraph negate +!> toff
-                lineptr dup tl:@ r> paragraph - swap tl- tl:!
+                curline 1- >lineptr tl:@ dup c@ 1+ >r
+                lineptr tl:@ r@ aligned - r@ cmove>
+                r@ aligned negate +!> toff
+                lineptr dup tl:@ r> aligned - swap tl- tl:!
                 decr> curline lineptr tl:@ =: tend ;
 
                 \ conditional lastline and firstline tests
@@ -561,9 +585,9 @@ editor also
                 on> imode
                 on> markstrt
                 on> markend
-        \ setup tend to point to lst possible segment in 64k block
+        \ setup tend to point to the end of the text buffer
                 tsegb #edsegs + =: tend
-                lastline 1- >lineptr tl:@ dup 0 c@l paragraph + =: toff
+                lastline 1- >lineptr tl:@ dup c@ 1+ aligned + =: toff
         \ set line beyond last actual line to just beyond end of buffer
                 tsegb #edsegs + lastline >lineptr tl:!
                 lastline =: curline
@@ -579,29 +603,23 @@ editor also
                 if      @> #out @> #line at
                 then    ." \r" ;
 
-code ?page-char ( n1 --- )
-                pop ax
-                sub dx, dx
-                mov bx, ' prtlines >body        \ 08/06/90 TJZ allow PRTLINES
+: ?page-char   ( n1 --- )      \ port: was CODE
+                0 prtlines um/mod drop 0=       \ 08/06/90 TJZ allow PRTLINES
                                                 \ to be changed to a VALUE
-                div bx
-                cmp dx, # 0
-             0= if      mov ax, # ' pagechar
-                        jmp ax
-                then
-                next    end-code
+                if      pagechar
+                then    ;
 
-defer sltypel   ' typeL is sltypel
+\ F-PC native port: TYPEL ( seg a n ) is gone; SED's line output words take
+\ ( a n ) and default to TYPE.
+defer sltypel   ' type is sltypel       ( a1 n1 -- )
 
-: exsltypel     ( seg off len -- )      \ type and expand tabs
-                rot save!> sseg
+: exsltypel     ( a1 n1 -- )            \ type and expand tabs
                 begin   2dup 9 scan dup                 \ look for tab
                 while   2dup 2>r                        \ save remainder
                         nip -
-                        @> sseg -rot
-                        #out @ + last.textcol 1+ min #out @ -
+                        #out @ + last.textcol 1+ min #out @ - 0max
                                                         \ clip to scrn width
-                        typel                           \ output preceeding
+                        type                            \ output preceeding
                         #OUT @ first.textcol - 0max
                         TABSIZE @ MOD TABSIZE @ SWAP -
                         #out @ + last.textcol 1+ min #out @ -
@@ -609,10 +627,8 @@ defer sltypel   ' typeL is sltypel
                         2r> 1 /string                   \ recover remainder
                                                         \ & remove the TAB
                 repeat  2drop
-                @> sseg -rot
-                #out @ + last.textcol 1+ min #out @ -
-                typel                                   \ type line remainder
-                restore> sseg ;
+                #out @ + last.textcol 1+ min #out @ - 0max
+                type ;                                  \ type line remainder
 
 : sltype        ( n1 --- ) \ n1 is data line
                 ?DOSIO
@@ -624,7 +640,7 @@ defer sltypel   ' typeL is sltypel
                         if >rev then
                 then
                 on> nosetcur
-                #lineseginfo 2- clipline sltypeL edeeol
+                #lineseginfo 2- clipline sltypel edeeol
                 off> nosetcur ;
 
 0 value lincol          \ column of linenumber in status line
@@ -725,8 +741,8 @@ defer sltypel   ' typeL is sltypel
                                 then
                         then    <statfunc>
                         mouseflg
-                        if      71 statusline at ." \4\0Ä"
-                        else    73 statusline at
+                        if      window.right 8 - statusline at ." \4\0Ä"
+                        else    window.right 6 - statusline at  \ port: was 73
                         then    >attrib4
                         browselevel 0>
                         if      ."  +"
@@ -738,7 +754,8 @@ defer sltypel   ' typeL is sltypel
 ' statfunc is showstat
 
 : ?full         ( --- f1 )      \ is memory full?
-                tend toff - $100 < ;     \ need more than $100 = 1600 decimal
+                tend toff - $1000 < ;   \ need more than $1000 = 4096 bytes
+                                        \ (port: was $100 paragraphs)
 
 : ?showfull     ( --- f1 )      \ set status func for memory
                 ?full dup       \ condition
@@ -763,7 +780,7 @@ defer sltypel   ' typeL is sltypel
                 if      curline markstrt markend between
                         if >rev then
                 then
-                ?CS: linebuf 1+ linelen clipline typeL edeeol
+                linebuf 1+ linelen clipline type edeeol
                 curline ?page-char off> nosetcur >norm ;
 
 : scrshow       ( --- )         \ display screen full of file.
@@ -791,32 +808,32 @@ defer sltypel   ' typeL is sltypel
 
 : ins.linelist  ( --- )                 \ add new entry to line pointer list.
                 lineptr tl: dup tl+ tl:
-                maxlines curline - 2- 2* cmovel>
+                maxlines curline - 2- tl* cmove>
                 incr> lastline
-                lineptr dup tl+ tl:@    \ next line segment
-                1-                      \ minus segment for current line
-                dup rot tl:!            \ seg current line segment
+                lineptr dup tl+ tl:@    \ next line address
+                cell-                   \ minus one cell for current line
+                dup rot tl:!            \ set current line address
                 =: tend                 \ set TEND
                 lineptr tl:@
-                2 over 0 c!l            \ set length to 0
-                crlfval swap 1 !l       \ put in CRLF
+                2 over c!               \ set length to 2
+                crlfval swap 1+ w!      \ put in CRLF
                 0.2 currentsize D+!     \ Adjust file size
                 ;
 
 : ?appendline   ( --- )
                 ?lastline
-                if      lineptr tl:@ dup>r 0    \ from  seg offset
-                        r@ 1- 0                 \ to    seg offset
-                        tsegb #edsegs + r> -    \ length in segments
-                        16 *                    \ convert to bytes
-                        cmovel                  \ move the data
-                        lineptr tl:@ 1-         \ correct line pointer value
-                        lineptr tl:!            \ save into line table
-                        tsegb #edsegs + 1-
+                if      lineptr tl:@ dup>r      \ from  address
+                        r@ cell-                \ to    one cell lower
+                        tsegb #edsegs + r> -    \ length in bytes
+                        cmove                   \ move the data
+                        lineptr tl:@ cell-      \ correct line pointer value
+                        dup lineptr tl:!        \ save into line table
+                        =: tend                 \ port: keep TEND = line
+                        tsegb #edsegs + cell-
                         lineptr tl+ tl:!        \ new last = 1 before end
-                        lineptr tl+ tl:@        \ segment of NEW last line
-                           2 over 0 c!l         \ set count 2
-                        crlfval swap 1 !l       \ put in CRLF
+                        lineptr tl+ tl:@        \ address of NEW last line
+                           2 over c!            \ set count 2
+                        crlfval swap 1+ w!      \ put in CRLF
                         tsegb #edsegs +         \ get the last segment
                         lineptr tl+ tl+ tl:!    \ save in lastline + 1
                         incr> lastline          \ one more line
@@ -863,46 +880,46 @@ defer ?mark-plus        ' noop is ?mark-plus
 
 : line>ldel.buf ( --- )
                 dseg
-                if      dseg ldel.buf 2dup mxlln +
-                        ldel.cnt maxdline 1- min mxlln * cmovel>
+                if      dseg ldel.buf + dup mxlln +
+                        ldel.cnt maxdline 1- min mxlln * cmove>
                         ldel.cnt 1+ maxdline 1- min =: ldel.cnt
-                        linelen linebuf c! ?cs: linebuf dseg ldel.buf
-                        linelen 1+ mxlln min cmovel
+                        linelen linebuf c! linebuf dseg ldel.buf +
+                        linelen 1+ mxlln min cmove
                 then    ;
 
 : ldel>linebuf  ( --- )
                 dseg
-                if      dseg ldel.buf 2dup c@l
-                        ?cs: linebuf rot 1+ cmovel
+                if      dseg ldel.buf + dup c@
+                        linebuf swap 1+ cmove
                         linebuf c@ =: linelen
-                        dseg ldel.buf 2dup mxlln + 2swap
+                        dseg ldel.buf + dup mxlln + swap
                         ldel.cnt maxdline min dup 1- =: ldel.cnt
-                        mxlln * cmovel
+                        mxlln * cmove
                 then    ;
 
 : #deletelines  ( n1 --- )
                 0MAX ?dup 0= ?exit
                 >r curline r@ lastline min bounds
-                ?do     i >lineptr tl:@ 0 c@l negate -1 currentsize D+!
+                ?do     i >lineptr tl:@ c@ negate -1 currentsize D+!
                 loop
-                r@ tl* tl:@ =: tend
-                lineptr tl: dup r@ tl* + tl: 2swap
-                maxlines >lineptr lineptr r@ tl* + - cmovel
+                lineptr r@ tl* + tl:@ =: tend   \ port: was r@ tl* tl:@
+                lineptr dup r@ tl* + swap       \ source, destination
+                maxlines >lineptr lineptr r@ tl* + - cmove
                 r> negate +!> lastline
                 getline modified ;
 
 : linedelete    ( --- )
                 ?lastline       \ if we are on the last line, then
                                  \ just clear the line don't delete it.
-                if      lineptr tl:@ 0 c@l negate s>d currentsize D+!
+                if      lineptr tl:@ c@ negate s>d currentsize D+!
                         2 s>d currentsize D+!
-                        tsegb #edsegs + 1- dup lineptr tl:! =: tend
-                           2 curline #lineseg 0 c!l   \ install count of 2
-                        crlfval curline #lineseg 1 !l \ containing only CRLF
-                else    lineptr tl:@ 0 c@l negate s>d currentsize D+!
+                        tsegb #edsegs + cell- dup lineptr tl:! =: tend
+                           2 curline #lineseg c!      \ install count of 2
+                        crlfval curline #lineseg 1+ w! \ containing only CRLF
+                else    lineptr tl:@ c@ negate s>d currentsize D+!
                         lineptr dup tl+ tl:@ =: tend
                         maxlines >lineptr over - >r
-                        tl: dup tl+ tl: 2swap r> cmovel
+                        dup tl+ swap r> cmove
                         decr> lastline
                 then    getline modified ;
 
@@ -1316,7 +1333,7 @@ defer <nlnx>    ' noop is <nlnx>
                 imode
         if      stripbl's split.buf linebuf.len blank
                 linebuf split.buf over c@ dup>r 1+ cmove
-                curline 1- #lineseg 0 c@l r> + ch/l 1- >
+                curline 1- #lineseg c@ r> + ch/l 1- >
                 if      beep getline off> screenchar
                 else    ldel suln stripbl's
                         split.buf count linebuf count dup if 1+ then
@@ -1408,8 +1425,8 @@ defer ?wrap     ' noop is ?wrap
                 restcursor ;
 
 : #linelook     ( n1 --- f1 )   \ look through line n1
-                >r slook.buf count r> #lineseg =: sseg
-                1 @> sseg 0 c@l screenchar /string
+                >r slook.buf count r> #lineseginfo
+                screenchar /string
                 search tuck
                 if      +!> screenchar
                 else    drop
@@ -1430,8 +1447,7 @@ defer ?wrap     ' noop is ?wrap
                 cursor-off
                 0               \ Leave false bool in case we don't find it.
                 lastline 1+ curline 1+ over min
-                ?do     slook.buf count i #lineseg =: sseg
-                        1 @> sseg 0 c@l search
+                ?do     slook.buf count i #lineseginfo search
                         if      =: screenchar
                                 i to.line 0=    \ change false bool to true
                                 leave           \ and leave
@@ -1443,7 +1459,7 @@ defer ?wrap     ' noop is ?wrap
                                 lastline %read-from + 1+ 3 .l >norm
                                 key? ?leave
                         then
-                loop    ?cs: =: sseg
+                loop
                 getline ?exp_position
                 emptykbd ?cursor ;
 
@@ -1461,7 +1477,7 @@ defer ?wrap     ' noop is ?wrap
                                 I 1+ 4 >attrib1 .l >norm
                                 key? ?leave
                         then
-            -1 +loop    ?cs: =: sseg
+            -1 +loop
                 getline ?exp_position
                 emptykbd ?cursor ;
 
@@ -1472,7 +1488,6 @@ defer ?wrap     ' noop is ?wrap
                 if      rwrd    exit    \ just step to next word
                 then    putline getline
                         curline >r r@ #linelook 0=
-                        ?cs: =: sseg
                 if      look.till dup =: lookflg 0=
                         if      .nofound r@ backto.line
                         else    on> looked then
@@ -1889,8 +1904,8 @@ create rep.buf   32 allot
                 restore> imode
                 markstrt curline >= if incr> markstrt then
                 linebuf linebuf.len blank
-                markstrt #lineseginfo 2- >r ?cs: linebuf 1+
-                r> ch/l 2+ min cmovel ch/l linebuf c!
+                markstrt #lineseginfo 2- >r linebuf 1+
+                r> ch/l 2+ min cmove ch/l linebuf c!
                 modified putline getline sdln
                 incr> markstrt
                 markend markstrt max =: markend
@@ -1912,7 +1927,8 @@ create rep.buf   32 allot
                 ?browse ?exit
                 window.left 0MAX statusline at
                 ." \2  Enter a key to insert "
-                showcur key schr ;
+                showcur key dup k-resize =      \ port: not a resize
+                if drop else schr then ;
 
 : lmset         ( --- )
                 screenchar =: lmrgn
@@ -1929,6 +1945,37 @@ create rep.buf   32 allot
                 ."  Tabs set column increment " @> tabsize .
                 5 tenths restscr
                 getline cursor-on showcur scrshow ;
+
+\ F-PC native port: the edit window follows the screen size. %SEDLAYOUT
+\ moves the bottom and right edges of the window by the change in ROWS and
+\ COLS since the last layout (so a full screen window stays full screen and
+\ a smaller one keeps its margins), keeps the window on the screen, and
+\ keeps SCREENLINE inside it. SEDLAYOUT is deferred so a split window
+\ (SEDWIND.SEQ) can lay out both halves.
+
+: %sedlayout    ( -- )
+                rows sedrows - +!> last.textline
+                cols sedcols - +!> last.textcol
+                rows =: sedrows
+                cols =: sedcols
+                first.textline rows 4 - min 1 max =: first.textline
+                last.textline rows 2- min first.textline 1+ max
+                                                =: last.textline
+                first.textcol cols 10 - min 0max =: first.textcol
+                last.textcol cols min first.textcol 8 + max
+                                                =: last.textcol
+                screenline first.textline max
+                curline first.textline + min
+                last.textline min =: screenline ;
+
+defer sedlayout         ' %sedlayout is sedlayout
+
+: sresize       ( -- )          \ re-layout and redraw after a resize
+                off> sresized
+                sedlayout
+                dark
+                on> ?border
+                showscreen ;
 
 forth definitions
 

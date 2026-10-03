@@ -1,4 +1,5 @@
 \ FWORDS.SEQ    File searching                          by Tom Zimmer
+\ F-PC native port
 
 comment:
 
@@ -55,17 +56,20 @@ variable fstime
                 if      cr .seqhandle fstime on
                 then    ;
 
-code searchsetup ( --- a1 n1 a2 n2 )
-                mov bx, # slook.buf 1+          \ slook.buf count
-                push bx
-                mov al, slook.buf byte
-                sub ah, ah
-                push ax
-                mov bx, # outbuf 1+             \ outbuf count
-                push bx
-                mov al, outbuf byte
-                1push
-                end-code
+: searchsetup   ( --- a1 n1 a2 n2 )
+                slook.buf count                 \ slook.buf count
+                outbuf count ;                  \ outbuf count
+
+\ F-PC native port: lines read by LINEREAD end in CRLF or, in host
+\ files, in a bare LF. The original dropped two bytes (2-); strip
+\ whatever line end characters are there instead.
+: -eol          ( a1 n1 --- a1 n2 )     \ remove trailing CR and LF
+                begin   dup
+                        if      2dup + 1- c@ dup 13 = swap 10 = or
+                        else    false
+                        then
+                while   1-
+                repeat  ;
 
 : searchfile    ( --- )
                 IBRESET
@@ -80,7 +84,7 @@ code searchsetup ( --- a1 n1 a2 n2 )
                                 if      .file-once
                                         cr i 3 .r space
                                 else    cr
-                                then    outbuf count 2- type
+                                then    outbuf count -eol type
                                 incr> occur_srch
                                 ?keypause
                                 PRINTING @ 0= @> statv and
@@ -123,10 +127,10 @@ variable withname
                 IBRESET
                 0.0 seqhandle movepointer
                 0.0 filepointer 2!
-                cr lineread count 2- 0MAX withname @
+                cr lineread count -eol withname @
                 if      .seqhandle 20 #out @ - spaces
-                        60
-                else    79
+                        cols 20 -               \ was 60 (80 columns)
+                else    cols 1-                 \ was 79
                 then    min type
                 ?keypause ;
 
@@ -148,7 +152,9 @@ forth definitions
                         #fls 0=
                         if      cr count type ."  No matching files."
                         else    drop    #fls 0
-                                ?do     i >fadr 1+ c@l '.' <>
+                                \ F-PC native port: >FADR (WFL.SEQ) gives
+                                \ an address, DIR>PAD takes it.
+                                ?do     i >fadr 1+ c@ '.' <>
                                         if      i >fadr dir>pad >r
                                                 here seqhandle+ $>handle
                                                 seqhandle+ >pathend

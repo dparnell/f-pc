@@ -1,4 +1,4 @@
-\ SEDSORT.SEQ   Sort the lines of a paragraph           by Tom Zimmer
+\ SEDSORT.SEQ   Sort the lines of a paragraph           F-PC native port
 
 editor definitions
 
@@ -15,9 +15,9 @@ create sort2.buf 142 allot
                 linelen sort1.buf c! ldel
                 @> sortfrm dup @> sortto
                 do      sort2.buf colsave + 15 blank
-                        i #lineseginfo 2- ?cs: sort2.buf rot
+                        i #lineseginfo 2- sort2.buf swap  \ port: ( a n )
                         colsave 15 + min
-                        cmovel sort2.buf colsave +
+                        cmove sort2.buf colsave +
                         sort1.buf 1+ colsave + 20 compare 0>
                         if drop i leave then
                 loop    backto.line <nln>

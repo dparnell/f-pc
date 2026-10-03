@@ -1,4 +1,5 @@
 \ MOUSEY.SEQ    Development level mouse support for F-PC    by Tom Zimmer
+\ F-PC native port
 
 comment:
 
@@ -26,7 +27,17 @@ install a driver for a particulary mode.
   try using FLOOK to find occurances of DOBUTTON in the SRC directory, for
 actual examples of how the above  works.
 
+  F-PC native port: MOUSEXY is in character cells as before (MOUSE.SEQ
+now gets cells from the host). Only the graphic character table changed:
+it is the address EXTCHARS (SEDCHARS.SEQ) instead of EXTCHARSEG in list
+space.
+
 comment;
+
+\ TODO-PORT: the button drivers below hit-test fixed screen columns and
+\ rows of other modules' layouts (SED status line F10 at 73..77, the
+\ print dialog, the browse prompt, the WFL window). If those modules are
+\ changed to lay out relative to COLS/ROWS, these tests must follow.
 
 only forth also hidden definitions also
 \unless editor  editor also
@@ -128,7 +139,7 @@ defined charline nip
               2 of      27 ( ESC )   =: mousechar endof
               1 of      mousexy charline extrows over + between
                         swap    charcol dup 1+ swap
-                        extcharseg +xseg 0 c@L + between and
+                        extchars c@ + between and
                         if      mousexy                 \ if on same char
                                 ty 1+ - swap tx 2+ - 2/ swap 2dup
                                 chrow = swap chcol = and

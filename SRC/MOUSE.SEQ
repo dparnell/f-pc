@@ -1,4 +1,5 @@
 \ MOUSE.SEQ     Mouse driver software, requires MOUSE.SYS       by Ray Isaac
+\ F-PC native port
 
 comment:
 
@@ -45,6 +46,22 @@ would be pretty irritating to have a mouse cursor in the middle of your
 screen and not be able to get rid of it.  Thank you Mike Christopher for
 this nice mouse driver enhancement.
 
+*************** F-PC native port **************************************
+There is no INT 33h mouse driver. The six CODE words that called it are
+rebuilt on five VM built-ins that a host provides (an SDL window, or a
+terminal with xterm mouse reporting):
+
+        MOUSE-PRESENT?  ( -- f )                is there a mouse?
+        MOUSE@          ( -- x y buttons )      where, in CHARACTER cells
+        MOUSE!          ( x y -- )              move it, in character cells
+        MOUSE-SHOW      ( -- )                  show the mouse cursor
+        MOUSE-HIDE      ( -- )                  hide the mouse cursor
+
+The host reports positions in character cells (0..COLS-1, 0..ROWS-1), so
+the 8 pixels per character scaling (U8/ 8* and MOUSE.SCALE) is gone.
+With no mouse MOUSE-PRESENT? is false, HAVEMOUSE and MOUSEFLG stay off
+and MOUSEKEY / MOUSEKEY? behave exactly like (KEY) / (KEY?).
+
 comment;
 
 \ prefix                  \ use prefix assembler syntax
@@ -70,84 +87,43 @@ headerless
 
 headers
 
-code show.ms    ( -- )          \ turn On the hardware mouse cursor
-                mov ax, # 1     \ we are using hardware cursor
-                int  51
-                next
-                end-code
+\ The host's mouse interface (see the comment at the top of this file).
+BUILTIN MOUSE-PRESENT?  ( -- f )                \ true if a mouse is there
+BUILTIN MOUSE@          ( -- x y buttons )      \ position in chars, buttons
+BUILTIN MOUSE!          ( x y -- )              \ set position in chars
+BUILTIN MOUSE-SHOW      ( -- )                  \ show the mouse cursor
+BUILTIN MOUSE-HIDE      ( -- )                  \ hide the mouse cursor
 
-code hide.ms    ( -- )          \ turn OFF the hardware mouse cursor
-                mov ax, # 2     \ use this to hide mouse before screen updates
-                int  51
-                next
-                end-code
+: show.ms       ( -- )          \ turn On the hardware mouse cursor
+                mouse-show ;    \ (was INT 33h function 1)
+
+: hide.ms       ( -- )          \ turn OFF the hardware mouse cursor
+                mouse-hide ;    \ (was INT 33h function 2)
 
 headerless
 
-code init.mouse ( --- )         \ initialize mouse if good driver present
-                mov ax, # 0     \ mouse driver init.mouse function code
-                int  51         \ call mouse driver
-                cmp ax, # 0
-             0= if      mov ' badmouse >body # true word
-                        next
+: init.mouse    ( --- )         \ initialize mouse if good driver present
+                mouse-present? 0=               \ (was INT 33h function 0)
+                if      on> badmouse
+                        exit
                 then
-                mov ' badmouse >body # false word
-                mov ax, # 14            \ function code to disable light pen
-                                        \ emulation.  mouse driver turned
-                                        \ this on as default in
-                                        \ function 1, done in init.mouse1
-                int  51                 \ call mouse driver.
-                mov ' mouseflg  >body # true word
-                mov ' havemouse >body # true word
+                off> badmouse
+                on> mouseflg
+                on> havemouse ;
 
-\                mov ax, # $0a           \ function code to set cursor type
-\                mov bx, # $01           \ hardware mouse driver cursor
-\                mov cx, # 0             \ start scan  (screen mask)
-\                mov dx, # 0             \ end scan    (cursor mask)
-\                int  51                 \ call mouse driver.
+: getmous       ( -- x y buttons.status )       \ get mouse information
+                mouse@ 3 and ;  \ x y in characters now, not pixels
 
-                next
-                end-code
-
-code getmous    ( --dx dy buttons.status )      \ get mouse information
-                mov ax, # 03
-                int  51
-                push cx
-                push dx
-                and bx, # 3
-                push bx
-                next
-                end-code
-
-code setmous    ( x y -- )      \ set mouse position in pixels on screen
-                pop dx                  \ get Y position in pixels
-                pop cx                  \ get X position in pixels
-                mov ax, # $04           \ function four, set mouse position
-                int 51
-                next    end-code
+: setmous       ( x y -- )      \ set mouse position in CHARACTERS on screen
+                mouse! ;        \ (was pixels, INT 33h function 4)
 
 : nomouse       ( --- )                 \ mark us as not having a mouse
                 off> mouseflg
                 off> havemouse ;
 
-code mouse.scale ( --- )                \ adjust mouse scaling for display
-                mov cx, # 0
-                mov dx, ' rows >body
-                dec dx
-                shl dx, # 1
-                shl dx, # 1
-                shl dx, # 1
-                mov ax, # 08            \ set max Y
-                int  51
-                mov cx, # 0
-                mov dx, ' cols >body
-                dec dx
-                shl dx, # 1
-                shl dx, # 1
-                shl dx, # 1
-                mov ax, # 07            \ set max x
-                int  51
-                next    end-code
+: mouse.scale   ( --- )                 \ adjust mouse scaling for display
+                ;       \ nothing to do: the host reports character cells
+                        \ for the current COLS x ROWS, even after a resize
 
 forth definitions
 
@@ -156,14 +132,14 @@ headers
 : mousexy       ( --- x1/y1 )   \ x=0-79, y=0-24
                 mouseflg 0= if 0 0 exit then
                 getmous
-                drop u8/ rows 1- min
-                swap u8/ cols 1- min swap ;
+                drop 0MAX rows 1- min           \ already in characters
+                swap 0MAX cols 1- min swap ;
 
 : mousexy!      ( x1/y1 -- )    \ position mouse in characters on screen
                 mouseflg 0= if !> lasty !> lastx exit then
                 hide.ms
-                rows 1- min dup !> lasty 8* swap
-                cols 1- min dup !> lastx 8* swap setmous
+                rows 1- min dup !> lasty swap
+                cols 1- min dup !> lastx swap setmous   \ in characters
                 show.ms ;
 
 : mousebutton   ( --- n1 )              \ n1=0,1,2,4 or a combination
@@ -200,7 +176,7 @@ headerless
                 if      hide.ms recoverscr show.ms
                 then
                 mousexy nip mline - 0max
-                mcol  2* menulist + @ 2+ c@ min =: mrow
+                mcol cells menulist + @ cell+ c@ min =: mrow
                 hide.ms  showmenus  show.ms
                 ;
 
@@ -228,8 +204,7 @@ hidden definitions
 
 : initmouse     ( --- )                 \ initialize the mose if present
                 nomouse
-                0 204 @L 0<>            \ interupt vector may be 51 ok
-                                        \ if it is <>0
+                mouse-present?          \ (was: is INT 51 vector <> 0)
                 if      init.mouse
                         badmouse ?exit
                         mouse.scale     \ adjust mouse scaling to screen

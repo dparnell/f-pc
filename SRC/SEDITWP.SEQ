@@ -1,4 +1,4 @@
-\ SEDITWP.SEQ   SED wordprocessor functions             by Tom Zimmer
+\ SEDITWP.SEQ   SED wordprocessor functions             F-PC native port
 
 editor definitions
 
@@ -81,7 +81,8 @@ variable leadblnks
 
 : ?delline      ( --- )
                 ?lastline ?exit
-                curline 1+ #lineseg 0 c@l 2 =
+                curline 1+ #lineseg c@ 2 =      \ port: #LINESEG is the
+                                                \ line's address now
                 if      <sdln> <ldel> <suln>
                 then    ;
 
@@ -103,7 +104,7 @@ variable leadblnks
                         ."   \r ** Use Alt-S Setup ** \0    Press a \r KEY "
                         beep key drop
                         restscr cursor-on showcur
-                else    ?full ?maxlines or curline #lineseg 0 c@l 2 = or
+                else    ?full ?maxlines or curline #lineseg c@ 2 = or
                         if      sdln off> screenchar exit
                         then    true save!> imode
                         begin   linelen 0> ?lastline 0= and

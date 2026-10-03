@@ -1,4 +1,4 @@
-\ SEDCOPY.SEQ           Editor Cut Copy & Paste         by Tom Zimmer
+\ SEDCOPY.SEQ           Editor Cut Copy & Paste         F-PC native port
 
 : insertaline   ( a1 --- )
                 ?showfull ?exit

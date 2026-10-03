@@ -270,3 +270,18 @@ void p_REFRESH(vm_t *vm)                    /* ( -- ) show the screen now */
     if (vm->host->refresh) vm->host->refresh(vm->host, vm, 0);
     vm->host->flush(vm->host);
 }
+
+/* ---- mouse (MOUSE.SEQ). No host delivers mouse input yet: report none,
+ * but remember a position set with MOUSE! so MOUSE@ returns it. ---------- */
+static int mouse_x, mouse_y;
+void p_MOUSEPRESENTQ(vm_t *vm) { push(vm, 0); }
+void p_MOUSEFETCH(vm_t *vm) { push(vm, (ucell)mouse_x); push(vm, (ucell)mouse_y); push(vm, 0); }
+void p_MOUSESTORE(vm_t *vm)
+{
+    int y = (int)pop(vm), x = (int)pop(vm);
+    screen_t *s = scr(vm);
+    mouse_x = x < 0 ? 0 : x >= s->cols ? s->cols - 1 : x;
+    mouse_y = y < 0 ? 0 : y >= s->rows ? s->rows - 1 : y;
+}
+void p_MOUSESHOW(vm_t *vm) { (void)vm; }
+void p_MOUSEHIDE(vm_t *vm) { (void)vm; }

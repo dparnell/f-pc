@@ -1,25 +1,24 @@
-\ LISTSET.SEQ   Allow adjusting the LIST segment of F-PC
+\ LISTSET.SEQ   Allow adjusting the LIST segment of F-PC   F-PC native port
 
 \ Assure #LISTSEGS has at least "segments" of free memory and then
 \ re-save F-PC back to disk where it came from with the same name if
 \ we needed to change the segments available.
 
+\ F-PC native port: list space is a fixed region of the VM's flat memory
+\ (it ends at LIST-LIMIT), not a DOS segment whose size is saved in the
+\ .EXE, so there is nothing to adjust and nothing to re-save. LISTSET
+\ only reports whether the free list space covers the request
+\ ("segments" are still 16 byte paragraphs) and then leaves, as before.
+\ #LISTSEGS is kept as a plain VALUE so old scripts that set it with =:
+\ (F-PC.SEQ does) still load; its value means nothing natively.
+
+\- #listsegs    0 value #listsegs       \ unused natively, see above
+
 : LISTSET       ( segments -- )
-                #listsegs >r
-                1 ?ENOUGH
-                200 UMAX
-                XDPSEG @ XSEG @ - + =: #LISTSEGS        \ adj #LISTSEGS
-                #listsegs r> <>                         \ if not the same
-        if      cr ." Re-saving with adjusted LIST space of "
-                #listsegs h. ."  to >> "
-                ME@     ME$ C@ 0>                       \ can i find my name?
-                IF      ME$                             \ return it if i can
-                ELSE    " F.EXE" ">$                    \ or F.EXE if i can't
-                THEN
-                dup count type
-                $>TIB                                   \ send it to TIB
-                FSAVE                                   \ re-save Forth
+                16 *  LIST-LIMIT XHERE -        ( bytes-wanted bytes-free )
+                cr ." LIST space is fixed in this F-PC, "
+                dup u. ." bytes are free."
+                u>
+        if      cr ." That is less than requested, and it can't be changed."
         else    cr ." No save needed, listseg correct."
         then    cr bye ;
-
-

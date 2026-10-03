@@ -1,4 +1,4 @@
-\ TOBROWSE.SEQ          direct printed text to the browser
+\ TOBROWSE.SEQ          direct printed text to the browser   F-PC native port
 
 comment:
 
@@ -37,8 +37,13 @@ only forth also editor also hidden definitions also
 2variable #prbytes
 2variable #prsave
 
+\ Native port: TYPEL (typing from another segment) is gone; TYPE does all
+\ typing, so TYPE is what gets redirected. OLDTYPE remembers the previous
+\ TYPE for OUTFIX, which runs on an error instead of the RESTORE> below.
+' (type) value oldtype
+
 : outfix        ( --- )
-                ['] qtypeL  is typeL
+                oldtype     is type
                 ['] (emit)  is emit
                 ['] (print) is pemit
                 oldfix is errfix ;    \ remove from errfix
@@ -64,9 +69,9 @@ comment;
                                 base @  >r decimal
                         52 9 at #prbytes 2@ (UD.) >attrib1
                         6 over - spcs swap 0MAX
-                                ?CS: -ROT qtypeL
-                                ?CS: -ROT qtypeL
-                        spcs 2  ?CS: -ROT qtypeL >norm
+                                video-type      \ QTYPEL is gone; VIDEO-TYPE
+                                video-type      \ always goes to the screen
+                        spcs 2  video-type >norm
                               r> base !
                              2r> #line ! #out !
                              2r> ibm-at
@@ -77,9 +82,9 @@ comment;
                         restcursor
                 then    ;
 
-: prtypeL       ( SEG a1 n1 --- )
+: prtype        ( a1 n1 --- )
                 dup 0 #prbytes 2@ d+ #prbytes 2!
-                PRNTYPEL ?.prbytes ;
+                PRNTYPE ?.prbytes ;
 
 : premit        ( c1 --- )
                 (print)
@@ -99,13 +104,14 @@ forth definitions
                 0.0 #prsave  2!
                 @> errfix =: oldfix
                 ['] pemit  save!> emit
-                ['] prtypeL save!> typeL
+                ['] type >is @ =: oldtype
+                ['] prtype save!> type
                 ['] outfix is errfix
                 ['] premit save!> pemit
                 printing on cr interpret cr cr printing off
                 restscr pclose
                 restore> pemit
-                restore> typeL
+                restore> type
                 restore> emit
                 oldfix =: errfix
                 r> $file abort" Couldn't re-open BROWSE.PRN"

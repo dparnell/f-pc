@@ -1,4 +1,4 @@
-\ REF.SEQ       Reference word REF              by Leon Dent
+\ REF.SEQ       Reference word REF              by Leon Dent    F-PC native port
 
 comment:
 
@@ -19,13 +19,17 @@ comment:
    ³ Modified & optimized by Tom Zimmer for F-PC ³
    ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
 
+  F-PC native port: a colon definition's body is one cell holding the
+  address of its token list (no list segment to select), tokens are
+  cells, and word types are found from the code token (CT-NEST,
+  CT-DODEFER, CT-DOUSERDEFER) instead of comparing code addresses.
+  SCANW (SCAN.SEQ) now scans cells.
+
 comment;
 
 only forth also hidden also definitions
 
 headerless
-
-0 value colseg
 
 0 value REFCFA                  \ holds cfa we're hunting for
 
@@ -35,19 +39,20 @@ headerless
                 TOTALWORDS INCR ;
 
 : R.NAME  ( LINK -- )   \ looks at COLON, DEFER, an USER DEFER words
-        DUP LINK> DUP @REL>ABS 'DOCOL = \ look through ":" defs
-        IF      dup >BODY @ +XSEG =: sseg
+        DUP LINK> DUP @ CT-NEST =       \ look through ":" defs
+        IF      dup >BODY @ dup         \ token list address
                                 \ first look for end of definition
-                0 $140 ['] unnest scanw 0= if drop $40 then 2/
+                $140 ['] unnest scanw 0= if drop dup $40 cells + then
+                over - cell /           \ cells up to the UNNEST
                                 \ then look for word we are referencing
-                0 swap refcfa scanw nip
+                refcfa scanw nip
                 if      %r.name
-                then    ?cs: =: sseg
-        ELSE    dup @rel>abs ['] bgstuff @rel>abs =     \ and DEFERed words
+                then
+        ELSE    dup @ CT-DODEFER =                      \ and DEFERed words
                 if      dup >body @ refcfa =
                         if      %r.name
                         then
-                else    dup @rel>abs ['] key @rel>abs = \ and USER DEFERed
+                else    dup @ CT-DOUSERDEFER =          \ and USER DEFERed
                         if      dup >is @ refcfa =
                                 if      %r.name
                                 then
@@ -56,11 +61,11 @@ headerless
         THEN    2DROP   ;
 
 : .RVOCWORDS  ( ADDR -- )
-        DUP HERE 500 + #THREADS 2* CMOVE   \ copy threads
+        DUP HERE 500 + #THREADS CELLS CMOVE   \ copy threads
         BODY> >NAME VADDR ! VYET OFF
         BEGIN   HERE 500 + #THREADS LARGEST DUP  \ search thread copy
                 ?KEYPAUSE
-        WHILE   DUP R.NAME Y@ SWAP !    \ insert last link into thread
+        WHILE   DUP R.NAME @ SWAP !     \ insert last link into thread
         REPEAT
         2DROP  ;
 
@@ -73,7 +78,7 @@ headerless
         CR  ."  *  Press SPACE to pause, or ESC to exit  *"
         VOC-LINK @
         BEGIN
-                DUP #THREADS 2* -
+                DUP #THREADS CELLS -
                 .RVOCWORDS
                 @ DUP 0=
         UNTIL

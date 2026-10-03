@@ -1,4 +1,20 @@
 \ SVSESDAT.SEQ save/load mechanism for temporary data in a F-PC session - ms
+\ F-PC native port
+
+\ F-PC native port: the session file format changed.
+\   The original F-PC.SES was a 4 byte stamp (two 16 bit words) followed
+\   by the raw bytes of each registered range.
+\   It is now a header of 4 cells (16 bytes, little endian):
+\       +0  magic    "FS32" ($32335346), the 32 bit cell format
+\       +4  stamp    SESSTAMP, a double (2 cells, high cell first)
+\       +12 total    the number of data bytes that follow
+\   followed by the raw bytes of each range, in registration order.
+\   A file is only read back if the magic, the stamp and the total all
+\   match and the file is exactly 16+total bytes long, so an old 16 bit
+\   F-PC.SES (or one from another build) is ignored, never half-loaded.
+\ Ranges are now ( base-cfa addr size ): the cfa returns a base ADDRESS
+\ (a POINTER's address, or 0 via SESABS for an absolute address) that is
+\ added to addr. The value ranges below are a cell (4 bytes) now.
 
 ONLY FORTH ALSO HIDDEN DEFINITIONS
 
@@ -9,6 +25,12 @@ gettime 2constant sesstamp \ version verifikation stamp
 
 variable sesdathead     \ resdat linked list head pointer
 
+$32335346 constant sesmagic     \ "FS32"
+create seshdr  4 cells allot    \ the file header, see above
+
+: sesabs        ( -- 0 )        \ base of an absolute (code space) range
+                0 ;
+
 ALSO FORTH DEFINITIONS
 
 \ ***************************************************************************
@@ -17,9 +39,10 @@ ALSO FORTH DEFINITIONS
 \ a1  =  offset start address of data
 \ cfa =  cfa of the word that returns the actual segment address of data
 \        ( will be normaly cfa of a pointer )
+\ native: cfa returns a base address that a1 is added to; no size limit.
 \ ***************************************************************************
 \ SESSIONDATL compiles the following nameless link structure into code space
-\               +0      +2             +4      +6            +8
+\               +0      +4             +8      +12           +16
 \               [ link ][ pointer-cfa ][ addr ][ size_bytes ][.....
 \ ***************************************************************************
 : sessiondatl   ( n1 a1 cfa --- )
@@ -43,31 +66,65 @@ ALSO FORTH DEFINITIONS
 \ a1  =  offset start address of data
 \ ***************************************************************************
 : sessiondat    ( n1 a1 --- )
-                ['] ?cs: sessiondatl ;
+                ['] sesabs sessiondatl ;        \ was ['] ?cs:
 
 HIDDEN DEFINITIONS
+
+: sesrange      ( link -- addr size )   \ the data range of one entry
+                dup cell+ @ dup execute         ( link cfa base )
+                swap ['] sesabs <> over 0= and  \ POINTER not allocated?
+                if      2drop 0 0 exit          \ then skip it
+                then    over 2 cells + @ +
+                swap 3 cells + @ ;
+
+: sestotal      ( -- n )                \ total bytes of all ranges
+                0 sesdathead
+                begin   @ ?dup
+                while   dup 3 cells + @ rot + swap
+                repeat  ;
+
+: seshdr!       ( -- )                  \ build the header for this system
+                sesmagic seshdr !
+                sesstamp seshdr cell+ 2!
+                sestotal seshdr 3 cells + ! ;
+
+: ?seshdr       ( -- f1 )               \ true if F-PC.SES is ours
+                sesfile endfile sestotal 4 cells + 0 d= \ right length?
+                0. sesfile movepointer                  \ (ENDFILE seeks)
+                seshdr 4 cells sesfile hread 4 cells = and
+                seshdr @ sesmagic = and
+                seshdr cell+ 2@ sesstamp d= and
+                seshdr 3 cells + @ sestotal = and ;
+
+: sesall?       ( -- f1 )               \ true if every range has memory
+                true sesdathead
+                begin   @ ?dup
+                while   dup sesrange drop 0=    \ unallocated POINTER?
+                        if      nip false swap
+                        then
+                repeat  ;
 
 I: sesdat-init  ( -- )
                 defers initstuff
                 sesfile hopen ?exit
-                pad 4 sesfile hread drop pad 2@ sesstamp D= not ?exit
-                sesdathead
-                begin @ ?dup
-                while dup 2+ @tbl+ execute >r   \ segment address
-                      @tbl+ swap @tbl+ nip sesfile r> exhread drop
-                repeat
+                ?seshdr sesall? and
+                if      sesdathead
+                        begin @ ?dup
+                        while dup sesrange sesfile hread drop
+                        repeat
+                then
                 sesfile hclose drop ;
 
 ' sesdat-init is initstuff
 
 I: sesdat-byefunc ( -- )
                 defers byefunc
+                sesall? 0= ?exit        \ native: don't write a short file
                 sesfile hcreate ?exit
-                ['] sesstamp >body 4 sesfile hwrite drop
+                seshdr! seshdr 4 cells sesfile hwrite drop
                 sesdathead
                 begin @ ?dup
-                while dup 2+ @tbl+ execute >r   \ segment address
-                      @tbl+ swap @tbl+ nip sesfile r> exhwrite drop
+                while dup sesrange sesfile hwrite drop
                 repeat
                 sesfile hclose drop ;
 
@@ -78,13 +135,12 @@ I: sesdat-byefunc ( -- )
 \ ***************************************************************************
 
 16 COLORS       SESSIONDAT      \ save all the F-PC system colors;
-2  &> NORMVAL   SESSIONDAT      \ 8 color attributes, the normal and the
-2  &> REVVAL    SESSIONDAT      \ reverse attribute
-2  attrib       SESSIONDAT      \ current color attribute
+CELL &> NORMVAL SESSIONDAT      \ 8 color attributes, the normal and the
+CELL &> REVVAL  SESSIONDAT      \ reverse attribute (VALUEs, a cell now)
+CELL attrib     SESSIONDAT      \ current color attribute (a cell now)
 
 ALSO HIDDEN                     \ XBSEG is in HIDDEN vocabulary
 
 SESSIONSEGMENT xbseg            \ save line editor session segment
 
 ONLY FORTH ALSO DEFINITIONS
-

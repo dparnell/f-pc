@@ -1,4 +1,4 @@
-\ NEWFILE.SEQ   Create a new file, and edit it.         by Tom Zimmer
+\ NEWFILE.SEQ   Create a new file, and edit it.         F-PC native port
 
 defined edit nip 0= #if \s #endif       \ stop loading if EDIT not defined
 

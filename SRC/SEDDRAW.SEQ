@@ -1,4 +1,4 @@
-\ SEDDRAW.SEQ   Line drawing utility for SED            by Tom Zimmer
+\ SEDDRAW.SEQ   Line drawing utility for SED            F-PC native port
 
 editor definitions
 
@@ -84,12 +84,22 @@ $0CC achr lm2   $0B9 achr rm2   $0CE achr mm2
                 else    window.left statusline at >ul  .?lines ." Pen UP  "
                 then    >norm showcur ;
 
-: drawinit      ( --- )
-                rmargin @ marginsave ! mxlln rmargin !
-                pendown off penup/down window.left 8 + statusline at
+: drawhelp      ( --- )         \ split out of DRAWINIT for redraw on resize
+                window.left 8 + statusline at
                 >ul ."  " >rev ."  ARROWS=draw, "
       ." - 1line, = 2line, INS=PenUP/DOWN, DEL=clear, ESC=done."
                 >ul edeeol >norm showcur ;
+
+: drawinit      ( --- )
+                rmargin @ marginsave ! mxlln rmargin !
+                pendown off penup/down drawhelp ;
+
+: drawresize    ( --- )         \ terminal resized: redraw screen & status
+                sresize window.left statusline at
+                pendown @
+                if      >rev .?lines ." Pen DOWN"
+                else    >ul  .?lines ." Pen UP  "
+                then    >norm drawhelp ;
 
 : clearchar     ( --- )
                 false save!> imode
@@ -110,7 +120,8 @@ $0CC achr lm2   $0B9 achr rm2   $0CE achr mm2
                 drawinit ?12line drchr fixaround
         begin   showcur key dup 27 ( ESC) <>  over 193 ( F7) <> and
                   \ while not   ESCAPE    and not  F7.
-        while       '-' over = if   drop oneline    ?drchr else
+        while   k-resize over = if  drop drawresize        else
+                    '-' over = if   drop oneline    ?drchr else
                     '=' over = if   drop twoline    ?drchr else
         211 over = over 8 = or if   drop clearchar         else
 ( pendown )         210 over = if   drop penup/down        else
@@ -118,7 +129,7 @@ $0CC achr lm2   $0B9 achr rm2   $0CE achr mm2
 ( left  )           203 over = if   drop goleft            else
 ( up    )           200 over = if   drop goup              else
 ( down  )           208 over = if   drop godown            else
-                drop then then then then then then then then
+                drop then then then then then then then then then
         repeat  drop marginsave @ rmargin ! ;
 
 ' lines is drawlin

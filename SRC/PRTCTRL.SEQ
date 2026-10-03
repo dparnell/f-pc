@@ -1,6 +1,10 @@
-\ PRTCTRL.SEQ   Print control file                      by Tom Zimmer
+\ PRTCTRL.SEQ   Print control file                      F-PC native port
 
-\ Allows the editor to do BOLD, UNDERLINE, ect.
+\ Allows the editor to do BOLD, UNDERLINE, ect.               by Tom Zimmer
+
+\ Native port: there is no printer port. Printer output goes to PRNHNDL
+\ (DOS handle 4, PRN), which the VM discards, unless it has been redirected
+\ to a file with PFILE <name> (PRINT.SEQ) or the S option of the Alt-P menu.
 
 editor definitions
 
@@ -82,10 +86,12 @@ editor definitions
                 3onvar if 3off    then ;
 
 : prtfunc       ( c1 --- )      \ builds printer attribute control functions
-                create c,
-                does>   dup>r c@ over =         \ if escape code matches
-                if      drop false
-                        r@ 1+ perform abs 1+ 2* r@ + 1+ perform
+                create ,        \ the code char is a cell now, so the
+                                \ three xts that follow are cell aligned
+                does>   dup>r @ over =          \ if escape code matches
+                if      drop false              \ var at +1 cell, on xt at
+                                                \ +2 cells, off xt at +3
+                        r@ cell+ perform abs 1+ cells r@ + cell+ perform
                 then    r>drop ;
 
 '1' prtfunc ?1on       ' 1onvar , ' 1on  ,    ' 1off ,

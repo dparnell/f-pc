@@ -1,4 +1,11 @@
 \ SEDIT2.SEQ    The second part of the main body of the sequential editor
+\                                                       F-PC native port
+
+\ F-PC native port: keys arrive as KEY gives them (ASCII, or 128 + scan code
+\ for extended keys), so the tables below are unchanged. K-RESIZE (130,
+\ which no real key produces) is taken by the key loop in <REEDIT> first.
+\ An EXEC: table is the token list EXEC: xt0 xt1 ..., so entry n is at
+\ "' table >BODY @ n CELLS + CELL+".
 
 editor definitions
 
@@ -98,10 +105,10 @@ kerr    kerr    kerr    kerr    kerr    kerr    kerr    ecmdtgl ;
 : ctlset        ( n1 | function --- )
                 defined
                 if      swap                    \ get address of functon
-                        0MAX 31 min 2*          \ clip n1 to valid CTRL char
-                        2+                      \ step past EXEC:
-                        ['] s^tbl >body @       \ relative segment of S^TBL
-                        +XSEG swap !L   \ convert to absolute segment & store
+                        0MAX 31 min cells       \ clip n1 to valid CTRL char
+                        cell+                   \ step past EXEC:
+                        ['] s^tbl >body @       \ token list of S^TBL
+                        + !                     \ store into the table
                 else    nip cr count type
                         ."  <- Not defined, and not installed "
                 then    ;
@@ -109,10 +116,10 @@ kerr    kerr    kerr    kerr    kerr    kerr    kerr    ecmdtgl ;
 : fnset         ( n1 | function --- )   \ same comments as ABOVE
                 defined
                 if      swap
-                        127 max 255 min 127 - 2*
-                        2+                      \ skip two bytes for EXEC:
-                        ['] sfuntbl >body @     \ relative segment of SFUNTBL
-                        +XSEG swap !L
+                        127 max 255 min 127 - cells
+                        cell+                   \ skip the EXEC: cell
+                        ['] sfuntbl >body @     \ token list of SFUNTBL
+                        + !
                 else    nip cr count type
                         ."  <- Not defined, and not installed "
                 then    ;
@@ -122,10 +129,10 @@ kerr    kerr    kerr    kerr    kerr    kerr    kerr    ecmdtgl ;
                 if      savecursor
                         savescr
                         0 0 at
-                        dup 2*
-                        2+                      \ step past EXEC:
-                        ['] s^tbl >body @       \ relative segment of S^TBL
-                        +XSEG swap @L           \ fetch function from table
+                        dup cells
+                        cell+                   \ step past EXEC:
+                        ['] s^tbl >body @       \ token list of S^TBL
+                        + @                     \ fetch function from table
                         >name .id               \ display the function name
                         4 tenths
                         restscr
@@ -137,10 +144,10 @@ kerr    kerr    kerr    kerr    kerr    kerr    kerr    ecmdtgl ;
                 if      savecursor
                         savescr
                         0 0 at
-                        dup 2*
-                        2+                      \ skip two bytes for EXEC:
-                        ['] sfuntbl >body @     \ relative segment of SFUNTBL
-                        +XSEG swap @L           \ fetch function from table
+                        dup cells
+                        cell+                   \ skip the EXEC: cell
+                        ['] sfuntbl >body @     \ token list of SFUNTBL
+                        + @                     \ fetch function from table
                         >name .id               \ display the function name
                         4 tenths
                         restscr
@@ -172,7 +179,7 @@ kerr    kerr    kerr    kerr    kerr    kerr    kerr    ecmdtgl ;
 : ?exp_type_set ( -- )
                 ?exp_tabs
                 if      ['] exsltypel is sltypel
-                else    ['] typel     is sltypel
+                else    ['] type      is sltypel        \ port: was TYPEL
                 then    ;
 
 : deferset      ( --- )         \ save current deferred words, and reset them
@@ -205,6 +212,7 @@ kerr    kerr    kerr    kerr    kerr    kerr    kerr    ecmdtgl ;
                 else    ermargin
                 then    rmargin !
                 edready 0= abort" No file to re-edit."
+                sedlayout off> sresized \ port: follow the screen size
                 ?showfull drop
                 find.line
                 scrline first.textline   max
@@ -215,8 +223,14 @@ kerr    kerr    kerr    kerr    kerr    kerr    kerr    ecmdtgl ;
                 doborder
                 off> ?eddone
                 begin   on> vstaton
+                        sresized                \ port: screen resized?
+                        if      sresize
+                        then
                         showcur
-                        key doachar
+                        key dup k-resize =      \ port: K-RESIZE only
+                        if      drop on> sresized       \ redraws next time
+                        else    doachar
+                        then
                         ?eddone
                 until   restorestate
                 bkable on               \ we are breakable again

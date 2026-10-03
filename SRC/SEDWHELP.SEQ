@@ -1,4 +1,4 @@
-\ SEDWHELP.SEQ          Word Help while in Editor       by Tom Zimmer
+\ SEDWHELP.SEQ          Word Help while in Editor       F-PC native port
 
 \ WORDHELP was suggested by Phil Friis
 
@@ -89,7 +89,8 @@ create helpbuf 32 allot
                 save> screenchar
                 wordhndl save!> seqhandle
                 here count 29 min helpbuf place
-                $2020 helpbuf count + !
+                $2020 helpbuf count + w!        \ two blanks (W! : 32-bit !
+                                                \ would run past HELPBUF)
                 " HYPER.NDX" ">$ $file 0=
                 if      IBRESET
                         0.0 seqhandle movepointer
@@ -102,7 +103,7 @@ create helpbuf 32 allot
                             if          outbuf count 1 /string 2-
                                         hndlsave ">handle
                             else
-                                $2020 outbuf count + 2- !
+                                $2020 outbuf count + 2- w!
                                       \ have at least 1 blank at end of line.
                                 helpbuf count outbuf 1+ swap 1+ caps-comp 0=
                                 if      drop
@@ -163,11 +164,10 @@ create helpbuf 32 allot
                 on> browseset
                 off> ?wordhelp
                 'word@cur
-                if      dup @rel>abs
-                        ['] bgstuff @rel>abs =
+                if      dup @ ct-dodefer =      \ native port: compare the
+                                                \ code tokens, as for BGSTUFF
                         if      >body @ cfa-word-ed/br
-                        else    dup @rel>abs
-                                ['] emit @rel>abs =
+                        else    dup @ ct-douserdefer =  \ like EMIT
                                 if      >is @ cfa-word-ed/br
                                 else    drop
                                         true
@@ -252,17 +252,17 @@ defer browbutton        ' noop is browbutton
                                         off> updated
                                         off> changed
                                         ?browse 0= =: ?browse
-                                then    ['] hypertypeL is typeL
+                                then    ['] hypertype is type
                             else drop                   \ or cancel operation
                             then
                                 restore> dobutton
                                 scrshow
                         else    ?browse 0= =: ?browse
-                                ['] hypertypeL is typeL
+                                ['] hypertype is type
                         then
                 else    ?dosio
-                        if      ['] (typeL)       is typeL
-                        else    (lit) defers typeL is typeL
+                        if      ['] (type)          is type
+                        else    normtype is type
                         then
                         ?browse 0= =: ?browse
                 then
@@ -406,9 +406,9 @@ defer browbutton        ' noop is browbutton
                 curline 1+ 4 .r bcr
                 hdepth 0
                 ?do     space i 'B' + femit ."  - "
-                        hseg b/hstk hdepth i 1+ - * 2dup 2dup c@L
-                        swap 1+ swap typeL 64 #out @ - spaces
-                        b/hcb + @L 4 .r bcr
+                        hseg b/hstk hdepth i 1+ - * +   \ handle stack entry
+                        dup count type 64 #out @ - spaces
+                        b/hcb + @ 4 .r bcr      \ its saved LOADLINE
                 loop    ." \s20\r ESC = Cancel "
                 begin   key     dup  'A' hdepth 'A' + between
                                 over 'a' hdepth 'a' + between or

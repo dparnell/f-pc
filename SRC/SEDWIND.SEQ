@@ -1,4 +1,4 @@
-\ SEDWIND.SEQ   Editor window adjustment words
+\ SEDWIND.SEQ   Editor window adjustment words   F-PC native port
 
 editor definitions
 
@@ -18,7 +18,10 @@ defer toggle-files      ' noop is toggle-files
                 ."  =Smaller window   =Bigger window "
                 cursor-off key dup 27 <>
                 restscr
-        while   dup 200 =       \ UP arrow      SMALLER WINDOW
+        while   dup k-resize =  \ port: terminal resized, lay out again
+                if      sedlayout dark
+                then
+                dup 200 =       \ UP arrow      SMALLER WINDOW
                 if      first.textcol 0=
                     if        1 =: first.textcol
                         cols 2- =: last.textcol
@@ -74,6 +77,8 @@ defer toggle-files      ' noop is toggle-files
                         last.textline.saved  =: last.textline
                         first.textcol.saved  =: first.textcol
                         last.textcol.saved   =: last.textcol
+                        sedlayout       \ port: fit the screen, it may
+                                        \ have been resized since
                         screenline first.textline max
                                    last.textline  min =: screenline
                         0 recoverline
@@ -125,6 +130,7 @@ defer toggle-files      ' noop is toggle-files
                         last.textline.saved  =: last.textline
                         first.textcol.saved  =: first.textcol
                         last.textcol.saved   =: last.textcol
+                        sedlayout       \ port: fit the screen
                         screenline first.textline max
                                    last.textline  min =: screenline
                         0 recoverline
@@ -143,6 +149,25 @@ defer toggle-files      ' noop is toggle-files
                 then    ;
 
 ' split-wind  is splitwind
+
+\ F-PC native port: SEDLAYOUT (SEDITOR.SEQ) fits the window to the screen
+\ after a resize. With a split window, keep the split line on the screen
+\ and give the current half the rows on its side of it.
+
+: wind-layout   ( -- )
+                %sedlayout              \ columns, sizes, SCREENLINE
+                splitwind? 0= ?exit
+                splitline# 3 max rows 4 - min !> splitline#
+                topwind?
+                if      topwindline 1+ =: first.textline
+                        splitline# 1-  =: last.textline
+                else    splitline# 1+  =: first.textline
+                        rows 2-        =: last.textline
+                then
+                screenline first.textline max
+                           last.textline  min =: screenline ;
+
+' wind-layout is sedlayout
 
 forth definitions
 

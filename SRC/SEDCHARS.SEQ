@@ -1,36 +1,39 @@
-\ SEDCHARS.SEQ  Extended character set insertion for SED
+\ SEDCHARS.SEQ  Extended character set insertion for SED   F-PC native port
 
 forth definitions
 
 defer charbutton ' noop is charbutton
+defer charresize ' noop is charresize   \ redraw under the box on K-RESIZE
 
 59 value charcol
 01 value charline
  0 value chcol
  0 value chrow
 
-XHERE PARAGRAPH + DUP XDPSEG ! XSEG @ - XDP OFF
-value extcharseg ( --- seg-rel )
-0               x,"           " 1+
-        xdp @   x,"   	        " 10 extcharseg +xseg rot 6 + c!L  1+
-                x,"          " 1+
-                x,"          " 1+
-                x,"  €  ‚ ƒ „ … † ‡ " 1+
-                x,"  ˆ ‰ Š ‹ Œ  Ž  " 1+
-                x,"   ‘ ’ “ ” • – — " 1+
-                x,"  ˜ ™ š › œ  ž Ÿ " 1+
-                x,"    ¡ ¢ £ ¤ ¥ ¦ § " 1+
-                x,"  ¨ © ª « ¬ ­ ® ¯ " 1+
-                x,"  ° ± ² ³ ´ µ ¶ · " 1+
-                x,"  ¸ ¹ º » ¼ ½ ¾ ¿ " 1+
-                x,"  À Á Â Ã Ä Å Æ Ç " 1+
-                x,"  È É Ê Ë Ì Í Î Ï " 1+
-                x,"  Ð Ñ Ò Ó Ô Õ Ö × " 1+
-                x,"  Ø Ù Ú Û Ü Ý Þ ß " 1+
-                x,"  à á â ã ä å æ ç " 1+
-                x,"  è é ê ë ì í î ï " 1+
-                x,"  ð ñ ò ó ô õ ö ÷ " 1+
-                x,"  ø ù ú û ü ý þ ÿ " 1+
+\ Native port: the table was a paragraph-aligned segment built in list space
+\ with X," (which now cell-aligns). It is now ordinary data at EXTCHARS:
+\ a run of unaligned counted strings, one per row of 8 characters.
+create extchars ( --- a1 )
+0               ,"           " 1+
+        here    ,"   	        " 10 swap 6 + c!  1+
+                ,"          " 1+
+                ,"          " 1+
+                ,"  €  ‚ ƒ „ … † ‡ " 1+
+                ,"  ˆ ‰ Š ‹ Œ  Ž  " 1+
+                ,"   ‘ ’ “ ” • – — " 1+
+                ,"  ˜ ™ š › œ  ž Ÿ " 1+
+                ,"    ¡ ¢ £ ¤ ¥ ¦ § " 1+
+                ,"  ¨ © ª « ¬ ­ ® ¯ " 1+
+                ,"  ° ± ² ³ ´ µ ¶ · " 1+
+                ,"  ¸ ¹ º » ¼ ½ ¾ ¿ " 1+
+                ,"  À Á Â Ã Ä Å Æ Ç " 1+
+                ,"  È É Ê Ë Ì Í Î Ï " 1+
+                ,"  Ð Ñ Ò Ó Ô Õ Ö × " 1+
+                ,"  Ø Ù Ú Û Ü Ý Þ ß " 1+
+                ,"  à á â ã ä å æ ç " 1+
+                ,"  è é ê ë ì í î ï " 1+
+                ,"  ð ñ ò ó ô õ ö ÷ " 1+
+                ,"  ø ù ú û ü ý þ ÿ " 1+
 constant extrows
 
 : ?auob         ( c1 -- f1 )    \ return true if A, U, O or B
@@ -39,15 +42,34 @@ constant extrows
                 'O' r@ = or 'B' r> = or ;
 
 : extchar@      ( --- c1 )
-                extcharseg +xseg 0 chrow 0
-                ?do     2dup c@L + 1+
-                loop    1+ chcol 2* + 1+ c@L ;
+                extchars chrow 0
+                ?do     count +                 \ skip to next row
+                loop    1+ chcol 2* + 1+ c@ ;   \ chars are at 2, 4, 6..
 
 : eurchar@      ( c1 -- c2 )    \ translate AUOB into an eumlated character
                 " AŽUšO™Báa„uo”b" rot scan
                 if      1+ c@
                 else    drop bl
                 then    ;
+
+: .charbox      ( --- )         \ draw the character box (split out of
+                                \ GRAPHICCHAR to redraw it on resize)
+                        save> attrib >norm
+                        charcol 23 - charline
+                        charcol  1 - charline 4 + box
+                        >ATTRIB1
+                        ."  Press key:  A U O B " >norm bcr
+                        ."  upper case  Ž š ™ á "       bcr
+                        ."  lower case  „  ”  "
+                        charcol charline
+                        charcol extchars c@
+                        + 1+ charline extrows 2+ + box
+                        tx 1+ ty extrows 1+ + at ."       ESC=Cancel "
+                        extchars extrows 1+ 1
+                        do      tx 1+ ty i + at \ VIDEO-TYPE shows the
+                                count 2dup video-type + \ control chars
+                        loop    drop            \ raw, like TYPEL did
+                        restore> attrib ;
 
                                 \ f1 is true if operation was not canceled
 : graphicchar   ( --- <c1> f1 ) \ c1 present if f1 is true
@@ -59,22 +81,7 @@ constant extrows
                 dup>r
                 if      savescr
                         big-cursor
-                        save> attrib >norm
-                        charcol 23 - charline
-                        charcol  1 - charline 4 + box
-                        >ATTRIB1
-                        ."  Press key:  A U O B " >norm bcr
-                        ."  upper case  Ž š ™ á "       bcr
-                        ."  lower case  „  ”  "
-                        charcol charline
-                        charcol extcharseg +xseg 0 c@L
-                        + 1+ charline extrows 2+ + box
-                        tx 1+ ty extrows 1+ + at ."       ESC=Cancel "
-                        extcharseg +xseg 0 extrows 1+ 1
-                        do      tx 1+ ty i + at
-                                2dup c@L 1 0 d+ 3dup typeL +
-                        loop    2drop
-                        restore> attrib
+                        .charbox
                 then
                 ['] charbutton save!> dobutton
                 begin   r@ \ if not doing a macro display value
@@ -85,6 +92,9 @@ constant extrows
                            over ?AUOB 0= and
                 while   ( c1 --- )
                         case
+( Resize )             k-resize of  r@ if restscr charresize
+                                              savescr .charbox
+                                           then                 endof
 ( Up Arrow )                200 of  chrow 1-            0max =: chrow endof
 ( Dn Arrow )                208 of  chrow 1+  extrows 1- min =: chrow endof
 ( Rt Arrow )                205 of  chcol 1+           7 min =: chcol endof
@@ -124,6 +134,8 @@ defined editor nip #if          \ load only if EDITOR exists
                 then    scrshow ?cursor ;
 
 ' sedchar is insany
+
+' sresize is charresize         \ lay out the editor again & redraw it
 
 : (--)char      ( -- )          \ insert a standard comment framework
                 ?browse ?exit

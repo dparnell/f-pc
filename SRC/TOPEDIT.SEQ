@@ -1,4 +1,4 @@
-\ TOPEDIT.SEQ   Memory edit.                            By Tom Zimmer
+\ TOPEDIT.SEQ   Memory edit.                            F-PC native port
 
 comment:
 
@@ -88,21 +88,22 @@ forth definitions
                         else    true            \ at stack bottom
                         then
                 then
+\ Native port: TYPE is switched where TYPEL used to be (see HTYPE.SEQ).
                 ?browse                         \ select the proper type
-                if      ['] hypertypeL is typeL
+                if      ['] hypertype is type
                 else    ?dosio
-                        if      ['] (typeL)        is typeL
-                        else    (lit) defers typeL is typeL
+                        if      ['] (type)           is type
+                        else    normtype is type
                         then
                 then    ;
 
 : <red>         ( --- )
                 savescr
                 ?browse                         \ select the proper type
-                if      ['] hypertypeL is typeL
+                if      ['] hypertype is type
                 else    ?dosio
-                        if      ['] (typeL)        is typeL
-                        else    (lit) defers typeL is typeL
+                        if      ['] (type)           is type
+                        else    normtype is type
                         then
                 then
                 off> hdepth                     \ clear handle stack
@@ -129,8 +130,8 @@ forth definitions
                         then    push/pop-level
                 until   off> ?browse
                 ?dosio
-                if      ['] (typeL)        is typeL
-                else    (lit) defers typeL is typeL
+                if      ['] (type)           is type
+                else    normtype is type
                 then
                 cr ;
 
@@ -212,7 +213,7 @@ headers
                 ?leave_set
                 >in @ bl word swap >in ! c@
                 if      here count 29 min helpbuf place
-                        $2020 helpbuf count + !
+                        $2020 helpbuf count + w!        \ two blanks
                         bl word hfind 0= ?missing
                         >viewfile                     \ -- offset a1
                         " HLP" ">$ over $>ext
@@ -272,6 +273,8 @@ headers
                 off> tsegb
                 off> lseg
                 off> dseg
+                off> hseg               \ port: these are addresses into
+                off> wseg               \ BASESEG now, so clear them too
                 off> maxsegs
                 off> #edsegs
                 off> edready

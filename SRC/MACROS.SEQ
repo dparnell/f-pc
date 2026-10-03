@@ -1,4 +1,5 @@
 \ MACROS.SEQ    Keyboard macros for F-PC                  by Tom Zimmer
+\ F-PC native port
 
 \ anew macros
 
@@ -23,6 +24,13 @@ To REPEAT a macro;
         Type a # between 0-999  \ The number of times to repeat the macro
         Press Enter             \ Accept the number of times to repeat
         Press Alt-1             \ the macro to repeat.
+
+F-PC native port: MACSEG is a POINTER, which now returns an address, so
+MS: turns a macro offset into an address and the far memory words became
+plain ones. The macro file F-PC.MAC keeps its format (8 macros of 128
+bytes of key codes). A macro aborts the caller's KEY with R>DROP (one
+return stack cell per nesting level; it was 2R> 2DROP). K-RESIZE
+is passed straight on, never recorded.
 comment;
 
 only forth also hidden also definitions
@@ -44,7 +52,7 @@ macfile !hcb F-PC.MAC           \ initialize macro file name
 
 : %macinit      ( -- )
                 macseg 0= abort" Couldn't allocate MACRO buffer!"
-                macseg 0 #macros macsiz * 0 lfill ;
+                macseg #macros macsiz * erase ;
 
 %macinit                \ initialize macros for use
 
@@ -59,8 +67,8 @@ headerless
 : mdelaytgl     ( -- )
                 ?mdelay 0= !> ?mdelay ;
 
-: ms:           ( n1 --- seg n1 )
-                macseg swap ;
+: ms:           ( n1 --- a1 )   \ native: an address, was seg n1
+                macseg + ;
 
 variable curmac
 \ 0 value ?doingmac     \ moved down to UTILS.SEQ to make it available
@@ -75,7 +83,7 @@ variable makingmac
                 macfile hcreate
                 if      37 7 at
                         ." \r Could not make Macro file! " beep
-                else    0 #macros macsiz * dup>r macfile macseg exhwrite
+                else    macseg #macros macsiz * dup>r macfile hwrite
                         r> -    37 5 at >rev
                         if      ."  Write error to Macro file! " beep
                         else    ."  Macros Saved.\s14"
@@ -86,9 +94,9 @@ variable makingmac
                 macfile hopen dup 0=
                 if      drop
                         #macros macsiz *       \ length of read
-                        0 over macfile macseg exhread - dup
+                        macseg over macfile hread - dup
                         \ clear out the buffer on read length wrong!
-                        if      macseg 0 #macros macsiz * 0 lfill
+                        if      macseg #macros macsiz * erase
                         then    macfile hclose drop
                 then    ( --- f1 )      \ true if failed
                 37 5 at >rev
@@ -103,9 +111,9 @@ variable makingmac
                 bcr bcr macsiz 2/
                 #macros 0
                 do      i 1+ 1 .r ." "
-                        macseg macsiz i * 2 pick          typeL bcr
+                        macseg macsiz i * +        over   type bcr
                         ."   "
-                        macseg macsiz i * 2 pick + 2 pick typeL bcr
+                        macseg macsiz i * + over + over   type bcr
                 loop    drop
                 defers key drop
                 restscr ;
@@ -178,13 +186,13 @@ variable makingmac
                         if      off> ?doingmac
                                 off> mactimes
                         then
-                        curmac @ ms: c@l                \ get the macro key
-                        curmac @ 1+ ms: c@l 0=          \ test for all done
+                        curmac @ ms: c@                 \ get the macro key
+                        curmac @ 1+ ms: c@ 0=           \ test for all done
                         if      off> ?doingmac
                         then    curmac incr
                         ?mdelay                         \ delay macros?
                         if      mdelay_val tenths       \ yes, slow down
-                        then    2r> 2drop
+                        then    r>drop                  \ exit from MACKEY
                 then    ;
 
 : ?domac1       ( c1 --- c2 )   \ If a macro key, start macro and return
@@ -192,10 +200,10 @@ variable makingmac
                 dup macbase dup #macros 1- + BETWEEN
         if      on> ?doingmac macbase - setmac
                 curmac incr
-                curmac @ 1- ms: c@l ?dup 0=
+                curmac @ 1- ms: c@ ?dup 0=
                 if      off> ?doingmac
                         curmac @ 1- macsiz / macbase +
-                else    curmac @ ms: c@l 0=             \ test for all done
+                else    curmac @ ms: c@ 0=              \ test for all done
                         if      off> ?doingmac
                         then
                 then
@@ -208,7 +216,7 @@ variable makingmac
                         if      off> mactimes
                                 off> ?doingmac
                         then
-                        repkey @ ?domac1 2r> 2drop
+                        repkey @ ?domac1 r>drop         \ exit from MACKEY
                 then    ;
 
 : ?repmac1      ( c1 --- c1 )
@@ -249,9 +257,9 @@ variable makingmac
 
 : ?addmac       ( c1 --- c1 )   \ conditionally add a key to current macro.
                 makingmac @
-                if      dup curmac @ ms: c!l
+                if      dup curmac @ ms: c!
                         curmac incr
-                        0 curmac @ ms: !l
+                        0 curmac @ ms: w!               \ 16 bits, as before
                 then    ;
 
 : ?start/stopmac ( --- c1 )     \ Conditionally start of stop making a macro.
@@ -273,7 +281,7 @@ variable makingmac
                                 ." \s04\r Enter the keys of your macro \:03"
                                 restscr
                                 restcursor
-                                curmac @ ms: macsiz 0 lfill
+                                curmac @ ms: macsiz erase
                                 makingmac on
                                 defers key
                         then    dup 178 = makingmac @ and \ Alt-M and making
@@ -288,10 +296,14 @@ variable makingmac
                 restore> ty restore> tx
                 ;
 
+: ?resizekey    ( c1 --- c1 f1 )        \ native: is c1 a terminal resize?
+                dup K-RESIZE = ;
+
 : mackey        ( --- c1 )      \ This definition looks more like PASCAL
                 macseg 0=
                 if      defers key
                 else    ?domac  ?repmac  ?start/stopmac
+                        ?resizekey ?exit        \ native: pass a resize on
                         ?addmac ?repmac1 ?domac1
                 then    ;
 

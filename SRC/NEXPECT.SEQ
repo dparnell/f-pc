@@ -1,4 +1,4 @@
-\\ NEXPECT.SEQ   A version of EXPECT that allows line editing
+\\ NEXPECT.SEQ   A version of EXPECT that allows line editing  F-PC native port
 
         From XEXPECT by Tom Zimmer, modified by Mike Mayo and
         subsequently again modified by Tom Zimmer.
@@ -15,6 +15,14 @@
 
         This utility adds about 1.5k to the system.
 
+        F-PC native port: the command line history XBSEG is a POINTER,
+        which now returns an address, so >XBUF returns the address of
+        the current history line (it was an offset in the segment) and
+        the CMOVELs became CMOVEs. The shift keys are read with
+        SHIFT-STATE. A terminal resize (key K-RESIZE) while the history
+        box is up closes the box (it was laid out for the old size);
+        the edit line itself is redrawn by LEDIT.
+
 {
 
            only forth  also
@@ -23,7 +31,7 @@
 
 \ if ?SHIFTKEY is not defined and available from the editor, then
 \ define it here
-\- ?shiftkey    : ?shiftkey ( -- f1 ) 0 $417 c@l $03 and 0<> ;
+\- ?shiftkey    : ?shiftkey ( -- f1 ) shift-state $03 and 0<> ;
 
 headerless
 
@@ -42,7 +50,7 @@ create xtmp cmdlen allot
                 if      cr ." Couldn't allocate command line save buffer."
                         abort
                 then
-                xbseg 0 cmdlen xmax 1+ * 0 LFILL ;
+                xbseg cmdlen xmax 1+ * erase ;
 
 xbinit          \ Allocate some space so we can use line edit now.
 
@@ -64,14 +72,14 @@ xbinit          \ Allocate some space so we can use line edit now.
                 else    incr> xbuf#
                 then    ;
 
-: >xbuf         ( --- a1 )
-                xbuf# xmax min 0MAX cmdlen * ;
+: >xbuf         ( --- a1 )      \ address of the current history line
+                xbuf# xmax min 0MAX cmdlen * xbseg + ;
 
 0 value nshown  \ flag to say that the lines are already shown on the screen
 
 : ?save-editbuf ( -- )
         editbuf c@ 2 >
-        if  ?cs: editbuf dup>r xbseg >xbuf r> c@ 1+ cmovel  then
+        if  editbuf >xbuf editbuf c@ 1+ cmove  then
         ;
 
 2variable nxysave
@@ -103,12 +111,12 @@ xbinit          \ Allocate some space so we can use line edit now.
 : nsave-get ( -- )
         xmax 1+ rows 3 - min >r
         tx 1+ ty 1+ dup =: bline at
-        r@ 0 do xbseg i cmdlen * countl typel cols 2- sp>col
+        r@ 0 do xbseg i cmdlen * + count type cols 2- sp>col
                 bcr                     \ show command lines buffer
              loop
         rows r> - 2- xbuf# +    \ row we are editing
         =: ey  1 =: ex          \ place editor on new line
-        xbseg >xbuf 2dup c@l >r ?cs: editbuf r> 1+ cmovel
+        >xbuf editbuf over c@ 1+ cmove
         off> ecursor
         ;
 
@@ -116,16 +124,16 @@ xbinit          \ Allocate some space so we can use line edit now.
     nshown if
         ?save-editbuf
         ?shiftkey if
-                        xbseg >xbuf 2dup c@l >r ?cs: editbuf r> 1+ cmovel
-                        xbseg >xbuf
+                        >xbuf editbuf over c@ 1+ cmove
+                        >xbuf
                         xbuf#-
-                        xbseg >xbuf 2dup c@l >r 2swap r> 1+ cmovel
-                        ?cs: editbuf dup>r xbseg >xbuf r> c@ 1+ cmovel
+                        >xbuf swap over c@ 1+ cmove
+                        editbuf >xbuf editbuf c@ 1+ cmove
                   else
                         xbuf#-
                   then
    else editbuf c@
-        if      ?cs: editbuf 2dup c@l >r xbseg >xbuf r> 1+ cmovel
+        if      editbuf >xbuf editbuf c@ 1+ cmove
         then
         xbuf#-
         .nexpect-box
@@ -137,11 +145,11 @@ xbinit          \ Allocate some space so we can use line edit now.
     nshown if
         ?save-editbuf
         ?shiftkey if
-                        xbseg >xbuf 2dup c@l >r ?cs: editbuf r> 1+ cmovel
-                        xbseg >xbuf
+                        >xbuf editbuf over c@ 1+ cmove
+                        >xbuf
                         xbuf#+
-                        xbseg >xbuf 2dup c@l >r 2swap r> 1+ cmovel
-                        ?cs: editbuf dup>r xbseg >xbuf r> c@ 1+ cmovel
+                        >xbuf swap over c@ 1+ cmove
+                        editbuf >xbuf editbuf c@ 1+ cmove
                   else
                         xbuf#+
                   then
@@ -149,6 +157,15 @@ xbinit          \ Allocate some space so we can use line edit now.
    then
         on> nshown
         nsave-get ;
+
+\ F-PC native port: K-RESIZE handler for the LEDIT key table while
+\ NEW-EXPECT runs. The history box was drawn for the old screen size,
+\ so take it down; the next Up/Down arrow draws it again.
+0 value xresize-prev            \ the table entry we replaced
+
+: xresize       ( -- )
+                nshown if nquit then
+                xresize-prev execute ;
 
 : new-expect       ( a1 n1 --- )
                 xbseg printing @ 0= and         \ use old expect if printing
@@ -160,6 +177,8 @@ xbinit          \ Allocate some space so we can use line edit now.
                 ['] >norm   save!> >edattrib
                             save>  keysfuncptr
                 >keys1
+                K-RESIZE lkey@ save!> xresize-prev
+                ['] xresize K-RESIZE lkey!
                 xbuf#+
                 xtmp off
                 off> stripping_bl's     \ disable removal of trailing bl's
@@ -173,11 +192,13 @@ xbinit          \ Allocate some space so we can use line edit now.
                 r>                      \ recover destination address
 
                 swap  xtmp c@ 2 >  and  \ only store longer lines
-                if      ?cs: xtmp dup>r xbseg >xbuf r> c@ 1+ cmovel
+                if      xtmp >xbuf xtmp c@ 1+ cmove
                 else    xbuf#-          \ only advance if we got something
                 then    ( a1 --- )      \ a1 is the address passed to EXPECT.
                 xtmp count >r swap r@ cmove   \ move the line to TIB
                 R> span !
+                xresize-prev K-RESIZE lkey!     \ put the key table back
+                restore> xresize-prev
                 restore> keysfuncptr
                 restore> >edattrib
                 restore> equit

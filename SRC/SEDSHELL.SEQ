@@ -1,4 +1,4 @@
-\ SEDSHELL      Shell to DOS from SED                   by Tom Zimmer
+\ SEDSHELL      Shell to DOS from SED                   F-PC native port
 
 : ".errmsg      ( a1 n1 --- )
                 savecursor
@@ -17,39 +17,15 @@ create command.buf 64 allot
 : %doDOS        ( --- )                 \ perform DOS command in COMMAND.BUF
                 putline                 \ save current line if needed
                 >norm
-                curline >r              \ where to come back to
-                lastline toline+        \ goto the last file line
-
-                tend dup 0 c@l 1+       \ seg len ---
-                0 swap                  \ seg off len
-
-\ The 100 + is in segments, or 1600 bytes
-\ the minimum valid space between TOFF & TEND.
-
-                toff 100 + 0 rot        \ seg off seg off len
-                cmovel                  \ move last line down
-                ?cs:
-                toff 100 + dup 0 c@l 1+ paragraph +     \ segment new-end
-                ?cs: -
-                setblock 0=             \ deallocate unneeded space
-                if      command.buf $sys dup 2 =
-                        if      "  Couldn't find COMMAND.COM  " ".errmsg
-                        then    8 =
-                        if      " Not enough memory to run DOS" ".errmsg
-                        then    cursorset
-                else            "  Couldn't free edit buffer  " ".errmsg
-                then
-                ?cs: #pars @ setblock 0=        \ reallocate space again
-                if      toff 100 + dup 0 c@l 1+ paragraph \ seg len
-                        0 swap                           \ seg off len
-                        tend 0 rot 16 *                 \ seg off seg off len
-                        cmovel
-                else            " Couldn't re-allocate buffer " ".errmsg
-                        toff 100 + lastline >lineptr tl:!
-                        toff 100 + dup 0 c@l 1+ paragraph +
-                        lastline 1+ >lineptr tl:!
-                then
-                r> backto.line          \ go back to where we came from
+\ Native port: the original moved the last line next to the text, shrank
+\ F-PC's DOS memory block with SETBLOCK so COMMAND.COM had room, and undid
+\ all that afterwards. In the flat model the text never moves; the command
+\ runs through the host shell with SYSTEM (an empty line starts $SHELL).
+\ SYSTEM returns the command's exit status; 127 is the shell's "not found".
+                command.buf count system
+                127 =
+                if      "  Couldn't find the command  " ".errmsg
+                then    cursorset
                 getline ;
 
 : docompile     ( --- )

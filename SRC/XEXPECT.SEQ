@@ -1,4 +1,5 @@
 \ XEXPECT.SEQ   A version of EXPECT that allows line editing  by Tom Zimmer
+\ F-PC native port
 
 comment:
 
@@ -12,6 +13,11 @@ comment:
         line list.
 
         This utility adds about 1k to the system.
+
+        F-PC native port: XBSEG is a POINTER, which now returns an
+        address; >XBUF returns the address of the current history line
+        and the CMOVELs became CMOVEs. (Not loaded by default: F-PC.SEQ
+        loads NEXPECT.SEQ instead; load one or the other, not both.)
 
 comment;
 
@@ -33,7 +39,7 @@ create xtmp cmdlen allot
                 if      cr ." Couldn't allocate command line save buffer."
                         abort
                 then
-                xbseg 0 cmdlen xmax 1+ * 0 LFILL ;
+                xbseg cmdlen xmax 1+ * erase ;
 
 xbinit          \ Allocate some space so we can use line edit now.
 
@@ -55,15 +61,15 @@ xbinit          \ Allocate some space so we can use line edit now.
                 else    incr> xbuf#
                 then    ;
 
-: >xbuf         ( --- a1 )
-                xbuf# xmax min 0MAX cmdlen * ;
+: >xbuf         ( --- a1 )      \ address of the current history line
+                xbuf# xmax min 0MAX cmdlen * xbseg + ;
 
 : save-get      ( a1 --- )      \ a1 = CFA of buf inc or dec word
                 >r
                 editbuf c@
-                if      ?cs: editbuf dup>r xbseg >xbuf r> c@ 1+ cmovel
+                if      editbuf >xbuf editbuf c@ 1+ cmove
                 then    r> execute
-                xbseg >xbuf 2dup c@l >r ?cs: editbuf r> 1+ cmovel
+                >xbuf editbuf over c@ 1+ cmove
                 off> ecursor .eline
                 on> autoclear
                 on> save-get1? ;
@@ -97,7 +103,7 @@ xbinit          \ Allocate some space so we can use line edit now.
                 r>                      \ recover destination address
                 doend .ecursor
                 xtmp c@
-                if      ?cs: xtmp dup>r xbseg >xbuf r> c@ 1+ cmovel
+                if      xtmp >xbuf xtmp c@ 1+ cmove
                 then    ( a1 --- )      \ a1 is the address passed to EXPECT.
                 xtmp count >r swap r@ cmove   \ move the line to TIB
                 R> span ! space
