@@ -1,4 +1,5 @@
 \ BLOCK.SEQ     Tom's Forth virtual block system.       by Tom Zimmer
+\ F-PC native port
 
 comment:
 
@@ -13,11 +14,24 @@ to settle to the bottom of the stack if the same record is not accessed
 again. This arraingment has been tested with up to 175 buffers and does not
 degrade record access performance at or below this value on a 286 machine.
 
+  F-PC native port: the arrays hold CELLS, the CODE words are high
+level Forth, and block LIST, LOAD and THRU are added at the end (F-PC's
+own LIST and LOAD work on lines of sequential files; these block versions
+hide them once this file is loaded).
+
+  To use a block file other than the current file, define B/BUF,
+#BUFFERS and BLOCKHANDLE before loading this file, for example:
+
+        handle blkfile  ' blkfile alias blockhandle
+        1024 constant b/buf   4 constant #buffers
+        fload block.seq
+        blkfile !hcb MY.BLK   blkfile hopen drop   1 list
+
 comment;
 
 needs scan.seq
 
-prefix          \ Prefix assembler
+\ F-PC native port: no PREFIX assembler, the CODE words are high level.
 
 only forth also definitions
 
@@ -40,7 +54,7 @@ only forth also hidden also definitions
 
 variable cur_buffer#                    \ current buffer # of current block
 
-#buffers 2* constant buflen
+#buffers cells constant buflen   \ F-PC native port: arrays of cells
 
 variable rec_array b/buf #buffers  * allot      \ an array of blocks
 variable rec#s            buflen     allot      \ block # array
@@ -50,71 +64,37 @@ variable rec#fil          buflen     allot      \ hcb for each block
 
                                         \ n1 = buffer number
                                         \ a1 = address of buffer
-code buf#>bufaddr ( n1 --- a1 )         \ Calculate address a1 of buffer n1.
-                pop ax
-                mov bx, # b/buf
-                mul bx
-                add ax, # rec_array
-                1push
-                end-code
+: buf#>bufaddr  ( n1 --- a1 )           \ Calculate address a1 of buffer n1.
+                b/buf * rec_array + ;
 
                                         \ n1 = buffer number
                                         \ a1 = buffer address
-code >rec#s     ( n1 --- a1 )           \ return the buffer n1's record addr
-                pop ax
-                shl ax, # 1
-                add ax, # rec#s
-                1push
-                end-code
+: >rec#s        ( n1 --- a1 )           \ return the buffer n1's record addr
+                cells rec#s + ;
 
                                         \ n1 = buffer number
                                         \ a1 = buffer address
-code >rec#updt  ( n1 --- a1 )           \ return the buffer n1's update addr
-                pop ax
-                shl ax, # 1
-                add ax, # rec#updt
-                1push
-                end-code
+: >rec#updt     ( n1 --- a1 )           \ return the buffer n1's update addr
+                cells rec#updt + ;
 
                                         \ n1 = buffer number
                                         \ a1 = buffer address
-code >rec#fil   ( n1 --- a1 )           \ return the buffer n1's file addr
-                pop ax
-                shl ax, # 1
-                add ax, # rec#fil
-                1push
-                end-code
+: >rec#fil      ( n1 --- a1 )           \ return the buffer n1's file addr
+                cells rec#fil + ;
 
                                         \ n1 = buffer number to check
                                         \ n2 = is file NOT the same as
                                         \      current, and is n1 <> zero
-code chkfil     ( n1 --- n1 n2 )        \ verify file in bufer n1 is current
-                pop ax
-                push ax
-                or ax, ax
-            0= if
-                        1push           \ can't possibly match, don't try
-                        next            \ just push a zero
-                then
-                shl ax, # 1
-                mov bx, # buflen
-                sub bx, ax
-                add bx, # rec#fil
-                mov ax, 0 [bx]
-                cmp ax, ' blockhandle >body \ compare blocks hcb with current hcb
-             0= if                      \ if zero flag true then they match.
-                    mov ax, # false     \ return a false to force a leave
-                    1push               \ from BEGIN WHILE REPEAT loop
-                then
-                mov ax, # true          \ no match, so we need to try again
-                1push                   \ return true so we will.
-                end-code
+: chkfil        ( n1 --- n1 n2 )        \ verify file in bufer n1 is current
+                dup 0= if false exit then  \ can't possibly match, don't try
+                #buffers over - >rec#fil @ \ n1 is the remaining SCANW count
+                blockhandle <> ;        \ true if no match, try again
 
 : bubbleup      ( n1 --- )              \ move buffer # n1 to end of list
                 >r rec#use #buffers r@ scanw dup 0=
                 abort" Buffer# number not in buffer list"
-                1- 2* >r dup 2+ swap r> cmove   \ move list down except first
-                r> rec#use buflen + 2- ! ;      \ stuff first at end of list.
+                1- cells >r dup cell+ swap r> cmove \ move list down except first
+                r> rec#use buflen + cell- ! ;   \ stuff first at end of list.
 
                                         \ n1 = block we are looking for
                                         \ n2 = buffer #
@@ -123,9 +103,9 @@ code chkfil     ( n1 --- n1 n2 )        \ verify file in bufer n1 is current
                 >r rec#s   #buffers
                 begin   r@ scanw        \ look for the block
                         chkfil          \ verify the file hcb is the same
-                while   2 -1 d+         \ else look for next possibility
+                while   1- swap cell+ swap  \ else look for next possibility
                 repeat  r> drop
-                if      rec#s - 2/ true
+                if      rec#s - cell / true
                 else    drop false
                 then    ;
 
@@ -138,7 +118,10 @@ code chkfil     ( n1 --- n1 n2 )        \ verify file in bufer n1 is current
 : read_block    ( a1 n1 --- )           \ read block n1 to address a1
                 pos_block
                 b/buf blockhandle hread b/buf <>
-                abort" Error reading block" ;
+                if      -1 cur_buffer# @ >rec#s !   \ F-PC native port: don't
+                                                    \ keep a half read block
+                        true abort" Error reading block"
+                then    ;
 
                                         \ n1 = buffer number
                                         \ n2 = block number to write
@@ -171,7 +154,7 @@ only forth also forth definitions hidden also
                 rec#updt buflen erase
                 rec#fil  buflen erase
                 rec#use  #buffers 0
-                do      i over ! 2+     \ initialize the bubbleup stack
+                do      i over ! cell+  \ initialize the bubbleup stack
                 loop    drop ;
 
 : flush         ( --- )                 \ Write any updated buffers to disk
@@ -200,20 +183,48 @@ empty-buffers           \ Initialize the virtual memory arrays
 
 ' virtual_init is initstuff
 
-: .blocks       ( --- )
+: .blocks       ( --- )                 \ F-PC native port: 7 wide, HCBs are
+                                        \ bigger addresses now
                 cr              ." Record #  "
                 rec#s buflen bounds
-                do      i @ 5 .r ?cr
-             2 +loop    cr      ." Update bit"
+                do      i @ 7 .r ?cr
+             cell +loop    cr      ." Update bit"
                 rec#updt buflen bounds
-                do      i @ 5 .r ?cr
-             2 +loop    cr      ." File HCB  "
+                do      i @ 7 .r ?cr
+             cell +loop    cr      ." File HCB  "
                 rec#fil buflen bounds
-                do      i @ 5 .r ?cr
-             2 +loop    cr cr   ." Bubble stk"
+                do      i @ 7 .r ?cr
+             cell +loop    cr cr   ." Bubble stk"
                 rec#use buflen bounds
-                do      i @ 5 .r ?cr
-             2 +loop    cr ;
+                do      i @ 7 .r ?cr
+             cell +loop    cr ;
+
+\ F-PC native port: block LIST, LOAD and THRU (new). The block is
+\ interpreted one 64 character line at a time, so "\" comments end at the
+\ end of a line, as they did on screens. BLK holds the block being loaded.
+
+variable scr                            \ most recently listed block
+
+: list          ( n1 --- )              \ display block n1
+                dup scr !
+                cr ." Scr # " dup . block
+                b/buf 64 / 0
+                ?do     cr i 2 .r space
+                        dup i 64 * + 64 -trailing type
+                loop    drop cr ;
+
+: load          ( n1 --- )              \ interpret block n1
+                blk @ >r 'tib @ >r >in @ >r #tib @ >r
+                dup blk !
+                b/buf 64 / 0
+                ?do     dup block i 64 * + 'tib !       \ re-fetch, a nested
+                        64 #tib !  >in off              \ LOAD may move it
+                        run
+                loop    drop
+                r> #tib ! r> >in ! r> 'tib ! r> blk ! ;
+
+: thru          ( n1 n2 --- )           \ load blocks n1 through n2
+                1+ swap ?do i load loop ;
 
 \s              *** stop loading here ***
 

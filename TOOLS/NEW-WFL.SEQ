@@ -1,4 +1,12 @@
 \ NEW-WFL.SEQ   A NEW window file selection tool from RUSSIA
+\ F-PC native port
+
+\ F-PC native port: the CODE words are high level Forth on the emulated DOS
+\ calls (HDOS1, BDOS, PDOS, FIND-FIRST/NEXT and the kernel's flat DTA@/DTA!),
+\ and the window is laid out from COLS and ROWS instead of 80x25: there are
+\ ROWS-6 names per column and as many 17 wide columns as fit (at least 3);
+\ the help panel stays on the right. A K-RESIZE key re-lays the window out.
+\ The pop-up dialogs keep their 80x25 positions (they need 76x17).
 
 \ This appears to be a significant improvement in my file selection
 \ utility.  Though it is quite large (12k), it works very well.
@@ -10,17 +18,18 @@
 
 \ Оконный селектор файлов.
 
-decimal prefix
+decimal         \ F-PC native port: no PREFIX assembler
 
         variable curr-color     \  color setting mode
-code draw-line  ( l,n -- )
-                pop     ax
-                pop     cx
-                mov     bx, attrib
-                mov     ah, # $9
-                int     $10
-                next
-end-code
+\ F-PC native port: was INT 10h AH=09h, write char n l times at the cursor
+\ with ATTRIB, leaving the cursor where it was. Now stored straight into
+\ VIDEO-BUF at #OUT #LINE (where AT put the cursor), clipped to the screen.
+: draw-line     ( l,n -- )
+                #line @ rows < 0= if 2drop exit then
+                swap cols #out @ - 0max min             ( n l' )
+                #line @ cols * #out @ + 2* video-buf +  ( n l' a )
+                swap 0 ?do  2dup c!  attrib @ over 1+ c!  2+  loop
+                2drop ;
 
  vocabulary getvoc
 
@@ -42,23 +51,29 @@ create MASK*.*  ascii * c, ascii . c, ascii * c, 0 c,
 create X-COORD  3 C, 20 C, 37 C,
 
   3             constant Y-COORD
-  38            constant PATH-LONG      \ length of path buffer
+  56            constant PATH-LONG      \ length of path buffer
+                                        \ F-PC native port: was 38; host
+                                        \ paths are longer
 
   24            constant NAME-LONG      \ length of name buffer
 
   14            constant MASK-LONG      \ length of searching mask
 
- 500            constant MAXFILES       \ length of segment names buffer
+2000            constant MAXFILES       \ length of segment names buffer
+                                        \ F-PC native port: was 500
+
+ 256            constant PBUF-LONG      \ F-PC native port: size of the path
+                                        \ buffers, they were 70 bytes
 
 
 \ Format of coding the file in the buffer: length - 4 bytes,
 \ length of file name - 1-13 bytes. That makes up to 17 bytes as a maximum.
 
         variable attribs
-                 8 allot        \ saving color attributes
+           4 cells allot        \ saving color attributes (5 cells)
 
         variable old-path
-               70 allot         \ saving path to current catalog
+        PBUF-LONG allot         \ saving path to current catalog
 
         variable curr-time
                  8 allot        \ String of time counter  uses for reducing
@@ -79,12 +94,12 @@ maxfiles 16 um*
         variable ?end-select    \ "True" means that file was chosen
 
         variable path-buf
-                 70 allot       \ Buffer for inputing and editing of path
+        PBUF-LONG allot         \ Buffer for inputing and editing of path
                                 \ Length of the buffer is determined by DOS
                                 \ requiremens.
 
         variable ren-buf
-                 70   allot     \ Buffer for inputing and editting of file
+        PBUF-LONG allot         \ Buffer for inputing and editting of file
                                 \ names
 
         variable mask-buf
@@ -124,491 +139,197 @@ maxfiles 16 um*
 
  MAXFILES 1- 16 * end-seg !
 
-code ?4+        ( n, t/f -- n/n+4 )
-                pop     ax
-                or      ah, al
-        0<> if  pop     ax
-                add     ax, # 4
-                push    ax
-        then    next
-end-code
+\ F-PC native port: the window geometry, set from COLS and ROWS by
+\ NWFL-GEOMETRY (it was fixed: 3 columns of 19 names, 57 to a page, the
+\ help panel at column 52 and the right edge at 78).
 
-code scr-up     ( -- )
-                mov     ax, # $0601     \ 1 stringt, funcktion 6
-                mov     bh, attrib      \ window attributes
-                mov     cx, # $0304     \ coordinates: upper left corner,
-                mov     dx, # $1532     \              down right corner.
-                int     $10
-                next
-end-code
+   3 value #fcols               \ columns of names
+  19 value #frows               \ names in a column
+  57 value #fpage               \ names on a page
+  52 value panel-x              \ x of the line left of the help panel
+  78 value right-x              \ x of the right edge of the window
+   0 value wfl-cols             \ the COLS and ROWS laid out for
+   0 value wfl-rows
 
-code scr-down   ( -- )
-                mov     ax, # $0701
-                mov     bh, attrib
-                mov     cx, # $0304
-                mov     dx, # $1532
-                int     $10
-                next
-end-code
+: nwfl-geometry ( -- )
+                cols 29 - 17 / 3 max =: #fcols
+                rows 6 - 4 max =: #frows
+                #fcols #frows * =: #fpage
+                #fcols 17 * 1+ =: panel-x
+                panel-x 26 + =: right-x
+                cols =: wfl-cols  rows =: wfl-rows ;
+
+: ?resized      ( -- f )        \ has the terminal changed size since?
+                cols wfl-cols <>  rows wfl-rows <> or ;
+
+: list-bottom   ( -- y )  #frows 2+ ;   \ last line of names (was 21)
+: sep-y         ( -- y )  #frows 3 + ;  \ line under the names (was 22)
+: stat-y        ( -- y )  #frows 4 + ;  \ status line (was 23)
+: bot-y         ( -- y )  #frows 5 + ;  \ bottom edge (was 24)
+
+: ?4+          ( n, t/f -- n/n+4 )
+                if 4 + then ;
+
+: scr-up        ( -- )     \ INT 10h AH=06: scroll the names up a line
+                $0601 attrib @ $FF and 256 * $0304
+                list-bottom 256 * panel-x 2- or
+                bios-video 2drop 2drop ;
+
+: scr-down      ( -- )     \ INT 10h AH=07: scroll the names down
+                $0701 attrib @ $FF and 256 * $0304
+                list-bottom 256 * panel-x 2- or
+                bios-video 2drop 2drop ;
 
 \ To read in buffer " path-buf " path to current catalog
 
-code curr-path  ( -- )
-                mov     ah, # $47
-                xor     dl, dl
-                push    si
-                mov     si, # path-buf 3 +
-                int     $21
-                pop     si
-                next
-end-code
+: curr-path     ( -- )                  \ INT 21h AH=47h
+                path-buf 3 + 0 pdos drop ;
 
 \ Changing catalog according with string in the buffer
 
-code set-path   ( ASCIIZ -- t/f )
-                mov     ah, # $3B
-                pop     dx
-                int     $21
-                jc      1 $
-                xor     ax, ax
-        1 $:   1push
-end-code
+: set-path      ( ASCIIZ -- t/f )       \ INT 21h AH=3Bh
+                0 swap $3B00 hdos1              \ 0, or the DOS error code
+                if exit then drop 0 ;
 
 \ change device number 0 - A, 1 - B ...
 
-code change-drv ( n -- )
-                mov     ah, # $0E
-                pop     dx
-                and     dx, # $0F
-                int     $21
-                next
-end-code
+: change-drv    ( n -- )                \ INT 21h AH=0Eh
+                $0F and $0E bdos drop ;
 
 \ Convert count string to  ASCIIZ string
 
-code count>z    ( a -- )
-                cld
-                pop     bx
-                xor     ch, ch
-                mov     cl, 0 [bx]              \ set counter
-                or      cl, cl                  \ if 0, stop
-                jz      1 $
-                xchg    bx, si                  \ save si, set si to the begin-
-                                                \ ning 1st name in buffer
-                mov     di, si                  \ address where
-                inc     si                      \ address from
-                push    es
-                mov     ax, cs
-                mov     es, ax                  \ segment where
-                mov     ds, ax                  \ segment from
-                repnz   movsb
-                xor     al, al                  \ add 0 to the string end
-                stosb
-                pop     es
-                mov     ax, cs
-                mov     ds, ax
-                mov     si, bx
-        1 $:    next
-end-code
+: count>z       ( a -- )
+                dup c@ ?dup
+                if      >r dup 1+ over r@ cmove \ move the string down
+                        r> + 0 swap c!          \ add 0 to the string end
+                else    drop                    \ if 0, stop
+                then    ;
 
 
-code z>count    ( a -- )
-                cld
-                pop     bx
-                push    bx
-                xor     cx, cx
-                xchg    bx, si                  \ save si, set si to the
-                                                \ beginning 1st name in buf.
-                push    es
-                mov     ax, cs
-                mov     es, ax                  \ segment from
-                mov     ds, ax                  \ segment where
-                lodsb
-                or      al, al
-                jz      10 $                    \ if 0, stop
-        1 $:    inc     cl
-                lodsb
-                or      al, al
-                jnz     1 $
-                dec     si                      \ address correction from
-                mov     di, si                  \ address where
-                dec     si                      \ address correction from
-                mov     dx, cx                  \ save counter
-                std
-                repnz   movsb
-                cld
-        10 $:   pop     es
-                mov     ax, cs
-                mov     ds, ax
-                mov     si, bx
-                pop     bx
-                mov     0 [bx], dl              \ counter init
-                next
-end-code
+: z>count       ( a -- )
+                dup >r
+                begin   dup c@                  \ find the 0 at the end
+                while   1+
+                repeat  r@ -                    ( n )
+                r@ dup 1+ 2 pick cmove>         \ move the string up
+                r> c! ;                         \ counter init
 
 \ prepeare string with counter in memory for screen output by TYPE,
 
-code n>type     ( a -- )
-                cld
-                pop     bx
-                push    bx
-                xor     cx, cx                  \ cx - total string length
-                xor     dx, dx                  \ dx - extending length
-                xchg    bx, si                  \ save si, set si to the begin-
-                                                \ ning 1st name in buf.
-                mov     di, si                  \ address where
-                push    es
-                mov     ax, cs
-                mov     es, ax                  \ segment where
-                mov     ds, ax                  \ segment from
-                lodsb
-                or      al, al
-                jz      10 $                    \ if 0, stop
-                cmp     al, # ascii .           \ code .
-                jz      8 $
-                add     di, # 14                \ di - to the buf. end
-        1 $:    inc     cl
-                lodsb
-                cmp     al, # ascii .           \ extention found
-                jz      2 $
-                or      al, al                  \ file end found
-                jnz     1 $
-                jmp     5 $
-        2 $:    inc     dx
-                lodsb
-                or      al, al                  \ find file name end
-                jnz     2 $
-                xchg    dx, cx
-                std
-                mov     al, # $20               \ blank code (bl register !)
-                push    cx
-                sub     cx, # 5
-                neg     cx
-                repnz   stosb
-                pop     cx
-                dec     cx
-                dec     si
-                dec     si
-                repnz   movsb
-                mov     cx, dx
-                stosb
-                sub     cx, # 8
-                jmp     6 $
-        5 $:    mov     al, # $20               \ blank code (bl register !)
-                mov     dx, cx
-                sub     cx, # 13
-        6 $:    neg     cx
-                std
-                repnz stosb
-                mov     cx, dx
-                mov     si, di
-                dec     si
-                dec     si
-                repnz   movsb
-                stosb
-                mov     ax, # 14
-                stosb
-                cld
-                jmp     10 $
-        8 $:    mov     ax, # $0E
-                mov     cl, al
-                stosb
-                lodsb
-                cmp     al, # ascii .           \ code .
-                mov     al, # $20               \ blank code (bl register !)
-                stosb
-                mov     ax, # ascii .
-                jnz     9 $
-                dec     cx
-                stosb
-        9 $:    stosb
-                dec     cx
-                dec     cx
-                mov     al, # $20
-                repnz   stosb
-        10 $:   pop     es
-                cld
-                mov     ax, cs
-                mov     ds, ax
-                mov     si, bx
-                pop     bx
-                next
-end-code
+\ F-PC native port: the 8086 version built the string in place; this one
+\ builds it in N>TBUF and copies it back. The result is a counted string of
+\ 14 characters: a blank, the name padded to 8, a blank, the extension
+\ padded to 3, and a blank; "." and ".." come out as " ." and " ..".
 
-code first-find ( adr,attr -- t/f )
-                xor     bx, bx
-                mov     ah, # $4E
-                pop     cx
-                pop     dx
-                int     $21
-                jnc     1 $
-                dec     bx      \ error. in BX set true
-        1 $:    push    bx
-                next
-end-code
+create n>tbuf 16 allot
 
-code next-find  ( -- t/f )
-                xor     bx, bx
-                mov     ah, # $4F
-                int     $21
-                jnc     1 $
-                dec     bx      \ error
-                push    ax
-        1 $:    push    bx
-                next
-end-code
+: n>type        ( a -- )
+                dup c@ 0= if drop exit then     \ if 0, stop
+                n>tbuf 15 blank  14 n>tbuf c!
+                dup >r c@ ascii . =
+                if      r@ 1+ c@ ascii . = 1 and 1+     \ "." or ".."
+                        n>tbuf 2+ swap ascii . fill
+                else    r@ dup 64 0 scan drop over -    ( a len )
+                        2dup ascii . scan               ( a len e n' )
+                        2swap drop                      ( e n' a )
+                        2 pick over -                   ( e n' a namelen )
+                        n>tbuf 2+ swap 8 min cmove      ( e n' )
+                        1 /string 0max n>tbuf 11 + swap 3 min cmove
+                then    n>tbuf r> 15 cmove ;
 
-code dta@       ( -- d )
-                mov     ah, # $2F
-                mov     cx, es
-                int     $21
-                push    es
-                push    bx
-                mov     es, cx
-                next
-end-code
+: first-find    ( adr,attr -- t/f )     \ true if nothing was found
+                find-first 0<> ;
 
-code dta!       ( d -- )
-                mov     cx, ds
-                pop     ds
-                pop     dx
-                mov     ah, # $1A
-                int     $21
-                mov     ds, cx
-                next
-end-code
+: next-find     ( -- t/f )      \ on an error, an error code under true
+                find-next 0<> dup if 18 swap then ;
 
-code curr-drv   ( - n )
-                mov     ah, # $19
-                int     $21
-                xor     ah, ah
-                add     ax, # ascii A
-                1push
-end-code
+\ F-PC native port: DTA@ ( -- d ) and DTA! ( d -- ) are gone; the kernel's
+\ DTA@ ( -- addr ) and DTA! ( addr -- ) take flat addresses.
 
 
-code sys-del    ( a,t/f -- t,/f )
-                xor     bx, bx
-                mov     cx, ds
-                pop     ax
-                pop     dx
-                or      ah, al
-        0= if   mov     ah, # $3A       \ delete catalog
-        else    mov     ah, # $41       \ delete file
-        then    int     $21
-                jnc     1 $
-                dec     bx
-        1 $:    push    bx
-                mov     ds, cx
-                next
-end-code
+: curr-drv      ( - n )                 \ INT 21h AH=19h
+                0 $19 bdos $FF and ascii A + ;
+
+
+: sys-del       ( a,t/f -- t,/f )       \ true on an error
+                if $4100 else $3A00 then        \ delete file / catalog
+                >r 0 swap r> hdos1 nip 0<> ;
 
 \ file renaming
 \ steck top   : a1 - address ASCIIZ chain old name  ,
 \               a2 - address ASCIIZ chain new name .
 
-code sys-ren    ( a1,a2 -- t/f )
-                xor     cx, cx
-                pop     bx
-                pop     dx
-                push    ds
-                push    es
-                push    di
-                mov     ax, cs
-                mov     es, ax
-                mov     ds, ax
-                mov     di, bx
-                mov     ah, # $56
-                int     $21
-                pop     di
-                pop     es
-                pop     ds
-                jnc     1 $
-                dec     cx
-        1 $:    push    cx
-                next
-end-code
+: sys-ren       ( a1,a2 -- t/f )        \ INT 21h AH=56h
+                \ F-PC native port: <HRENAME> takes two handles and renames
+                \ the names at handle+1, so pass the ASCIIZ addresses less 1
+                >r 1- r> 1- <hrename> nip 0<> ;
 
 \ сбросить атрибуты файла
 
-code drop-atr   ( a -- t,/f )
-                mov     bx, ds
-                xor     cx, cx
-                pop     dx
-                mov     ax, # $4301
-                int     $21
-                mov     cx, # 0
-                jnc     1 $
-                dec     cx
-        1 $:    push    cx
-                mov     ds, bx
-                next
-end-code
+: drop-atr      ( a -- t,/f )           \ INT 21h AX=4301h, CX=0
+                \ F-PC native port: the VM can't set attributes; it reports
+                \ success, and a host file can be deleted anyway
+                0 swap $4301 hdos1 nip 0<> ;
 
 \ преобразовать номер файла (каталога) в координаты X и Y для печати на экран
 
-code n>at       ( n -- x,y )
-                pop     ax
-                mov     cl, # 19
-                div     cl
-                xor     bx, bx
-                xchg    al, bl
-                xchg    ah, al
-                mov     bl, X-COORD [bx]
-                add     ax, # Y-COORD
-                push    bx
-                push    ax
-                next
-end-code
+: n>at          ( n -- x,y )
+                #frows /mod                     \ F-PC native port: was 19
+                17 * 3 +                        \ X-COORD, for any column
+                swap Y-COORD + ;
 
 \ Переслать атрибуты файла, его длинну и ASCIIZ имя в буфер
 
-code +file      ( -- )
-                cld
-                mov     bx, si                  \ сохранить si
-                xor     cx, cx                  \ инициализировать счетчик
-                mov     di, end-files           \ адрес куда
-                mov     ax, &> dir-seg          \ сегмент куда
-                push    cs
-                pop     ds                      \ сегмент откуда
-                push    es
-                mov     es, ax
-                mov     si, # u-dta 26 +        \ адрес длинны файла
-                lodsw                           \ переслать длинну файла
-                stosw
-                lodsw
-                stosw
-                mov     si, # u-dta 30 +        \ адрес имени файла
-        1 $:    lodsb                           \ переслать имя
-                cmp     al, # ascii A 1-
-                jle     2 $
-                cmp     al, # ascii Z
-                jg      2 $
-                add     al, # 32                \ преобразовать в строчные
-        2 $:    or      al, al
-                stosb
-                loopnz  1 $
-                pop     es
-                mov     ax, cs
-                mov     ds, ax
-                mov     si, bx
-                mov     end-files di            \ сохранить для следующего
-                inc     word n-files            \ увеличить счетчик файлов
-                next
-end-code
+\ F-PC native port: entries are at DIR-SEG plus an offset (END-FILES), and
+\ ROOM? stops the list overwriting itself (the original didn't check).
+
+: room?         ( -- f )
+                end-files @ 17 + end-catalogs @ 13 - < ;
+
+: +file         ( -- )
+                room? 0= ?exit
+                u-dta 26 + @  dir-seg end-files @ + !   \ the file length
+                dir-seg end-files @ + 4 +  u-dta 30 +   ( dst src )
+                begin   dup c@ dup ascii A ascii Z between
+                        if      32 +                    \ lower case
+                        then    dup 3 pick c!
+                        >r 1+ swap 1+ swap r> 0=
+                until   drop dir-seg - end-files !
+                1 n-files +! ;
 
 \ прочитать имя файла из буфера файлов в буфер пользователя
 
-code @file      ( a,n -- )
-                cld
-                mov     bx, si                  \ сохранить si
-                pop     cx                      \ инициализировать счетчик
-                pop     di                      \ адрес куда
-                mov     ax, cs                  \ сегмент куда
-                mov     ds, &> dir-seg          \ сегмент откуда
-                push    es
-                mov     es, ax
-                mov     si, # 0                 \ начало 1-го имени в буфере
-                or      cx, cx
-                jz      3 $                      \ поиск не нужен
-                mov     dx, # 4
-        1 $:    add     si, dx                  \ пропустить длинну файла
-        2 $:    lodsb                           \ сканирование списка
-                or      al, al                  \ конец файла?
-                jnz     2 $
-                loop    1 $
-        3 $:    lodsw                           \ переслать длинну файла
-                stosw
-                lodsw
-                stosw
-        4 $:    lodsb                           \ переслать имя
-                or      al, al
-                stosb
-                loopnz  4 $
-                pop     es
-                mov     ax, cs
-                mov     ds, ax
-                mov     si, bx
-                next
-end-code
+: @file         ( a,n -- )
+                dir-seg swap 0                  \ skip n entries
+                ?do     4 +  begin count 0= until
+                loop    swap                    ( src a )
+                over 4 + 64 0 scan drop 1+ 2 pick - cmove ;
 
 \ Переслать ASCIIZ имя каталога в буфер изменив порядок литер на обратный
 
-code +catalog   ( -- )
-                cld
-                inc     word n-catalogs
-                mov     bx, si                  \ сохранить si
-                xor     cx, cx                  \ инициализировать счетчик
-                mov     di, end-catalogs        \ адрес куда
-                mov     ax, &> dir-seg          \ сегмент куда
-                mov     si, # u-dta 30 +        \ адрес откуда
-                push    cs
-                pop     ds                      \ сегмент откуда
-                push    es
-                mov     es, ax
-                lodsw
-                dec     si
-                dec     si
-                cmp     ax, # $002E
-                jnz     1 $
-                dec     n-catalogs
-                jmp     2 $
-        1 $:    lodsb
-                std
-                stosb
-                cld
-                or      al, al
-                loopnz  1 $
-        2 $:    pop     es
-                mov     ax, cs
-                mov     ds, ax
-                mov     si, bx
-                mov     end-catalogs di
-                next
-end-code
+: +catalog      ( -- )                  \ stored backwards, going down
+                room? 0= ?exit
+                u-dta 30 + w@ $002E = ?exit     \ skip "."
+                1 n-catalogs +!
+                u-dta 30 +  dir-seg end-catalogs @ +    ( src dst )
+                begin   over c@ dup 2 pick c!
+                        >r 1- swap 1+ swap r> 0=
+                until   nip dir-seg - end-catalogs ! ;
 
-code @catalog   ( a,n -- )
-                cld
-                mov     bx, si                  \ сохранить si
-                mov     si, end-seg             \ начало 1-го имени в буфере
-                mov     ds, &> dir-seg          \ сегмент откуда
-                pop     cx                      \ инициализировать счетчик
-                pop     di                      \ адрес куда
-                push    es
-                mov     ax, cs                  \ сегмент куда
-                mov     es, ax
-                or      cx, cx
-                jz      3 $                     \ поиск не нужен
-        1 $:    std
-                lodsb                           \ сканирование списка
-                cld
-                or      al, al                  \ конец файла?
-                jnz     1 $
-                loop    1 $
-        3 $:    std
-                lodsb                           \ переслать имя
-                cld
-                stosb
-                or      al, al
-                loopnz  3 $
-                pop     es
-                mov     ax, cs
-                mov     ds, ax
-                mov     si, bx
-                next
-end-code
+: @catalog      ( a,n -- )
+                dir-seg end-seg @ + swap 0      \ skip n names going down
+                ?do     begin   dup c@ swap 1- swap 0=
+                        until
+                loop                            ( a src )
+                begin   dup c@ dup 3 pick c!
+                        >r 1- swap 1+ swap r> 0=
+                until   2drop ;
 
 \ получить длинну файла из DTA или буфера с аналогичным форматом записи длинны
 \ на стек - число двойной длинны
 
-code @long      ( a -- d )
-                pop     bx
-                mov     ax, 0 [bx]
-                mov     cx, 2 [bx]
-                push    ax
-                push    cx
-                next
-end-code
+: @long         ( a -- d )
+                @ 0 ;
 
 \ получить имя файла или каталога в буфер true - имя файла, 0 - каталога.
 
@@ -635,13 +356,15 @@ end-code
                 savescr please.wait
                 n-catalogs 0! n-files 0! end-files 0!
                 end-seg @ end-catalogs !
-                dta@ u-dta ?cs: dta!            \ пользовательский DTA
+                dta@ u-dta dta!                 \ пользовательский DTA
                 mask*.* $37 first-find          \ получить имя первого файла
-                first-file? !
-                begin
+                dup first-file? !
+                if 0 else                       \ F-PC native port: no DTA
+                begin                           \ to look at if none found
                 [ u-dta 21 + ] literal c@       \ считать атрибут и пересылать
                 $10 and if +catalog then        \ в буфер, если каталог
-                next-find until drop
+                next-find until
+                then drop
                 mask-buf $23 first-find 0=      \ получить имя первого файла
                 if
                   begin +file next-find
@@ -665,8 +388,10 @@ end-code
                 if ascii . ren-buf count + c! ren-buf incr then ;
 
 : .time-key     ( -- )
-                begin   key?  mousebutton or
-                until   >norm ;
+                begin   key?  mousebutton or ?resized or dup 0=
+                        if      refresh 10 ms   \ F-PC native port: show the
+                        then                    \ screen, don't spin; a
+                until   >norm ;                 \ resize is seen by KEY-SELECT
 
 : wait-esc      ( -- )
                 7 emit 20 15 at 6 spaces ." Press Esc to continue ... "
@@ -703,15 +428,21 @@ end-code
                  r> -1 xor >r
                 repeat 2drop 2drop r> ;
 
+: type-tail     ( a n max -- )  \ F-PC native port: type the last max
+                2dup > if >r + r@ - r> else drop then type ;
+
 : .at-path      ( -- )
-                get-attrib10 17 1 at 60 spaces
-                17 1 at  nosetcur 0! path-buf count type
-                path-buf c@ 3 <> if ascii \ emit then
-                mask-buf dup dup z>count count type count>z
+                get-attrib10 17 1 at right-x 18 - spaces
+                17 1 at  nosetcur 0!
+                \ F-PC native port: show the end of a path too long to fit
+                path-buf count pad place
+                path-buf c@ 3 <> if " \" pad +place then
+                mask-buf dup z>count dup count pad +place count>z
+                pad count right-x 18 - type-tail
                 true nosetcur ! >norm ;
 : at-name       ( a -- )        \ со стека смещение для scoops-name
                 >norm 8 13 at 64 spaces 10 13 at scoops-name
-                ren-buf count type ;
+                ren-buf count 62 type-tail ;    \ F-PC native port: clip
 
 : qweshn-file   ( -- )
                 19 11 at  ." ─── Do you wish to delete this file? ───"
@@ -735,7 +466,7 @@ end-code
                 attrib @ $80 or attrib ! ;
 
 : fill-screen   ( -- )
-                curr-name 0! n-files @ n-catalogs @ + 57 0
+                curr-name 0! n-files @ n-catalogs @ + #fpage 0
                 do i n>at at i over <
                   if
                    name-buf i @name name-buf swap ?4+ z-type
@@ -744,7 +475,7 @@ end-code
                   then
                 loop drop first-file? @
                 if 0 n>at at ."   No files.  "
-                   2 23 at get-attrib10 33 spaces >norm
+                   2 stat-y at get-attrib10 33 spaces >norm
                 then ;
 
 : get-marker    ( n -- )
@@ -753,11 +484,11 @@ end-code
                 curr-name @ n>at at           \ установить курсор
                 name-buf curr-name @ @name
                 name-buf swap ?4+ >norm z-type
-                2 23 at get-attrib10
+                2 stat-y at get-attrib10
                 name-buf over @name
                  if name-buf @long name-buf 4 + dup z-type
                     -rot 10 d.r ."  bytes. "
-                 else name-buf dup  @ $2E2E =
+                 else name-buf dup  w@ $2E2E =
                         if   name-buf n>type 33 spaces
                         else name-buf z-type ."   Subdirectory.  "
                         then
@@ -785,7 +516,7 @@ end-code
                       then
                      then
                   then
-                else get-attrib2 name-buf @ $2E2E =
+                else get-attrib2 name-buf w@ $2E2E =
                  if 18 12 at  ." Can't delete this directory!"
                    wait-esc >norm ?newpage 0!
                  else qweshn-cat qweshn-del dup ?newpage !
@@ -808,7 +539,7 @@ end-code
                 restscr  ;
 
 : init-path-buf ( -- )
-                [ ascii : ascii \ join ] literal path-buf 1+ !
+                [ ascii : ascii \ join ] literal path-buf 1+ w!
                 curr-drv path-buf c! curr-path path-buf z>count ;
 
 \ проверка правильности указания пути пользователем.
@@ -831,7 +562,7 @@ end-code
 : scan-buf:\    ( a -- n, a )
                 count swap over +
                 begin swap dup
-                while 1- swap 1- dup @ [ ascii : ascii \ join ] literal
+                while 1- swap 1- dup w@ [ ascii : ascii \ join ] literal
                       = ?exit
                 repeat swap ;
 
@@ -839,8 +570,8 @@ end-code
 \ если путь и устройство не указаны пользователем.
 
 : ?addcurrent   ( -- )
-                path-buf 2+ @ [ ascii : ascii \ join ] literal = ?exit
-                path-buf ren-buf 70 cmove init-path-buf
+                path-buf 2+ w@ [ ascii : ascii \ join ] literal = ?exit
+                path-buf ren-buf PBUF-LONG cmove init-path-buf
                 ren-buf count drop c@ ascii \ =
                 if 2 path-buf c!
                 else path-buf c@ 3 <>
@@ -902,7 +633,7 @@ end-code
                 first-file? @ ?exit
                 name-buf dup curr-name @ @name
                 if   4 +  true                          \ Файл
-                else @ $2E2E = ?exit name-buf false     \ Каталог
+                else w@ $2E2E = ?exit name-buf false     \ Каталог
                 then
                 savescr get-attrib5 messeg-window
                 if   15 11 at ."    Rename the file:   "
@@ -964,7 +695,7 @@ end-code
                 first-file? @ ?exit
                 name-buf curr-name @ @name
                 if $5555 ?end-select ! 4 scoops-name exit then
-                name-buf @ $2E2E =
+                name-buf w@ $2E2E =
                 if path-buf scan-buf\
                    ren-buf 14 cmove >r path-buf c@ r@ - 1- ren-buf c!
                    r> 3 max path-buf c! change-cat
@@ -972,7 +703,7 @@ end-code
                 else
                   name-buf z>count name-buf count >r path-buf count
                   dup 3 = if + else + ascii \ over c! 1+ path-buf incr then
-                  r@ cmove r> path-buf +! change-cat 0 get-marker
+                  r@ cmove r> path-buf c+! change-cat 0 get-marker
                 then ;
 
 : f-unselect    ( -- )
@@ -988,32 +719,41 @@ end-code
                       if r>drop drop 7 emit exit then
                       name-buf dup r@ @name ?4+ c@ upc over <>
                 while r> 1+ >r
-                repeat drop r@ 56 r> <
-                if  56 - ~offset +! true ?newpage ! 56
+                repeat drop r@ #fpage 1- r> <
+                if  #fpage 1- - ~offset +! true ?newpage ! #fpage 1-
                 then
                 ?newpage @ if fill-screen then
                 get-marker ;
 
 : marker-left   ( -- )
-                curr-name @ 19 - dup 0 <
+                curr-name @ #frows - dup 0 <
                 if drop else get-marker then ;
 
 : marker-right  ( -- )
                 first-file? @ ?exit
-                curr-name @ 19 + n-files @ n-catalogs @ + 1- min
-                56 min get-marker ;
+                curr-name @ #frows + n-files @ n-catalogs @ + 1- min
+                #fpage 1- min get-marker ;
 
 : nbuftype      ( t/f -- )
                 name-buf swap ?4+ z-type ;
+
+\ F-PC native port: after a scroll, redraw line r of every column, with the
+\ lines between the columns (was written out for 3 columns of 19).
+: redraw-row    ( r -- )
+                #fcols 0
+                ?do     i #frows * over +               ( r n )
+                        dup n>at i
+                        if      2dup swap 3 - swap at ."  │ "
+                        then    at
+                        name-buf swap @name nbuftype
+                loop    drop ;
 
 : marker-up     ( -- )
                 curr-name @
                 if curr-name @ 1- get-marker
                 else ~offset @
                  if name-buf 0 @name 0 n>at at nbuftype
-                    ~offset decr scr-down 17 3 at
-                    ."  │ "  name-buf 19 @name nbuftype
-                    ."  │ "  name-buf 38 @name nbuftype
+                    ~offset decr scr-down 0 redraw-row
                   0 get-marker
                  then
                 then ;
@@ -1022,13 +762,11 @@ end-code
                 first-file? @ ?exit
                 ~offset @ curr-name @ + 1+ n-files @ n-catalogs @ + =
                 if exit then
-                curr-name @ 56 =
-                if name-buf 56 @name 56 n>at at nbuftype
+                curr-name @ #fpage 1- =
+                if name-buf #fpage 1- @name #fpage 1- n>at at nbuftype
                     ~offset incr scr-up
-                    name-buf 18 @name 18 n>at at nbuftype
-                    ."  │ "  name-buf 37 @name nbuftype
-                    ."  │ "
-                  56 get-marker
+                    #frows 1- redraw-row
+                  #fpage 1- get-marker
                 else
                 curr-name @ 1+ get-marker
                 then ;
@@ -1038,13 +776,13 @@ comment:
 \ дополнительные функции
 
 : in-page-up    ( -- )
-                curr-name @ 19 / 19 * get-marker ;
+                curr-name @ #frows / #frows * get-marker ;
 
 : in-page-down  ( -- )
                 first-file? @ ?exit
-                19 curr-name @ 19 mod - curr-name @ + 1-
+                #frows curr-name @ #frows mod - curr-name @ + 1-
                 n-files @ n-catalogs @ + 1- min
-                56 min get-marker ;
+                #fpage 1- min get-marker ;
 comment;
 
 : marker-home   ( -- )
@@ -1054,27 +792,27 @@ comment;
 
 : marker-end    ( -- )
                 first-file? @ ?exit
-                n-files @ n-catalogs @ + 57 over <
-                if 57 - ~offset ! fill-screen 57 then
+                n-files @ n-catalogs @ + #fpage over <
+                if #fpage - ~offset ! fill-screen #fpage then
                 1- get-marker ;
 
 : page-up       ( -- )
                 ~offset @
                 if
-                 ~offset @ 57 - 0<
+                 ~offset @ #fpage - 0<
                   if ~offset 0!
-                  else -57 ~offset +!
+                  else #fpage negate ~offset +!
                   then fill-screen
                 else
                 then 0 get-marker ;
 
 : page-down     ( -- )
                 first-file? @ ?exit
-                n-files @ n-catalogs @ + 57 over <
-                if 57 ~offset +! ~offset @ 57 + over >
-                  if 57 - ~offset !
+                n-files @ n-catalogs @ + #fpage over <
+                if #fpage ~offset +! ~offset @ #fpage + over >
+                  if #fpage - ~offset !
                   else drop
-                  then fill-screen 57
+                  then fill-screen #fpage
                 then
                 1- get-marker ;
 
@@ -1126,17 +864,17 @@ create mousefuncarray
 : funcmouse     ( x,y -- )
                 dup 4 20 between
                 if
-                  4 - 2* mousefuncarray + @ execute drop
+                  4 - cells mousefuncarray + @ execute drop
                 else
                   2drop
                 then ;
 
 : getmouse     ( x,y -- )
-                dup 3 21 between
+                dup 3 list-bottom between
                 if 2dup join x&y.mouse @ over x&y.mouse ! =
                    mousebutton 1 = and
                   if file-select 2drop x&y.mouse 0!
-                  else 3 - swap 2 + 19 / 19 * + get-marker
+                  else 3 - swap 2 - 17 / #frows * + get-marker
                   then
                 else 2drop
                 then ;
@@ -1144,14 +882,20 @@ create mousefuncarray
 : mouse-normir  ( -- )
                 mousexy hide.ms dup 1 =
                 if 2drop path-select exit then
-                over 52 >
+                over panel-x >
                 if funcmouse
                 else getmouse
                 then show.ms ;
 
+defer nwfl-resize       \ F-PC native port: lay the window out again
+
 : key-select    ( -- )
+                ?resized if nwfl-resize exit then  \ F-PC native port: KEY?
+                                \ may not report K-RESIZE, so check the size
                 mousebutton if mouse-normir exit then
                 key             \ 02/03/92 20:57 tjz changed from KEY-F
+                dup k-resize =  \ F-PC native port: the terminal was resized
+                if drop nwfl-resize exit then
                 dup 127 >       \ 02/03/92 20:57 tjz changed from SPLIT
                 if
                   $7F and functable execute
@@ -1191,61 +935,81 @@ create mousefuncarray
                 if 3 old-path c! ascii \ old-path 3 + c! then
                 old-path dup count>z set-path drop ;
 
-: string-screen ( x,y -- )
-                at ." │" 16 spaces ." │" 16 spaces
-                ." │" 16 spaces ." │ " get-attrib10 ;
+: string-screen ( x,y -- )        \ F-PC native port: #FCOLS columns
+                at #fcols 0 ?do ." │" 16 spaces loop
+                ." │ " get-attrib10 ;
 
 : ?stringscreen ( x,y -- )
                 string-screen curr-color @ 1 = if 7 >fg then ;
 
+: ?help         ( y -- f )      \ F-PC native port: is help line y inside?
+                list-bottom > 0= ;
+
 : draw-screen   ( -- )
-         >norm 1  0 at 77 ascii ═ draw-line ." ╒" 78 0 at ." ╕"
+         >norm 1  0 at right-x 1- ascii ═ draw-line ." ╒" right-x 0 at ." ╕"
          1  1 at ." │" get-attrib10 ."  Current path:"
-         62 spaces >norm ." │"
-         1  2 at 77 ascii ═ draw-line ." ╞" 18 2 at ." ╤"
-         35 2 at ." ╤" 52 2 at ." ╤" 78 2 at ." │"
-         1  3 ?stringscreen ." ▀▀▀▀▀▀" >norm ."     ────  ────   │"
-         1  4 string-screen ."      " >norm ."   marker up       │"
-         1  5 string-screen ."      " >norm ."   marker down     │"
-         1  6 string-screen ."      " >norm ."   marker right    │"
-         1  7 string-screen ."      " >norm ."   marker end      │"
-         1  8 string-screen ."  Home " >norm ."   marker to home  │"
-         1  9 string-screen ."  End  " >norm ."   marker to end   │"
-         1 10 string-screen  "   ^\  " type >norm ."   set root        │"
-         1 11 string-screen ."       " >norm ."     ────  ────   │"
-         1 12 string-screen ."   F2  " >norm ."   page up         │"
-         1 13 string-screen ."   F3  " >norm ."   change mask     │"
-         1 14 string-screen ."   F4  " >norm ."   page down       │"
-         1 15 string-screen ."   F5  " >norm ."   select path     │"
-         1 16 string-screen ."   F6  " >norm ."   rename          │"
-         1 17 string-screen ."   F8  " >norm ."   delete          │"
-         1 18 string-screen ."   F9  " >norm ."   save path       │"
-         1 19 string-screen ."  Esc  " >norm ."   cancel          │"
-         1 20 string-screen ."  Enter" >norm ."   select          │"
-         1 21 ?stringscreen ." ▄▄▄▄▄▄" >norm ."     ────  ────   │"
-         1 22 at 56 ascii ─ draw-line ." ├"
-         18 22 at ." ┴" 35 22 at ." ┼" 52 22 at ." ┤"
+         right-x 16 - spaces >norm ." │"
+         1  2 at right-x 1- ascii ═ draw-line ." ╞"
+         #fcols 1+ 1 ?do i 17 * 1+ 2 at ." ╤" loop right-x 2 at ." │"
+         3 ?help if 1 3 ?stringscreen ." ▀▀▀▀▀▀" >norm ."     ────  ────   │" then
+         4 ?help if 1 4 string-screen ."      " >norm ."   marker up       │" then
+         5 ?help if 1 5 string-screen ."      " >norm ."   marker down     │" then
+         6 ?help if 1 6 string-screen ."      " >norm ."   marker right    │" then
+         7 ?help if 1 7 string-screen ."      " >norm ."   marker end      │" then
+         8 ?help if 1 8 string-screen ."  Home " >norm ."   marker to home  │" then
+         9 ?help if 1 9 string-screen ."  End  " >norm ."   marker to end   │" then
+         10 ?help if 1 10 string-screen  "   ^\  " type >norm ."   set root        │" then
+         11 ?help if 1 11 string-screen ."       " >norm ."     ────  ────   │" then
+         12 ?help if 1 12 string-screen ."   F2  " >norm ."   page up         │" then
+         13 ?help if 1 13 string-screen ."   F3  " >norm ."   change mask     │" then
+         14 ?help if 1 14 string-screen ."   F4  " >norm ."   page down       │" then
+         15 ?help if 1 15 string-screen ."   F5  " >norm ."   select path     │" then
+         16 ?help if 1 16 string-screen ."   F6  " >norm ."   rename          │" then
+         17 ?help if 1 17 string-screen ."   F8  " >norm ."   delete          │" then
+         18 ?help if 1 18 string-screen ."   F9  " >norm ."   save path       │" then
+         19 ?help if 1 19 string-screen ."  Esc  " >norm ."   cancel          │" then
+         20 ?help if 1 20 string-screen ."  Enter" >norm ."   select          │" then
+         21 ?help if 1 21 ?stringscreen ." ▄▄▄▄▄▄" >norm ."     ────  ────   │" then
+         list-bottom 1+ 22 max 22 ?do           \ more lines than the help
+                1 i string-screen >norm
+                right-x panel-x - 2- spaces ." │"
+         loop
+         1 sep-y at panel-x 4 + ascii ─ draw-line ." ├"
+         #fcols 1 ?do i 17 * 1+ sep-y at
+                i 2 = i 3 = or if ." ┼" else ." ┴" then
+         loop panel-x sep-y at ." ┤"
          ."   Other keys next file   " >norm ." │"
-         1 23 at ." │" 33 spaces ." │" get-attrib10 ."  Time           "
-         >norm ." │" ."   starting with Letter.  "
-         >norm ." │" 1 24 at 77 ascii ═ draw-line ." ╘"
-         35 24 at ." ╧" 52 24 at ." ╧" 78 24 at ." ╛" ;
+         1 stat-y at ." │" 33 spaces ." │" get-attrib10 ."  Time           "
+         >norm ." │" panel-x 52 > if panel-x 53 - spaces ." │" then
+         ."   starting with Letter.  "
+         >norm ." │" 1 bot-y at right-x 1- ascii ═ draw-line ." ╘"
+         35 bot-y at ." ╧" 52 bot-y at ." ╧"
+         panel-x 52 > if panel-x bot-y at ." ╧" then
+         right-x bot-y at ." ╛" ;
+
+: (nwfl-resize) ( -- )  \ F-PC native port: K-RESIZE, lay the window out again
+                nwfl-geometry >norm dark draw-screen .at-path
+                ~offset @ curr-name @ +         \ keep the current name
+                dup #fpage / #fpage * dup ~offset ! -
+                fill-screen get-marker ;
+
+' (nwfl-resize) is nwfl-resize
 
         also hidden also
 
 : save-attrib   ( -- )
-                [ ' >norm     >is ] literal @ [ attribs 0 + ] literal !
-                [ ' >rev      >is ] literal @ [ attribs 2 + ] literal !
-                [ ' >edattrib >is ] literal @ [ attribs 4 + ] literal !
-                                     attrib @ [ attribs 6 + ] literal !
-                                     base   @ [ attribs 8 + ] literal ! ;
+                [ ' >norm     >is ] literal @ [ attribs 0 cells + ] literal !
+                [ ' >rev      >is ] literal @ [ attribs 1 cells + ] literal !
+                [ ' >edattrib >is ] literal @ [ attribs 2 cells + ] literal !
+                                     attrib @ [ attribs 3 cells + ] literal !
+                                     base   @ [ attribs 4 cells + ] literal ! ;
 
 : rest-attrib   ( -- )
-                [ attribs 0 + ] literal @ is >norm
-                [ attribs 2 + ] literal @ is >rev
-                [ attribs 4 + ] literal @ is >edattrib
-                [ attribs 6 + ] literal @ attrib !
-                [ attribs 8 + ] literal @ base ! ;
+                [ attribs 0 cells + ] literal @ is >norm
+                [ attribs 1 cells + ] literal @ is >rev
+                [ attribs 2 cells + ] literal @ is >edattrib
+                [ attribs 3 cells + ] literal @ attrib !
+                [ attribs 4 cells + ] literal @ base ! ;
 
 : color0        ( -- )
                 blue >bg green >fg ;
@@ -1342,6 +1106,7 @@ create mousefuncarray
                 save> base decimal
                 save-attrib get-attrib >norm cursor-off
                 nosetcur @ true nosetcur !
+                nwfl-geometry           \ F-PC native port: fit the screen
                 draw-screen init-getfile 0=
                  if .at-path ?end-select 0!
                     cursor-off marker-home

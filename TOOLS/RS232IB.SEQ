@@ -1,4 +1,12 @@
 \\ RS232IB.SEQ     A BUFFERED CHIP LEVEL RS-232 driver for 8250 chip
+F-PC native port: the VM has no I/O ports and no interrupts (PC@ reads $FF,
+PC! does nothing, INT 21h 25h/35h are ignored). The CODE words are high
+level Forth that talks to the 8250 through PC@ and PC!, so the logic is
+kept, but nothing reaches a serial line: COM-OUT discards characters, and
+since the receive interrupt never fires the buffer stays empty (COM-CNT is
+0, so TERMINAL and TOSERIAL never receive anything). The word names and
+stack effects are kept (except SER_TYPEL, which takes a1 n1). A host serial
+device would need a built-in; see docs/port-notes/tools-T4.md.
 
   This code supports both RS232 ports, but ONLY ONE AT A TIME !!  You
 can select either COM1, or COM2 for serial operation. Input is buffered
@@ -43,16 +51,18 @@ decimal
 \ \
 \ \ #ENDIF
 
-\f code int3       ( -- )
-\f                 int 3
-\f                 next            end-code
+\F : int3       ( -- )          \ F-PC native port: was INT 3, a breakpoint
+\F                ;
 
 \ ***************************************************************************
 
 variable rs232_base     \ holds physical address where rs232 boards reside.
                         \ $40:00 is where first  board resides,
                         \ $40:02 is where second board resides if present.
-$40 rs232_base !
+\ F-PC native port: there is no BIOS data area, so RS232_BASE points at a
+\ table holding the standard COM1: and COM2: port addresses instead.
+create rs232_ports  $3F8 , $2F8 ,
+rs232_ports rs232_base !
 
 $20 constant EOI        \ End Of Interrupt
 $20 constant ictla      \ 8259 interrupt controller #1
@@ -89,199 +99,68 @@ variable interrupts     \ counter for the nubmer of interrupts received
 \ accuracy will suffer at non0standard baud rates above 2400 baud.
 
 
-code com-init   ( parity+stops+bits  baud_val com_port --- )
-\T              CLEAR_LABELS
-\T              SAVE_BX
-\T              xchg si, sp
-                pop bx                          \ comm port # 0 or 1
-                shl bx, # 1                     \ convert to word offset
-                push ds                         \ preserve DS
-                mov ds, rs232_base              \ setup ds to get board base
-                mov dx, 0 [bx]                  \ get port address of board
-                                                \ from $40:$00 or $40:$02.
-                                                \ DX = BASE + 0
-                pop ds                          \ restore DS
-                mov rs232_port dx               \ save port # in value
-                add dx, # 3                     \ DX = BASE + 3
-                mov al, # $80                   \ [DLAB]
-                out dx, al
-                sub dx, # 2                     \ DX = BASE + 1
-                pop ax                          \ baud timer value
-                xchg al, ah                     \ get high part into AL
-                out dx, al                      \ set high part
-                dec dx                          \ DX = BASE + 0
-                jmp 0 $                         \ wait a few clock cycles
-           0 $: xchg al, ah                     \ low part into AL
-                out dx, al                      \ set low part
-                add dx, # 3                     \ adj to control reg
-                                                \ DX = BASE + 3
-                pop ax                          \ pop parity, stops, & bits
-                out dx, al                      \ set parity, stops, & bits
-                jmp  1 $                        \ wait some more clocks
-           1 $: sub dx, # 2                     \ DX = BASE + 1
-\ interrupt enable stuff follows...
-                in al, dx                       \ get current intterupt stat
-                or al, # $01                    \ include DAV interrupt bit
-                out dx, al                      \ interrupt enables off
-                add dx, # $03                   \ DX = BASE + 4
-                in al, dx                       \ PC bus interrupt control
-                or al, # $08                    \ enable chip to bus
-                out dx, al                      \ put back into register
+\ F-PC native port: the CODE words below are high level Forth. The port
+\ reads and writes go through PC@ and PC!, which do nothing in the VM; the
+\ CLI/STI and the 8259 jump-for-delay instructions are dropped.
 
-                in al, # ictla 1+               \ get int mask reg from 8259
-                jmp 3 $
-           3 $: mov ah, imask                   \ mask bit in 8259
-                                                \ $10 = IRQ4, $08 = IRQ3
-                not ah                          \ compliment for AND to follow
-                and al, ah                      \ clear com port INT bit
-                out # ictla 1+ al               \ restore new mask
+: com-init   ( parity+stops+bits  baud_val com_port --- )
+                cells rs232_base @ + @          \ get port address of board
+                                                \ F-PC native port: no BIOS
+                                                \ data area, see below
+                dup rs232_port !                \ save port # in value
+                $80 over 3 + pc!                \ [DLAB]
+                over flip $FF and over 1+ pc!   \ set high part of baud
+                swap $FF and over pc!           \ set low part
+                tuck 3 + pc!                    \ set parity, stops, & bits
+                dup 1+ pc@ $01 or over 1+ pc!   \ include DAV interrupt bit
+                dup 4 + pc@ $08 or over 4 + pc! \ enable chip to bus
+                ictla 1+ pc@ imask @ $FF xor and \ clear com port INT bit
+                ictla 1+ pc!                    \ in the 8259 mask
+                0 intcnt !                      \ zero out interrupt counter
+                dup pc@ drop pc@ drop ;         \ read port to clear it, twice
 
-                mov intcnt # 0 word             \ zero out interrupt counter
-                mov dx, rs232_port              \ get the comport we're using
-                in al, dx                       \ read port to clear it
-                jmp 2 $
-           2 $: in al, dx                       \ read port to clear it again
-\F              next
-\T              XCHG SI, SP
-\T              LOAD_BX
-\T              RET
-                end-code
+: rs232_intoff ( -- )                   \ interrupt clear stuff follows...
+                ictla 1+ pc@ imask @ or         \ SET com port MASK INT bits
+                ictla 1+ pc!
+                comEOI @ ictla pc!              \ Specific EOI for interrupt
+                rs232_port @ 1+ dup pc@ $FE and swap pc!   \ DAV int off
+                rs232_port @ 4 + dup pc@ $F7 and swap pc!  \ bus enable off
+                ;
 
-code rs232_intoff ( -- )                \ interrupt clear stuff follows...
-\T              CLEAR_LABELS
-                \ about to SET port interrupt mask bits to disable interrupts
-                cli
-                in al, # ictla 1+               \ get int mask reg from 8259
-                jmp 0 $
-           0 $: or al, imask                    \ SET com port MASK INT bits
-                                                \ $10 = IRQ4, $08 = IRQ3
-                out # ictla 1+ al               \ restore new mask
-                mov al, comEOI          \ Specific EOI for interrupt 4
-                                        \ INT4=$64, INT3=$63
-                out # ictla al
-                sti
-                mov dx, rs232_port
-                inc dx                          \ DX = BASE + 1
-                in al, dx                       \ get current intterupt stat
-                mov ah, # $01                   \ DAV interrupt bit
-                not ah                          \ compliment for and
-                and al, ah                      \ clear DAV interrupt bit
-                out dx, al                      \ interrupt enables off
-                add dx, # $03                   \ DX = BASE + 4
-                in al, dx                       \ PC bus interrupt control
-                mov ah, # $08                   \ chip bus enable bit
-                not ah                          \ we want to clear it
-                and al, ah                      \ clear bus enable bit
-                out dx, al                      \ put back into register
-\F              next
-\T              RET
-                end-code
+: com-out    ( c1 --- )
+                $FFFF                           \ timeout value
+                begin   1- dup
+                        if      rs232_port @ 5 + pc@ $20 and 0=
+                        else    false           \ leave if timed out
+                        then                    \ transmit register empty?
+                while   repeat  drop
+                rs232_port @ pc! ;              \ and then send the byte
 
+: com-in     ( --- c1 )
+                $FFFF                           \ time out value
+                begin   1- dup
+                        if      rs232_port @ 5 + pc@ $01 and 0=
+                        else    false           \ leave if timeout
+                        then                    \ receive buffer full?
+                while   repeat  drop
+                rs232_port @ pc@ $FF and ;      \ get the byte
 
-code com-out    ( c1 --- )
-\T              CLEAR_LABELS
-                mov dx, rs232_port              \ get the comport we're using
-                mov di, dx                      \ copy into DI
-                add dx, # 5
-                mov cx, # $FFFF                 \ timeout value
-           2 $: dec cx
-                j0= 3 $                         \ leave if timed out
-                in al, dx                       \ get status port
-                and al, # $20
-                cmp al, # $20                   \ transmit register empty
-                j<> 2 $
-           3 $: mov dx, di                      \ back to data port
-\F              pop ax                          \ get actual data to send
-\T              mov ax, bx
-                out dx, al                      \ and then send the byte
-\F              next
-\T              LOAD_BX
-\T              RET
-                end-code
+: com-stat   ( --- c1 )
+                rs232_port @ 5 + pc@ $FF and ;  \ get status port
 
-code com-in     ( --- c1 )
-\T              CLEAR_LABELS
-\T              SAVE_BX
-                mov dx, rs232_port              \ get the comport we're using
-                mov di, dx                      \ copy into DI
-                add dx, # 5
-                mov cx, # $FFFF                 \ time out value
-           4 $: dec cx                          \ start time out
-                j0= 5 $                         \ leave if timeout
-                in al, dx                       \ get status port
-                and al, # $01
-                cmp al, # $01                   \ receive buffer full?
-                j<> 4 $
-           5 $: mov dx, di                      \ back to data port
-                in al, dx                       \ get the byte
-                sub ah, ah                      \ clear high byte
-\F              1push
-\T              MOV BX, AX
-\T              RET
-                end-code
-
-code com-stat   ( --- c1 )
-\T              SAVE_BX
-                mov dx, rs232_port              \ get the comport we're using
-                mov di, dx                      \ copy into DI
-                add dx, # 5
-                in al, dx                       \ get status port
-                sub ah, ah                      \ clear high byte
-\F              1push
-\T              MOV BX, AX
-\T              RET
-                end-code
-
-\T HERE-T CONSTANT COM_INT
-
-\T CODE %%com_int  ( --- )         \ COM port interrupt handler
-\T              CLEAR_LABELS
-\F LABEL com_int
-                push es         \ save all of the registers
-                push ds
-                push dx
-                push si
-                push di
-                push cx
-                push bx
-                push ax
-                mov ax, cs                      \ setup DS: = CS:
-\T              add ax, cs: $103 \ address contains offset to base of DS: seg
-                mov ds, ax
-                inc interrupts word
-\ test for a waiting char, and get it into AL
-                mov dx, rs232_port              \ get the comport we're using
-                mov di, dx                      \ copy into DI
-           2 $: add dx, # 5
-                in al, dx                       \ get status port
-                and al, # $01
-                cmp al, # $01                   \ receive buffer full?
-                j<> 1 $                         \ ignore if not valid
-                mov dx, di                      \ back to data port
-                in al, dx                       \ get the byte
-\ save away the character and bump buffer counter
-                mov bl, bufin                   \ get buffer input pointer
-                cmp bl, bufout                  \ is buffer full?
-                j=  1 $                         \ if full discard char
-                sub bh, bh                      \ clear high part of BX
-                add bx, # combuf                \ add base of COMBUF
-                mov 0 [bx], al                  \ save the character
-                inc bufin byte                  \ bump count
-                sub ax, ax
-                j 2 $                           \ may need to get additional
-\ restore everything and return from interrupt
-           1 $: mov al, # EOI
-                out # ictla al
-                inc intcnt word                 \ bump interrupt counter
-                pop ax          \ restore all of the registers
-                pop bx
-                pop cx
-                pop di
-                pop si
-                pop dx
-                pop ds
-                pop es
-                iret            end-code
+\ F-PC native port: this was the interrupt handler (an 8086 LABEL, IRET).
+\ It is kept as a Forth word that does the same work, but nothing calls it:
+\ the VM has no interrupts.
+: com_int       ( --- )                 \ COM port interrupt handler
+                1 interrupts +!
+                begin   rs232_port @ 5 + pc@ $01 and   \ receive buffer full?
+                        bufin c@ bufout c@ <> and      \ and buffer not full
+                while   rs232_port @ pc@               \ get the byte
+                        combuf bufin c@ + c!           \ save the character
+                        bufin c@ 1+ $FF and bufin c!   \ bump count
+                repeat
+                EOI ictla pc!
+                1 intcnt +! ;                          \ bump interrupt counter
 
 variable com1_int#      $0C com1_int# !
 variable com2_int#      $0B com2_int# !
@@ -290,29 +169,15 @@ variable com2_int#      $0B com2_int# !
 2variable comsave1              \ a place to save the old interrupt vector 4
 2variable comsave2              \ a place to save the old interrupt vector 3
 
-code rest_com1: ( --- )                 \ restores COM1: interrupt vector
-                push ds
-                mov dx, comsave1
-                mov ax, # $2500
-                add ax, com1_int#
-                mov ds, comsave1 2+
-                int $21
-                pop ds
-\F              next
-\T              RET
-                end-code
+\ F-PC native port: there are no interrupt vectors. SAVE_COMn: records a
+\ dummy "saved" vector so ?REST_COMn: behaves as before; SET_COMn: and
+\ REST_COMn: do nothing.
 
-code rest_com2: ( --- )                 \ restores COM2: interrupt vector
-                push ds
-                mov dx, comsave2
-                mov ax, # $2500
-                add ax, com2_int#
-                mov ds, comsave2 2+
-                int $21
-                pop ds
-\F              next
-\T              RET
-                end-code
+: rest_com1: ( --- )                    \ restores COM1: interrupt vector
+                ;
+
+: rest_com2: ( --- )                    \ restores COM2: interrupt vector
+                ;
 
 : ?rest_com1:   ( --- )
 \F              defers byefunc
@@ -334,63 +199,17 @@ code rest_com2: ( --- )                 \ restores COM2: interrupt vector
 
 \F ' ?rest_com2: is byefunc
 
-code set_com1:  ( --- )                 \ Set the COM1: interrupt vector
-                push ds
-                push es
-                mov dx, # com_int
-                mov ax, # $2500
-                add ax, com1_int#       \ COM1: interrupt vector = 04
-                mov cx, cs
-                mov ds, cx
-                int $21
-                pop es
-                pop ds
-\F              next
-\T              RET
-                end-code
+: set_com1:  ( --- )                    \ Set the COM1: interrupt vector
+                ;
 
-code set_com2:  ( --- )                 \ Set the COM2: interrupt vector
-                push ds
-                push es
-                mov dx, # com_int
-                mov ax, # $2500
-                add ax, com2_int#       \ COM2: interrupt vector = 03
-                mov cx, cs
-                mov ds, cx
-                int $21
-                pop es
-                pop ds
-\F              next
-\T              RET
-                end-code
+: set_com2:  ( --- )                    \ Set the COM2: interrupt vector
+                ;
 
-code save_com1: ( --- )                 \ Save the COM1: interrupt vector IRQ4
-\T              PUSH BX
-                push es
-                mov ax, # $3500
-                add ax, com1_int#       \ get the interrupt vector for com1:
-                int $21
-                mov comsave1 bx
-                mov comsave1 2+ es       \ save old vector
-                pop es
-\F              next
-\T              POP BX
-\T              RET
-                end-code
+: save_com1: ( --- )                    \ Save the COM1: interrupt vector IRQ4
+                -1 -1 comsave1 2! ;
 
-code save_com2: ( --- )                 \ Save the COM2: interrupt vector IRQ3
-\T              PUSH BX
-                push es
-                mov ax, # $3500
-                add ax, com2_int#       \ get the interrupt vector for com2:
-                int $21
-                mov comsave2 bx
-                mov comsave2 2+ es       \ save old vector
-                pop es
-\F              next
-\T              POP BX
-\T              RET
-                end-code
+: save_com2: ( --- )                    \ Save the COM2: interrupt vector IRQ3
+                -1 -1 comsave2 2! ;
 
 : com-cnt       ( -- count )  \  get how many bytes are in the buffer
                 bufin c@  bufout c@ -  1-  $ff and  ;
@@ -469,11 +288,11 @@ nopar 1stop 8bit + + value parity&bits \ default no parity, 8 bit, 2 stops
 
 \T \S           STOP HERE IF TARGET COMPILING
 
-: ser_typel     ( seg a1 n1 -- )
+: ser_typel     ( a1 n1 -- )        \ F-PC native port: no segment
                 dup>r
                 bounds
-                ?do     dup i c@L com-out
-                loop    drop r> #out +! ;
+                ?do     i c@ com-out
+                loop    r> #out +! ;
 
 : ser_out       ( c1 -- )
                 com-out #out incr ;
@@ -488,7 +307,7 @@ nopar 1stop 8bit + + value parity&bits \ default no parity, 8 bit, 2 stops
                 statoff
                 9600 baud
                 com1:
-                ['] ser_typel is typel
+                ['] ser_typel is type   \ F-PC native port: TYPEL is gone
                 ['] ser_out   is emit
                 ['] com-cnt   is key?
                 ['] ser_key   is key ;

@@ -1,4 +1,6 @@
 \ BLKTOSEQ.SEQ  Conversion program, moves .BLK to .SEQ. by Tom Zimmer
+\ F-PC native port: unchanged; HREAD, MOVEPOINTER and ENDFILE work on host
+\ files. Lines are written with CRLF, as before.
 
 handle cnvhcb                   \ Input file to convert
 handle outhcb                   \ output file we are converting to.

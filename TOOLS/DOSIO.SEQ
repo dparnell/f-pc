@@ -1,4 +1,5 @@
 \ DOSIO.SEQ     DOS keyboard drivers                    by Tom Zimmer
+\ F-PC native port
 
 comment:
 
@@ -20,6 +21,11 @@ terminate when it sees the Control-Z at the end of the file.
 same time pass in Input_file.  Input_file will then be ignored.
 
   Load this file, and save the resulting system using FSAVE.
+
+  F-PC native port: unchanged. BDOS function 7 reads the host's standard
+input (fpc --batch, or a terminal), and the end of the input, like a
+Control-Z, leaves F-PC; function 0 (DOSBYE) ends the program. FSAVE writes
+a .IMG image, which you run with "fpc -i NAME.IMG <Input_file".
 
 comment;
 

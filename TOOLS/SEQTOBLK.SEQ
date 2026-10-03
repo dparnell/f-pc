@@ -1,4 +1,5 @@
 \ SEQTOBLK.SEQ  Convert from Sequential file to Blocks. by Tom Zimmer
+\ F-PC native port
 
 
 : ?writerror    ( f1 --- )
@@ -6,11 +7,19 @@
                         seqhandle+ hclose drop
                 then    ;
 
+: -crlf        ( a1 n1 --- a1 n2 )     \ F-PC native port: strip the line
+                begin   dup                     \ end; host files may end
+                        if      2dup + 1- c@ dup 13 = swap 10 = or
+                        else    false           \ lines with LF only, so
+                        then                    \ don't just drop 2 chars
+                while   1-
+                repeat  ;
+
 : transblk      ( --- F1 )
                 ascii \ pad c!
                 pad 64 seqhandle+ hwrite 64 - ?writerror
                 14 0
-                do      lineread dup count 2- 64 min 0 max + 64 blank
+                do      lineread dup count -crlf 64 min + 64 blank
                         1+ 64 seqhandle+ hwrite 64 - ?writerror
                 loop    pad 1+ 64 seqhandle+ hwrite 64 - ?writerror
                         ." ." outbuf c@ 0= ;

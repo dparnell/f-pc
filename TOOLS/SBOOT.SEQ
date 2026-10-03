@@ -1,4 +1,5 @@
 \ SBOOT.SEQ             Sample User BOOT                by Tom Zimmer
+\ F-PC native port
 
 comment:
 
@@ -69,6 +70,13 @@ can replace the functions in .HELLO and/or .CURFILE although a user
 application need not return from the chained DEFAULT, and as such .HELLO
 will never get performed.  Here then without further delay is MYDEFAULT.
 
+  F-PC native port: COLD no longer sets up segments or tests the video
+mode (SETSEG and VMODE.SET are host work now), but the INITSTUFF, BOOT
+and DEFAULT chain is the same, so MYDEFAULT below works unchanged. FSAVE
+(SAVE-EXE) now writes a VM system image, MYBOOT.IMG, which you start
+with "fpc -i MYBOOT.IMG". TURNKEY saves an image without heads and
+leaves F-PC.
+
 comment;
 
 : mydefault     ( --- )
@@ -88,7 +96,8 @@ comment;
 
 ' mydefault is default
 
-\ Now save the system back to disk with the name MYBOOT.EXE.
+\ Now save the system back to disk with the name MYBOOT.IMG.
+\ F-PC native port: SAVE-EXE writes a .IMG image; the original wrote .EXE.
 
-FSAVE MYBOOT.EXE
+FSAVE MYBOOT
 

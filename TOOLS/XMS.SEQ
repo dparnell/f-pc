@@ -1,4 +1,8 @@
 \\ XMS.SEQ      Extended memory manager interface.              clv 1993
+F-PC native port: there is no XMS driver (HIMEM.SYS) in the VM, and memory
+is flat anyway (use ALLOCATE for large buffers). XMInit sets XMAvail false,
+and every call through CallXM aborts with "XMM not installed", just as the
+original did on a machine without an XMM. The word names are kept.
 
 ÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍ
 
@@ -62,7 +66,7 @@ clv 12/01/92 12:31:56.51 : commented out PUSH/POP FS from CallXM & (XMabort)
 \ NEEDS DASM386.SEQ       \ testing purposes
 
 \ PREFIX ASM.386          \ for 80386-Processor
-PREFIX                \ for 80286-Processor
+\ PREFIX              \ for 80286-Processor   F-PC native port: no assembler
 
 }
 
@@ -109,50 +113,14 @@ VARIABLE xSI
 \ und DX zurckgesichert.
 \ ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
 
-CODE CallXM ( 8b -- )  \ XMM-Handler aufrufen
-       POP  AX             \ Funktionscode nach AH,
-       XCHG AH, AL
-\      PUSH FS             \ for 80386 for @G necessary ??. Comment for 80286
-       PUSH ES
-       PUSH SI
-       PUSH DS
-       MOV  BX, xBX        \ sowie die anderen Register
-       MOV  DX, xDX        \ vorbereiten
-       MOV  SI, xSI        \
-       MOV  CX, DS         \ DS retten !
-       MOV  ES, CX         \ nach ES, da noch ben”tigt.
-\      PUSH CX             \ Den Inhalt von DS retten
-       MOV  DS, xDS        \ DS neu laden
-       ES:
-       CALL FAR [] XMAddr \ XMM aufrufen
-       POP  DS             \ DS als erstes wiederher-
-       POP  SI
-       POP  ES
-\      POP  FS             \ for 80386 for @G necessary ??. Comment for 80286
-       MOV  xAX AX        \ stellen und die Werte in
-       MOV  xBX BX        \ den anderen Registern
-       MOV  xDX DX        \ Pascal zur Verf. stellen
-       NEXT END-CODE
-
-\ ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
-\ Falls kein XMM installiert ist, laufen alle Versuche,
-\ XMM-Routinen auszufhren, in dieser Prozedur auf. Da in
-\ CallXMM register gerettet wurden, muessen sie hier
-\ wiederhergestellt werden.
-\ ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
-
 : XMAbort  true abort" XMM not installed" ;
 
-Label (xmAbort)
-        POP  AX             \ remove ret-addr
-        POP  AX
-        POP  DS
-        POP  SI
-        POP  ES
-\       POP  FS             \ for 80386 for @G necessary ??. Comment for 80286
-        MOV AX, # ' XMAbort
-        JMP AX
-        END-CODE
+\ F-PC native port: CallXM called the XMM entry point found by XMInit
+\ (INT 2Fh AX=4310h) with the registers from xBX xDX xSI xDS, and left AX
+\ BX DX in xAX xBX xDX. With no XMM, XMAddr pointed at (xmAbort), which
+\ jumped to XMAbort; that is all that is left.
+: CallXM ( 8b -- )  \ XMM-Handler aufrufen
+        DROP XMAbort ;
 
 }
 XMInit  ( -- )
@@ -161,36 +129,10 @@ XMInit  ( -- )
         Is installed into initstuff to be executed each
         time you boot your system.
 {
-Code XMInit     \ initialize XMS-Manager-Interface
-\       PUSH FS             \ for 80386 for @G necessary ??. Comment for 80286
-        MOV AX, CS
-        MOV XMAddr 2+  AX
-        MOV AX, # (xmAbort)
-        MOV XMADDR     AX
-        MOV AX, # $4300  \ Per Multiplexintr. die
-        INT $2F        \ Existenz des XMM feststel-
-        CMP AL, # $80    \ len.
-        0= IF
-                MOV AX, # $4310  \ Adresse des Dispatchers
-                PUSH ES
-                INT $2F        \ ermitteln
-                MOV XMAddr     BX
-                MOV XMAddr  2+ ES
-                POP ES
-        THEN
-        MOV AX, # $ffff
-        MOV ' XMAvail >BODY  AX
-        MOV AX, CS
-        CMP XMAddr  2+  AX
-        0= IF
-                MOV AX, # (xmAbort)
-                CMP XMAddr      AX
-                0=  IF  INC WORD ' XMAvail >BODY  THEN
-        THEN
-        MOV AX, # 0
-        MOV ' XMResult >BODY AX
-\       POP  FS             \ for 80386 for @G necessary ??. Comment for 80286
-        NEXT END-CODE
+: XMInit  ( -- )   \ initialize XMS-Manager-Interface
+        \ F-PC native port: INT 2Fh AX=4300h never finds an XMM.
+        FALSE =: XMAvail
+        0 =: XMResult ;
 
 : %XMInit defers initstuff XMinit ;
 
@@ -427,7 +369,7 @@ XMMove          ( MStrucaddr -- )
     xSI !  xDS !   $0b CallXM  ErrChk ;
 : XMMove  ( MStrucaddr -- )               \ Format von MStruc ???
  \   ?CS: LXMMove ;                     \ wohl noch nie probiert???      \ mis94feb13
-        ?CS: SWAP LXMMove ;
+        0 SWAP LXMMove ;        \ F-PC native port: no segments
 
 \ ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
 \ Erweiterungen die die Benutzung von ùXMMove vereinfachen               \ mis94feb13
@@ -452,13 +394,15 @@ CREATE xmov-parm   $10 ALLOT   xmov-parm $10 ERASE
 {
 
 : =XMOVLEN ( d -- )     \ store xms-move-len d into parameter block
-        xmov-parm 2+ !  xmov-parm ! ;
+        xmov-parm 2+ W!  xmov-parm W! ;    \ F-PC native port: 16 bit halves
 
 : =XMOVSRC ( d n -- )   \ store source spec into xmov-parm parameter block
-        sp@ xmov-parm 4 + 6 cmove 3drop ;
+        \ F-PC native port: was "sp@ xmov-parm 4 + 6 cmove 3drop", a copy of
+        \ three 16 bit stack cells: n, then the top cell of d, then the other
+        xmov-parm 4 + W!  xmov-parm 6 + W!  xmov-parm 8 + W! ;
 
 : =XMOVDEST ( d n -- )  \ store destination spec into xmov-parm
-        sp@ xmov-parm 10 + 6 cmove 3drop ;
+        xmov-parm 10 + W!  xmov-parm 12 + W!  xmov-parm 14 + W! ;
 
 : REAL-ADDR ( seg ofs -- d n )
         \ convert real mode long address into the xms move
@@ -472,7 +416,7 @@ CREATE xmov-parm   $10 ALLOT   xmov-parm $10 ERASE
         ROT ;
 
 : XMOV  ( -- )
-        ?CS: xmov-parm LXMMove ;
+        0 xmov-parm LXMMove ;   \ F-PC native port: no segments
 
 \ ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
 \ Einen EMB verriegeln, so daá dieser nicht mehr
@@ -531,7 +475,7 @@ UMBAlloc        ( Size -- Size' segment error )
         points to the allocated block.
 {
 : UMBAlloc ( Size -- Size' seg error )
-    xDX !   $10 CallXM  ErrChk  xDX @  xBX @ XMResult @ ;
+    xDX !   $10 CallXM  ErrChk  xDX @  xBX @ XMResult ;  \ F-PC native port: was "XMResult @", a bug
 
 \ ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
 \ Einen UMB wieder zurckgeben.

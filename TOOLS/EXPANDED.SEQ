@@ -1,4 +1,5 @@
 \ EXPANDED.SEQ  An interface to expanded memory for F-PC        by Tom Zimmer
+\ F-PC native port
 
 comment:
 
@@ -17,6 +18,11 @@ applications.
   All of the code that used to be in this file, with the exception of
 "?EMM" if now part of the F-PC kernel. The definition of "?EMM" has been
 moved into the file EMMEXMPL.SEQ.
+
+  F-PC native port: there is no expanded memory. The kernel's EMM words
+(SRC/EXPAND.SEQ) are kept as stubs: EMM-PRESENT? is always false and
+EMM-STATUS reports failure, so EMMEXMPL.SEQ stops with "No Expanded
+memory available!".
 
 comment;
 

@@ -1,4 +1,5 @@
 \ EMMEXMPL.SEQ          Example EMM usage               by Tom Zimmer
+\ F-PC native port
 
 comment:
 
@@ -6,6 +7,13 @@ comment:
         inferface defined in the file EXPANDED.SEQ.  This file also
         illustrates the SEQUENCE of the commands required to access
         EMM.
+
+        F-PC native port: there is no expanded memory, so EMM-PRESENT?
+        (SRC/EXPAND.SEQ) is false and EMM-SAMPLE stops at step 1 with
+        "No Expanded memory available!". The segment moves are rewritten
+        with flat addresses (?EMM: is the page frame address) and the
+        screen copy uses VIDEO-BUF and COLS*ROWS, so the example still
+        compiles and shows how it was done.
 
 comment;
 
@@ -81,12 +89,13 @@ comment;
         cr ." Writing patterns to EMM, one moment..."
         mxemm 0                                   \ fill EMM with pattern
         ?do     i 0 emmhandle emm-map-pages ?emm  \ get a page & chk for err
-                ?emm: 0 4000                      \ start of EMM for 16k len
                 7 flip                            \ attribute in high byte
                 i $30 +                           \ changing pattern value
                 255 and                           \ clip to character
                 or                                \ or in attribute
-                LFILLW                            \ fill WORDS with pattern
+                ?emm: $4000 bounds                \ start of EMM for 16k len
+                ?do     dup i w!                  \ fill WORDS with pattern
+              2 +loop   drop                      \ (was LFILLW)
         loop
 
         cr ." Done creating patterns"
@@ -95,15 +104,15 @@ comment;
         key drop                                  \ wait for user
 
         0 0 emmhandle emm-map-pages ?emm          \ get first page
-        video-seg @ 0 ?emm: 0 4000 cmovel         \ save current screen
+        video-buf ?emm: cols rows * 2* cmove      \ save current screen
 
         mxemm 0                                   \ move pages to screen FAST
         ?do     i 0 emmhandle emm-map-pages ?emm  \ get a page
-                ?emm: 0 video-seg @ 0 4000 cmovel \ move it to screen
+                ?emm: video-buf cols rows * 2* cmove \ move it to screen
         loop
 
         0 0 emmhandle emm-map-pages ?emm          \ get first page again
-        ?emm: 0 video-seg @ 0 4000 cmovel         \ restore screen
+        ?emm: video-buf cols rows * 2* cmove      \ restore screen
 
         cr
         cr ." Pretty FAST HUH?"
