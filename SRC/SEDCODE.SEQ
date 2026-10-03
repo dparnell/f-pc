@@ -35,12 +35,8 @@ editor definitions
 ' cell- alias tl-       ( a1 --- a2 )   \ a2 = a1 - the list entry size in bytes
 ' cells alias tl*       ( n1 -- n2 )    \ n2 = n1 * the list entry size in bytes
 
-\ F-PC native port: DOS function 36h (disk free space) is not emulated, so
-\ report a large disk (65535 clusters of 32K bytes).
-\ TODO-PORT: a host built-in for the real free space would be better.
-: getdiskfree   \ return free space from disk
+BUILTIN getdiskfree     \ return free space from disk (DOS function 36h)
                 ( dv --- avail.clusters bytes/sec secs/cluster )
-                drop 65535 512 64 ;
 
 : >lineptr      ( n1 --- a1 )   \ address of line n1's line table entry
                 cells lseg + ;

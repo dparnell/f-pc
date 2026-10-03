@@ -50,7 +50,6 @@ Running `fpc`:
 - **TOOLS/** (66 optional add-ons, including the float packages) is not ported yet.
 - **Mouse.** Works in xterm-compatible terminals (SGR reporting); the batch host has none.
 - **Popups that assume 80x25.** WFL, the sign-on box and some SED popups clip on smaller terminals rather than reflowing.
-- **`GETDISKFREE`** reports a large disk.
 - **PRN.** The VM discards printer output unless `PFILE` redirects it.
 - **Performance.** Primitives are C built-ins, with no top-of-stack caching yet; the JIT covers only CODE words.
 

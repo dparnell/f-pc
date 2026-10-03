@@ -21,6 +21,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 
@@ -251,7 +252,14 @@ static void int21(vm_t *vm, regs_t *r)
     case 0x2B: case 0x2D: SET_AL(r, 0xFF); break;   /* set date/time: refused */
     case 0x30: r->ax = 0x0005; r->bx = 0; r->cx = 0; break;  /* DOS 5.0 */
     case 0x33: r->dx = (r->dx & 0xFF00) | 1; break;
-    case 0x36: r->ax = 64; r->bx = 0xFFFF; r->cx = 512; r->dx = 0xFFFF; break;
+    case 0x36: {                            /* disk free: in 4K "clusters" */
+        struct statvfs fs;
+        if (statvfs(".", &fs) != 0) { r->ax = 0xFFFF; break; }
+        uint64_t avail = (uint64_t)fs.f_bavail * fs.f_frsize, total = (uint64_t)fs.f_blocks * fs.f_frsize;
+        r->ax = 8; r->cx = 512;             /* 8 sectors of 512 bytes per cluster */
+        r->bx = (ucell)(avail / 4096 > 0xFFFFFFFFu ? 0xFFFFFFFFu : avail / 4096);
+        r->dx = (ucell)(total / 4096 > 0xFFFFFFFFu ? 0xFFFFFFFFu : total / 4096);
+        break; }
     case 0x25: case 0x35: r->bx = 0; break; /* interrupt vectors: ignored */
 
     case 0x39: case 0x3A: case 0x3B:        /* mkdir rmdir chdir */
@@ -664,4 +672,13 @@ void p_ENVSTRING(vm_t *vm)                  /* ( n -- a n f ) n-th NAME=value */
     for (char **e = environ; *e; e++, k++)
         if (k == i) { push_env_string(vm, *e); return; }
     push(vm, 0); push(vm, 0); push(vm, 0);
+}
+
+/* GETDISKFREE ( drive -- avail.clusters bytes/sec secs/cluster ) DOS 36h */
+void p_GETDISKFREE(vm_t *vm)
+{
+    regs_t r = { 0 };
+    r.ax = 0x3600; r.dx = pop(vm);
+    int21(vm, &r);
+    push(vm, r.bx); push(vm, r.cx); push(vm, r.ax);
 }
