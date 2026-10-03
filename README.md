@@ -33,3 +33,5 @@ Documentation:
 - [tests/expected/DIVERGENCES.md](tests/expected/DIVERGENCES.md): where behaviour deliberately differs from the 16-bit original.
 
 The unmodified original is at the git tag `fpc-3.6-original`. `tools/dosbox/` rebuilds it in DOSBox and records its behaviour as the test oracle.
+
+The DOS executables (`F-PC.EXE`, `KERNEL.COM`, `INSTALL.COM`), the `.BAT` build scripts and the NEWZ utilities are no longer in the tree; they are kept at that tag, which the DOSBox scripts use. The manual in `HLP/` still describes them: where it says `EXTEND`, use `make -C vm image`, and for `F` or `F-PC` use `vm/fpc -i F-PC.IMG` (or `f-pc` once installed).
