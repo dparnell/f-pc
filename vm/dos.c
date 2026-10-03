@@ -572,6 +572,26 @@ void p_BATCHQ(vm_t *vm)                     /* ( -- f ) the plain stdin/stdout h
     push(vm, vm->host->eof ? TRUE_F : 0);
 }
 
+void p_HOSTMS(vm_t *vm)                     /* ( -- ms ) a millisecond clock (wraps) */
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    push(vm, (ucell)((uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000));
+}
+
+void p_HOSTSLEEP(vm_t *vm)                  /* ( ms -- ) sleep; ^C or a resize ends it */
+{
+    cell ms = (cell)pop(vm);
+    if (vm->host->refresh) vm->host->refresh(vm->host, vm, 0);
+    while (ms > 0 && !vm->interrupt && !(vm->attention & 4)) {   /* ^C, resize */
+        if ((vm->attention & 2) && vm->host->refresh) { vm->attention &= ~2; vm->host->refresh(vm->host, vm, 0); }
+        int step = ms > 10 ? 10 : (int)ms;
+        struct timespec ts = { 0, step * 1000000L };
+        nanosleep(&ts, NULL);
+        ms -= step;
+    }
+}
+
 void p_FAILED(vm_t *vm) { vm->failed = 1; }   /* ( -- ) the session will exit 1 */
 
 void p_SHIFTSTATE(vm_t *vm)                 /* ( -- flags ) as INT 16h AH=2 */

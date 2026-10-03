@@ -56,10 +56,13 @@ VARIABLE PFASAV         -1 PFASAV !     \ Current offset into definition.
 \ seed's VOCABULARY clause (used by FORTH) is the first one added.
 ' FORTH @ CONSTANT FIRST-DOES-CT
 
+: CODE?         ( cfa -- f )     \ a CODE word: AM code after its CFA
+                @ DUP CT-KIND 3 = SWAP CT-DATA 0= AND ;
+
 : DOES?         ( IP -- IP' F )  \ IP IS ACTUALLY CFA, IP' IS PFA
-                DUP >BODY SWAP @ FIRST-DOES-CT U< 0= ;
-                \ TODO-PORT: AM CODE words will also get tokens above
-                \ FIRST-DOES-CT; tell them apart when the AM arrives.
+                \ DOES> and ;CODE children; CODE words are not
+                DUP >BODY SWAP @ DUP CT-KIND 2 =
+                SWAP DUP CT-KIND 3 = SWAP CT-DATA 0<> AND OR ;
 
 CT-NEST CONSTANT 'DOCOL
 

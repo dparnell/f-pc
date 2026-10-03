@@ -97,6 +97,8 @@ BUILTIN BIOSKEY         ( -- c1 )
 BUILTIN KEY-EOF?        ( -- f )        \ input has ended (scripts): stop waiting
 BUILTIN BATCH?          ( -- f )        \ plain stdin/stdout: no screen
 BUILTIN FAILED          ( -- )          \ the session will exit with status 1
+BUILTIN HOST-MS         ( -- ms )       \ a millisecond clock (wraps)
+BUILTIN HOST-SLEEP      ( ms -- )       \ sleep without spinning
 
 DEFER KEYFILTER ' NOOP IS KEYFILTER     \ Pre-filter keys before passing on.
 DEFER BGSTUFF   ' NOOP IS BGSTUFF       \ BACKGROUND STUFF

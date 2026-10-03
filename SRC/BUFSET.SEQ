@@ -3,9 +3,7 @@
 \ Native port: the original timed a PAUSE loop for 1/10 second at every
 \ cold start to size the read buffer and to calibrate the busy loop in MS.
 \ Neither makes sense on a host: the buffer gets IBLIMIT bytes and MS
-\ watches the clock (centisecond resolution), calling PAUSE.
-\ TODO-PORT: make MS a host sleep built-in (kernel-design.md 6, MS =
-\ host_sleep_ms) so it doesn't spin.
+\ sleeps on the host (it is in TIMESTUF.SEQ, which loads first).
 
 32000 VALUE IBLIMIT             \ upper limit of max size IBLEN can be
 
@@ -14,13 +12,6 @@ VARIABLE FUDGE   84 FUDGE !     \ unused now, kept for old code
 : CS-NOW        ( -- n1 )       \ centiseconds since midnight
                 GETTIME T>B DROP ;
 
-: MS   ( n -- )
-                9 + 10 / CS-NOW         \ -- centiseconds start
-                begin   pause
-                        CS-NOW over - dup 0<
-                        if      8640000 +       \ past midnight
-                        then    2 pick < 0=
-                until   2drop ;
 
 : bufsize-init  ( --- )
                 iblimit dup =: iblen    \ set buffer length value

@@ -7,22 +7,24 @@
 : 10TH-ELAPSED  ( --- N1 )
                 TIME-ELAPSED 0 100 UM/MOD DROP 10 UM/MOD NIP ;
 
-\ SECONDS TENTHS etc. busy-wait on the DOS clock (centisecond resolution),
-\ calling PAUSE. TODO-PORT: a host sleep built-in (MS) would avoid spinning.
+\ SECONDS and TENTHS wait with MS, which sleeps on the host (calling
+\ PAUSE, so other tasks run) rather than busy-waiting on the clock.
 
-DEFER PAUSE-FUNC        ' NOOP IS PAUSE-FUNC
+DEFER PAUSE-FUNC        ' NOOP IS PAUSE-FUNC    \ unused now, kept for old code
+
+: MS   ( n -- )                 \ wait n milliseconds: sleep on the host in
+                                \ steps of at most 10, letting tasks run
+                HOST-MS +
+                begin   pause
+                        dup HOST-MS - dup 0>
+                while   10 min HOST-SLEEP
+                repeat  2drop ;
 
 : SECONDS       ( N1 --- )   \ PAUSE FOR N1 SECONDS
-                STIME 2@ 2>R >R TIME-RESET
-                BEGIN   PAUSE  PAUSE-FUNC
-                        R@ SEC-ELAPSED > 0=
-                UNTIL   R>DROP 2R> STIME 2! ;
+                0MAX 0 ?DO 1000 MS LOOP ;
 
-: TENTHS        ( N1 --- )       \ PAUSE FOR N1 SECONDS
-                STIME 2@ 2>R >R TIME-RESET
-                BEGIN   PAUSE  PAUSE-FUNC
-                        R@ 10TH-ELAPSED > 0=
-                UNTIL   R>DROP 2R> STIME 2! ;
+: TENTHS        ( N1 --- )       \ PAUSE FOR N1 TENTHS OF A SECOND
+                0MAX 100 * MS ;
 
 : MINUTES       ( N1 --- )   \ PAUSE FOR N1 MINUTES
                 0MAX   0 ?DO   60 SECONDS      LOOP ;

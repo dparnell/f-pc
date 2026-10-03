@@ -367,7 +367,10 @@ FIND-SHADOWS
         DUP     >NAME.ID
         DUP DOES?                       \ Is this a DOES> word?
         IF      DROP .DOES>             EXIT
-        THEN    2DROP   ." is a built-in primitive (in the VM)" ;
+        THEN    DROP CODE?
+        IF      ." is a CODE word (FLOAD DISASSEM.SEQ to see its code)"
+        ELSE    ." is a built-in primitive (in the VM)"
+        THEN    ;
 
 headers
 
