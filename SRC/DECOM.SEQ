@@ -161,13 +161,19 @@ headerless
                                 \ code token; the clause's list follows.
                 CRTAB ." DOES> " 2 CELLS + ;
 
+: .FLIT        ( IP -- IP' )   \ (FLIT) is followed by an 8 byte float
+                CELL+ DUP F@ PAD 1+ 30 (F.) PAD C!
+                PAD COUNT 'e' SCAN NIP 0= >R    \ no exponent: add one
+                PAD C@ R@ 2* + ?LINE
+                PAD COUNT TYPE R> IF ." E0" THEN SPACE  2 CELLS + ;
+
 : .UNNEST     ( IP -- IP' )
                 ." ; "   DROP   0   ;
 
 : .FINISH     ( IP -- IP' )
                 .WORD   DROP   0   ;
 
-27 ASSOCIATIVE: EXECUTION-CLASS
+28 ASSOCIATIVE: EXECUTION-CLASS
    (  0 ) '   (LIT)        ,         (  1 ) '   ?BRANCH      ,
    (  2 ) '   BRANCH       ,         (  3 ) '   (LOOP)       ,
    (  4 ) '   (+LOOP)      ,         (  5 ) '   (DO)         ,
@@ -181,10 +187,10 @@ headerless
    ( 20 ) '   (X")         ,         ( 21 ) '   <'>          ,
    ( 22 ) '   (IS)         ,         ( 23 ) '   (OF)         ,
    ( 24 ) '   DOENDOF      ,         ( 25 ) '   DOCASE       ,
-   ( 26 ) '   DOENDCASE    ,
+   ( 26 ) '   DOENDCASE    ,         ( 27 ) '   (FLIT)       ,
 
 : .EXECUTION-CLASS      ( N1 --- )
-                0MAX 27 MIN EXEC:
+                0MAX 28 MIN EXEC:
                 (  0 )     .LIT         (  1 )     .IF
                 (  2 )     .ELSE        (  3 )     .LOOP
                 (  4 )     .+LOOP       (  5 )     .DO
@@ -198,7 +204,8 @@ headerless
                 ( 20 )     .STRING""    ( 21 )     .[']
                 ( 22 )     .IS          ( 23 )     .OF
                 ( 24 )     .ENDOF       ( 25 )     .CASE
-                ( 26 )     .ENDCASE     ( 27 )     .WORD      ;
+                ( 26 )     .ENDCASE     ( 27 )     .FLIT
+                ( 28 )     .WORD      ;
 
 \ Native port: the VM's seed interpreter compiled the kernel's first
 \ definitions with its own built-in (") (.") (ABORT") etc., which the
