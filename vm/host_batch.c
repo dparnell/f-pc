@@ -4,33 +4,47 @@
 #include "vm.h"
 
 #include <poll.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 static void b_emit(host_t *h, int c) { (void)h; if (c != '\r') putchar(c); }
 static void b_type(host_t *h, const uint8_t *s, size_t n) { (void)h; fwrite(s, 1, n, stdout); }
-/* KEY? is true only when input is waiting. At end of input it turns true
- * after many polls, so a loop waiting for a key reaches KEY, which ends
- * the session, while occasional KEY? checks (SEE, WORDS) see no key. */
-static int pending = -2, eof_polls;
+/* KEY? is true only when input is waiting; at end of input it stays false
+ * and KEY-EOF? (host->eof) becomes true, so (KEY) stops waiting and KEY
+ * ends the session. After 200 ms of polling without input, polls wait
+ * 10 ms so that a loop waiting for a key does not spin the CPU. */
+static int pending = -2;
+static double idle_since;
+
+static double now(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
 
 static int b_keyq(host_t *h)
 {
     (void)h;
-    if (pending != -2) return pending != EOF || ++eof_polls > 1000;
+    if (pending != -2) return pending != EOF;
     struct pollfd p = { 0, POLLIN, 0 };
-    if (poll(&p, 1, eof_polls > 100 ? 10 : 0) <= 0) { eof_polls++; return 0; }
+    if (!idle_since) idle_since = now();
+    int wait = now() - idle_since > 0.2 ? 10 : 0;
+    if (poll(&p, 1, wait) <= 0) return 0;
+    idle_since = 0;
     pending = getchar();
-    if (pending == EOF) return ++eof_polls > 1000;
-    eof_polls = 0;
-    return 1;
+    return pending != EOF;
 }
+
+static int b_eof(host_t *h) { (void)h; return pending == EOF; }
 
 static int  b_key(host_t *h)
 {
     (void)h;
     fflush(stdout);
     int c;
+    idle_since = 0;
     if (pending != -2) { c = pending; pending = -2; if (c == EOF) pending = EOF; }
     else c = getchar();
     if (c == EOF) return -1;
@@ -53,6 +67,7 @@ host_t *host_batch_new(void)
 {
     host_t *h = calloc(1, sizeof *h);
     h->emit = b_emit; h->type = b_type; h->key = b_key; h->keyq = b_keyq; h->flush = b_flush;
+    h->eof = b_eof;
     h->put = b_put; h->gotoxy = b_gotoxy; h->tty = b_tty; h->size = b_size;
     return h;
 }

@@ -186,8 +186,17 @@ static cell fdiv64(vm_t *vm, dcell a, cell b, cell *rem)
 }
 
 /* a signal asked for attention: Control-C, or a screen refresh is due */
+const char *seed_ip_name(vm_t *vm, ucell ip, char *buf);
+
 static void attend(vm_t *vm)
 {
+    if (vm->interrupt && getenv("FPC_INTDUMP")) {      /* where were we? */
+        char name[40];
+        fprintf(stderr, "\nfpc: interrupted at IP %X in %s; returns:", vm->ip, seed_ip_name(vm, vm->ip, name));
+        for (ucell r = vm->rp; r < vm->rp0 && r < vm->rp + 64; r += 4)
+            fprintf(stderr, " %s", seed_ip_name(vm, rd32(vm, r), name));
+        fprintf(stderr, "\n");
+    }
     if (vm->interrupt) { vm->interrupt = 0; vm_throw(vm, E_INTERRUPT, "Interrupted"); }
     if (vm->attention & 2) {
         vm->attention &= ~2;

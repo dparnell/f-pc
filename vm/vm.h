@@ -116,6 +116,7 @@ typedef struct host {
     void (*type)(struct host *h, const uint8_t *s, size_t n);
     int  (*key)(struct host *h);            /* BIOS-style code, -1 = EOF */
     int  (*keyq)(struct host *h);
+    int  (*eof)(struct host *h);               /* input has ended (batch) */
     void (*flush)(struct host *h);
     /* screen: put n chars at (x,y) with attribute; move the cursor;
        tty-style output at the cursor (handles CR LF BS BEL, scrolls) */

@@ -21,8 +21,19 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <execinfo.h>
+
 static vm_t *the_vm;
-static void on_sigint(int sig) { (void)sig; if (the_vm) the_vm->interrupt = 1; }
+static void on_sigint(int sig)
+{
+    (void)sig;
+    if (getenv("FPC_INTDUMP")) {                /* debugging: where is C? */
+        void *bt[16];
+        int n = backtrace(bt, 16);
+        backtrace_symbols_fd(bt, n, 2);
+    }
+    if (the_vm) the_vm->interrupt = 1;
+}
 
 static void usage(void)
 {

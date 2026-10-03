@@ -773,6 +773,17 @@ void p_IPTOCFA(vm_t *vm)        /* ( ip -- cfa true | ip false ) the word runnin
     wr32(vm, vm->sp, n.cfa);
     push(vm, TRUE_F);
 }
+/* the name of the word whose body holds ip, for diagnostics */
+const char *seed_ip_name(vm_t *vm, ucell ip, char *buf)
+{
+    near_t n = { ip, 0, 0 };
+    each_body(vm, near_below, &n);
+    ucell nfa = n.cfa ? cfa_to_nfa(vm, n.cfa) : 0;
+    if (!nfa) { strcpy(buf, "?"); return buf; }
+    nfa_name(vm, nfa, buf);
+    return buf;
+}
+
 void p_NEWDOES(vm_t *vm) { push(vm, vm_add_handler(vm, HK_DOES, NULL, pop(vm), NULL)); }
 void p_TOLINK(vm_t *vm)   { ucell n = cfa_to_nfa(vm, pop(vm)); push(vm, n ? n - 4 : 0); }
 void p_TOBODY(vm_t *vm)   { push(vm, pop(vm) + 4); }

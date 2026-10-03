@@ -94,6 +94,7 @@ BUILTIN BIOSCHAR        \ Holds the char from BIOS on scan by BIOSKEY?
 BUILTIN BIOSKEYVAL      \ Holds the key value from BIOSKEY
 BUILTIN BIOSKEY?        ( -- f1 )
 BUILTIN BIOSKEY         ( -- c1 )
+BUILTIN KEY-EOF?        ( -- f )        \ input has ended (scripts): stop waiting
 
 DEFER KEYFILTER ' NOOP IS KEYFILTER     \ Pre-filter keys before passing on.
 DEFER BGSTUFF   ' NOOP IS BGSTUFF       \ BACKGROUND STUFF
@@ -105,7 +106,7 @@ DEFER BGSTUFF   ' NOOP IS BGSTUFF       \ BACKGROUND STUFF
 : (KEY)         ( -- char )
 \ Wait until the user presses a key, then return its value. Extended keys
 \ (ASCII 0) are returned as 128 + scan code.
-                BEGIN   PAUSE KEY? UNTIL
+                BEGIN   PAUSE KEY? KEY-EOF? OR UNTIL
                 BIOSKEY DUP 127 AND 0=
                 IF      FLIP DUP 3 =
                         IF      DROP 0          \ allow a NULL

@@ -535,6 +535,11 @@ void p_BIOSKEY(vm_t *vm)
     push(vm, (ucell)k);
 }
 
+void p_KEYEOFQ(vm_t *vm)                   /* ( -- f ) no more input, ever */
+{
+    push(vm, vm->host->eof && vm->host->eof(vm->host) ? TRUE_F : 0);
+}
+
 void p_SHIFTSTATE(vm_t *vm)                 /* ( -- flags ) as INT 16h AH=2 */
 {
     push(vm, vm->host->shift ? (ucell)vm->host->shift(vm->host) : 0);

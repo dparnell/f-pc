@@ -260,6 +260,7 @@ forth definitions
                 begin   pause
                         key?
                         mousechar or
+                        key-eof? or             \ input ended (scripts)
                 until   mousechar ?dup
                 hide.ms
                 if      off> mousechar
