@@ -1,290 +1,80 @@
-\ KERNEL3.SEQ   More kernel stuff
+\ KERNEL3.SEQ   More kernel stuff: dictionary, interpreter and compiler
+\                                                       F-PC native port
 
-FILES DEFINITIONS
-
-VARIABLE KERNEL3.SEQ
-
-FORTH DEFINITIONS
+\ Header layout (HEAD region; see vm/seed.c):
+\   VFA cell (LOADLINE) | LFA cell (previous LFA in thread) |
+\   NFA: count|$80 [|$40 immediate], name, last char|$80 | CFA cell
+\ A colon definition's code field is CT-NEST and its body is one cell: the
+\ address of its token list in LIST space. In-line strings in token lists
+\ are counted and padded to a cell boundary.
 
 : >TYPE         ( adr len -- )
                 TUCK PAD SWAP CMOVE   PAD SWAP TYPE  ;
 
 : .(            ( -- )  ASCII ) PARSE >TYPE  ; IMMEDIATE
-
 : (             ( -- )  ASCII ) PARSE 2DROP  ; IMMEDIATE
 
-CODE TRAVERSE   ( addr direction -- addr' )
-                POP CX          POP BX
-                ADD BX, CX      PUSH ES
-                MOV ES, YSEG
-          BEGIN
-                MOV ES: AL, 0 [BX]      AND AL, # 128
-       0= WHILE
-                ADD BX, CX
-          REPEAT
-                POP ES          PUSH BX
-                NEXT            END-CODE
+: TRAVERSE      ( addr direction -- addr' )
+\ Step by direction from addr until a byte with its high bit set.
+                SWAP BEGIN OVER + DUP C@ 128 AND UNTIL NIP ;
 
-: PLACEL        ( seg off len a1 -- )           \ get string from far mem
-                                                \ make into counted string
-                2DUP C! 1+ ?DS: SWAP ROT CMOVEL ;
+: DONE?         ( n -- f )
+\ True if STATE differs from n, or the input stream is exhausted.
+                STATE @ <>   END? @ OR   END? OFF   ;
 
-: +PLACEL       ( seg off len a1 -- )           \ append far string to a1
-                2DUP 2>R COUNT + ?DS: SWAP ROT CMOVEL 2R> C+! ;
+: N>LINK        ( anf -- alf )  CELL-   ;
+: L>NAME        ( alf -- anf )  CELL+   ;
+: BODY>         ( apf -- acf )  CELL-   ;
+: NAME>         ( anf -- acf )  1 TRAVERSE   1+ @  ;
+: LINK>         ( alf -- acf )  L>NAME   NAME>   ;
+: >BODY         ( acf -- apf )  CELL+   ;
 
-CODE DONE?      ( n -- f )
-                POP AX
-                CMP AX, STATE
-            0<> IF
-                        MOV END? # 0 WORD
-                        MOV AX, # -1
-                        1PUSH
-                THEN
-                PUSH END?
-                MOV END? # 0 WORD
-                NEXT
-                END-CODE
+: NO-NAME       ( -- )  ;
 
-\ : DONE?         ( n -- f )
-\                 STATE @ <>   END? @ OR   END? OFF   ;
-
-: CNHASH        ( cfa -- ya )
-                $0FE00 AND FLIP ;
-
-CODE CNSRCH     ( cfa ya maxya -- nfa failf )
-                pop dx          \ maxya
-                pop bx          \ ya
-                add bx, # 4
-                pop di          \ cfa
-                mov ds, yseg
-\        HERE    cmp dx, bx
-        0 $:    cmp dx, bx
-             U> IF      mov ax, 0 [bx]
-                        and ax, # 31
-                        add bx, ax
-                        inc bx
-                        mov ax, 0 [bx]
-                        cmp ax, di      \ if they match, then we found it
-                     0= if      sub bx, # 2             \ 1 before last chr
-                                begin   mov al, 0 [bx]  \ test high bit
-                                        and al, # 128   \ loop till high set
-                             0= while   dec bx          \ backup one char
-                                repeat
-                                push bx                 \ push pointer to chr
-                                mov ax, cs              \ restore DS
-                                mov ds, ax
-                                mov ax, # false         \ push false flag
-                                1push
-                        then
-                        add bx, # 6     \ step to next header
-\                        JMP ROT         \ bring HERE around Branch resolution
-                        jmp 0 $
-                                        \ used by IF and THEN
-                THEN
-                mov ax, cs      mov ds, ax
-                mov ax, # true
-                push ax
-                1push           end-code
-
-: N>LINK        ( anf -- alf)
-                2-   ;
-
-: L>NAME        ( alf -- anf )
-                2+   ;
-
-: BODY>         ( apf -- acf )
-                3 -  ;
-
-: NAME>         ( anf -- acf )
-                1 TRAVERSE   1+ Y@  ;
-
-: LINK>         ( alf -- acf )
-                L>NAME   NAME>   ;
-
-: >BODY         ( acf -- apf )
-                3 +  ;
-
-HERE-Y 4 +     \ Step from view field to name field
-
-: NO-NAME       ( -- )  
-                ;
-
+BUILTIN (>NAME)         ( cfa -- nfa | 0 )      \ search every vocabulary
 : >NAME         ( cfa -- nfa )
-                DUP CNHASH DUP Y@ SWAP
-                2+ Y@ ( cfa sya mxya ) CNSRCH
-                IF      DROP (LIT) [ ROT ,-X ] THEN    ;
-
-: >LINK         ( acf -- alf )
-                >NAME   N>LINK   ;
-
-: >VIEW         ( acf -- avf )
-                >LINK   2-   ;
-
-: VIEW>         ( avf -- acf )
-                2+   LINK>   ;
+                (>NAME) ?DUP 0= IF ['] NO-NAME (>NAME) THEN ;
+: >LINK         ( acf -- alf )  >NAME   N>LINK   ;
+: >VIEW         ( acf -- avf )  >LINK   CELL-   ;
+: VIEW>         ( avf -- acf )  CELL+   LINK>   ;
 
 COMMENT:
-
   The hash algorithm used is as follows:
-
         ((firstchar*2)+secondchar)*2)+count
-
   This seems to provide a good distribution across the 64 threads in
 1000 word FORTH vocabulary.
-
 COMMENT;
 
-CODE HASH       ( str-addr voc-ptr -- thread )
-                POP CX          POP BX
-                MOV AX, 1 [BX]          \ Get first and second chars
-                SHL AL, # 1             \ Shift first char left one
-                ADD AL, AH              \ Plus second char
-                SHL AX, # 1             \ The sum shifted left one again
-                ADD AL, 0 [BX]          \ Plus count byte
-                AND AX, # #THREADS 1-
-                SHL AX, # 1     ADD AX, CX
-                1PUSH           END-CODE
+BUILTIN HASH            ( str-addr voc-ptr -- thread )
+BUILTIN (FIND)          ( here alf -- cfa flag | here false )
 
-CODE (FIND)     ( here alf -- cfa flag | here false )
-                POP BX
-                OR BX, BX
-             0= IF
-                        SUB AX, AX
-                        1PUSH
-                THEN
-                POP CX
-                PUSH ES
-                MOV ES, YSEG
-                MOV DI, CX
-            BEGIN
-                MOV ES: AX, 2 [BX]
-                XOR AX, 0 [DI]
-                AND AX, # ( 63 ) $7F3F
-             0= IF
-                        MOV DX, BX
-                        ADD BX, # 2
-                        BEGIN
-                                INC BX  INC DI
-                                MOV ES: AL, 0 [BX]
-                                XOR AL, 0 [DI]
-                    0<> UNTIL
-                        AND AL, # 127
-                     0= IF
-                                MOV ES: CX, 1 [BX]      \ pick up CFA
-                                MOV BX, DX
-                                MOV ES: AL, 2 [BX]
-                                AND AL, # 64
-                                0<> IF
-                                    MOV AX, # 1
-                                ELSE
-                                    MOV AX, # -1
-                                THEN
-                                POP ES
-                                PUSH CX
-                                1PUSH
-                        THEN
-                        MOV BX, DX
-                        MOV DI, CX
-                THEN
-                MOV ES: BX, 0 [BX]
-                OR BX, BX
-        0= UNTIL
-                POP ES
-                PUSH CX
-                SUB AX, AX
-                1PUSH           END-CODE
-
-HEADERLESS      \ Disable generation of headers
-
-CODE DROP.CONTEXT.I2*+@DUP   ( a1 -- n1 )
-                ADD SP, # 2
-                MOV AX, 0 [RP]
-                ADD AX, 2 [RP]
-                SHL AX, # 1
-                MOV BX, # CONTEXT
-                ADD BX, AX
-                MOV AX, 0 [BX]
-                PUSH AX
-                1PUSH
-                END-CODE
-
-                                \ DUP PRIOR @ OVER PRIOR ! =
-CODE PRIOR.CHECK ( n1 -- n1 f1 )
-                MOV   BX, SP
-                MOV   AX, 0 [BX]
-                MOV BX, PRIOR
-                MOV PRIOR AX
-                CMP BX, AX
-            0<> IF
-                        SUB AX, AX
-                        1PUSH
-                THEN
-                MOV AX, # TRUE
-                1PUSH
-                END-CODE
-
-CODE OVER.SWAP.HASH.@     ( n1 n2 -- n1 n3 )
-                POP AX
-                MOV BX, SP
-                MOV BX, 0 [BX]
-                MOV CL, 0 [BX]
-                MOV BX, 1 [BX]
-                SHL BL, # 1
-                ADD BL, BH
-                SHL BL, # 1
-                ADD BL, CL
-                AND BX, # #THREADS 1-
-                SHL BX, # 1
-                ADD BX, AX
-                PUSH 0 [BX]
-                NEXT            END-CODE
-
-HEADERS         \ Restore generation of TARGET HEADERS
+: PRIOR.CHECK   ( n1 -- n1 f1 )         \ true if n1 was the prior vocabulary
+                DUP PRIOR @ OVER PRIOR ! = ;
 
 : %%FIND        ( addr false #vocs 0 -- cfa flag | addr false )
-                DO      DROP.CONTEXT.I2*+@DUP
+                DO      DROP CONTEXT I CELLS + @ DUP
                         IF      PRIOR.CHECK
                                 IF      DROP FALSE
-                                ELSE    OVER.SWAP.HASH.@ (FIND)
+                                ELSE    OVER SWAP HASH @ (FIND)
                                         DUP ?LEAVE
                                 THEN
                         THEN
                 LOOP    ;
 
-CODE %FIND      ( addr -- cfa flag | addr false )
-                MOV DI, SP
-                MOV BX, 0 [DI]
-                CMP 0 [BX], # 0 BYTE
-            0<> IF
-                        MOV PRIOR # 0 WORD                      \ prior off
-                        MOV BX, # 0             PUSH BX         \ false
-                        MOV CX, # #VOCS         PUSH CX         \ #vocs
-                                                PUSH BX         \ 0
-                        MOV AX, # ' %%FIND
-                        JMP AX
-                THEN
-                MOV END? # TRUE WORD
-                MOV 0 [DI], # ' NOOP WORD
-                MOV AX, # 1
-                1PUSH           END-CODE
+: %FIND         ( addr -- cfa flag | addr false )
+\ An empty word sets END? and finds an immediate NOOP.
+                DUP C@
+                IF      PRIOR OFF  FALSE #VOCS 0 %%FIND
+                ELSE    DROP END? ON  ['] NOOP 1
+                THEN    ;
 
 DEFER FIND      ' %FIND IS FIND
 
-CODE SKIP'C'    ( a1 - a1 )             \ conditionally skip following word
-                                        \ if word at a1 is 'letter'.
-                POP BX
-                PUSH BX
-                CMP 0 [BX], # ASCII ' FLIP 3 + WORD  \ check cnt & first char
-            0<> IF      NEXT
-                THEN    CMP 3 [BX], # ASCII ' BYTE   \ check last char is '
-            0<> IF      NEXT
-                THEN    ADD SI, # $02 WORD           \ skip following word
-                NEXT            END-CODE
-
 : DEFINED       ( -- here 0 | cfa [ -1 | 1 ] )
-                BL WORD  SKIP'C' ?UPPERCASE  FIND   ;
-
-HEADERLESS
+\ Parse a word and find it; a 'c' character literal is not upper cased.
+                BL WORD
+                DUP C@ 3 = OVER 1+ C@ ASCII ' = AND OVER 3 + C@ ASCII ' = AND
+                0= IF ?UPPERCASE THEN  FIND   ;
 
 : STACKUNDER    ( -- )
                 TRUE ABORT" Stack Underflow" ;
@@ -295,31 +85,12 @@ HEADERLESS
 : WARNOVER      ( -- )
                 CR ."  Running out of CODE memory! " ;
 
-HEADERS
+BUILTIN SP-LIMIT        ( -- addr )     \ lowest address of the data stack
 
-CODE (?STACK)   ( -- )
-                MOV CX, SP
-                MOV BX, UP
-                MOV DX, SP0 [BX]
-                CMP DX, CX
-             U< IF
-                        MOV AX, # ' STACKUNDER
-                        JMP AX
-                THEN
-                MOV DX, DP [BX]
-                ADD DX, # 80
-                CMP CX, DX
-             U< IF
-                        MOV AX, # ' STACKOVER
-                        JMP AX
-                THEN
-                ADD DX, # 200
-                CMP CX, DX
-             U< IF
-                        MOV AX, # ' WARNOVER
-                        JMP AX
-                THEN
-                NEXT            END-CODE
+: (?STACK)      ( -- )
+                SP@ SP0 @ U>      IF  STACKUNDER  THEN
+                SP@ SP-LIMIT U<   IF  STACKOVER   THEN
+                HERE 280 + LIMIT U>  IF  WARNOVER  THEN ;
 
 DEFER ?STACK    ' (?STACK) IS ?STACK
 
@@ -331,185 +102,129 @@ DEFER ?STACK    ' (?STACK) IS ?STACK
                 UNTIL   ;
 
 DEFER STATUS    ( -- )
-
 DEFER INTERPRET ' INTERP IS INTERPRET
 
 : PRINT         ( -- ) PRINTING ON INTERPRET PRINTING OFF ;
 
-: ALLOT         ( n -- )      DP +!   ;
+BUILTIN ALLOT           ( n -- )
+BUILTIN ,               ( n -- )
+BUILTIN C,              ( n -- )
+BUILTIN ALIGN           ( -- )          \ align HERE to a cell (no longer a no-op)
+: EVEN          ( n1 -- n2 )    ; IMMEDIATE
 
-CODE ,          ( n -- )
-                MOV BX, UP
-                MOV AX, DP [BX]
-                ADD DP [BX], # 2 WORD
-                MOV BX, AX
-                POP CX
-                MOV 0 [BX], CX
-                NEXT
-                END-CODE
+BUILTIN COMPILE         ( -- )          \ compile the in-line word
 
-CODE C,         ( n -- )
-                MOV BX, UP
-                MOV AX, DP [BX]
-                INC DP [BX] WORD
-                MOV BX, AX
-                POP CX
-                MOV 0 [BX], CL
-                NEXT
-                END-CODE
+: IMMEDIATE     ( -- )
+                64 ( Precedence bit ) LAST @ CSET  ;
 
-: ALIGN         ( -- )
-                ( HERE 1 AND IF  BL C,  THEN )  ; IMMEDIATE
-
-: EVEN          ( n1 -- n2 )
-                ( DUP 1 AND + ) ;  IMMEDIATE
-
-: COMPILE       ( -- )   
-                2R@ R> 2+ >R @L X,   ;
-
-: IMMEDIATE     ( -- )   
-                64 ( Precedence bit ) LAST @ YCSET  ;
-
-: LITERAL       ( n -- )  
+: LITERAL       ( n -- )
                 COMPILE (LIT) X, ; IMMEDIATE
 
-: DLITERAL      ( d# -- ) 
+: DLITERAL      ( d# -- )
                 SWAP [COMPILE] LITERAL [COMPILE] LITERAL ; IMMEDIATE
 
-: ASCII         ( -- n )   
+: ASCII         ( -- n )
                 BL WORD   1+ C@
                 STATE @ IF   [COMPILE] LITERAL   THEN   ; IMMEDIATE
 
-: CONTROL       ( -- n )   
+: CONTROL       ( -- n )
                 BL WORD   1+ C@  31 AND
                 STATE @ IF   [COMPILE] LITERAL   THEN   ; IMMEDIATE
 
-: CRASH         ( -- ) 
-                2R@ 2- @L >NAME CR .ID TRUE
+: CRASH         ( -- )
+\ The default action of a DEFER: name the DEFER that called us.
+                R@ CELL- @ >NAME CR .ID TRUE
                 ABORT" <- is an Uninitialized execution vector."  ;
 
-: ?MISSING      ( f -- )
+: %?MISSING     ( f -- )
                 IF      SPACE HERE COUNT TYPE
                         TRUE ABORT"  <- What? "
                 THEN    ;
+' %?MISSING IS ?MISSING
 
-: '             ( -- cfa )      
+: '             ( -- cfa )
                 DEFINED 0= ?MISSING   ;
 
-: [']           ( -- )          
+: [']           ( -- )
                 ' COMPILE <'> X, ; IMMEDIATE
 
-: [COMPILE]     ( -- )          
+: [COMPILE]     ( -- )
                 ' X,   ; IMMEDIATE
 
 VARIABLE  "BUF 132 ALLOT
 
-: XEVEN         ( xdp -- xdp_even ) 
-                DUP 1 AND + ;
-
-: XALIGN        ( -- ) 
-                XHERE NIP 1 AND XDP +! ;
-
-: X>"BUF        ( -- "buf )
-                2R>
-                2R@ 2DUP C@L 1+ DUP XEVEN R> + >R
-                        ?CS: "BUF ROT CMOVEL
-                2>R "BUF ;
+: XALIGN        ( -- )          XHERE ALIGNED XDP ! ;
 
 : (")           ( -- addr len )
-                2R@ @L COUNT R> 2+ >R ;
-
-: (X")           ( -- addr len )
-                X>"BUF COUNT ;
-
+\ Return the in-line counted string that follows and skip it.
+                R> COUNT 2DUP + ALIGNED >R ;
+: (X")          ( -- addr len )
+                R> COUNT 2DUP + ALIGNED >R ;
 : %(.")         ( -- )
-                2R@ 2DUP C@L >R 1+ R@ TYPEL R> 1+ XEVEN R> + >R ;
-
+                R> COUNT 2DUP + ALIGNED >R TYPE ;
 DEFER (.")      ' %(.") IS (.")
 
 : ,"            ( -- )
                 ASCII " PARSE TUCK HERE PLACE 1+ ALLOT ;
 
-: X,"           ( -- )
-                ASCII " PARSE HERE PLACE
-                ?CS: HERE DUP C@ 1+ >R XHERE R@ CMOVEL
-                R> XEVEN XDP +! ;
+: X,"           ( -- )          \ compile a counted string in list space
+                ASCII " PARSE 255 MIN DUP XC,
+                BOUNDS ?DO I C@ XC, LOOP XALIGN ;
 
 : ."            ( -- )          COMPILE (.") X,"   ;   IMMEDIATE
-
-: "             ( -- )          COMPILE (")  HERE X, ,"   ;   IMMEDIATE
-
-: ""            ( -- )          COMPILE (X")  X,"   ;   IMMEDIATE
+: "             ( -- )          COMPILE (")  X,"   ;   IMMEDIATE
+: ""            ( -- )          COMPILE (X") X,"   ;   IMMEDIATE
 
 : ">$           ( a1 n1 -- a2 )
                 DROP 1- ;
 
-VARIABLE FENCE
+BUILTIN FENCE           \ head-space address below which FORGET may not go
 
 : TRIM          ( faddr voc-addr -- )
+\ Unlink every header at or above faddr from the vocabulary's threads.
                 #THREADS 0
-                DO      2DUP @ BEGIN   2DUP U> NOT WHILE Y@ REPEAT
-                        NIP OVER ! 2+
+                DO      2DUP @ BEGIN   2DUP U> NOT WHILE @ REPEAT
+                        NIP OVER ! CELL+
                 LOOP    2DROP   ;
 
 : (FRGET)       ( code-addr view-addr -- )
                 DUP FENCE @ U< ABORT" Below fence"  ( ca va )
                 OVER VOC-LINK @ BEGIN   2DUP U< WHILE   @ REPEAT
                 DUP VOC-LINK !  ( ca va ca pt ) NIP
-                BEGIN   DUP WHILE   2DUP #THREADS 2* - TRIM   @   REPEAT
+                BEGIN   DUP WHILE   2DUP #THREADS CELLS - TRIM   @   REPEAT
                 DROP    YDP !
-                DUP 1+ @ OVER >BODY +
-                (LIT)   TRIM DUP 1+ @ SWAP >BODY + =    \ If it's a : def
-                IF      DUP >BODY @ +XSEG XDPSEG !   \ Set back XHERE too!
-                        XDP OFF
+                DUP @ CT-NEST =                 \ If it's a : def
+                IF      DUP >BODY @ XDP !       \ Set back XHERE too!
                 THEN    DP !  ;
 
 DEFER ?ERROR
 
-                                        \ 07/03/89 TJZ
-: (ABORT")      ( f -- )                \ if f1 true, then display inline
-                ?DUP                    \ compiled message from LIST space
-                IF
-                        X>"BUF COUNT ROT ?ERROR
-                ELSE    2R@ C@L 1+ XEVEN R> + >R
-                THEN    ;
+: (ABORT")      ( f -- )
+\ If f is true, report the in-line message through ?ERROR.
+                R> COUNT 2DUP + ALIGNED >R  ROT
+                IF  ?ERROR  ELSE  2DROP  THEN ;
 
-: ABORT"        ( -- )   
+: ABORT"        ( -- )
                 COMPILE (ABORT") X," ;   IMMEDIATE
 
-: ABORT         ( -- )   
+: ABORT         ( -- )
                 TRUE ABORT" "  ;
 
 : FORGET        ( -- )
                 BL WORD ?UPPERCASE DUP CURRENT @ HASH @
                 (FIND) 0= ?MISSING DUP >VIEW (FRGET) ;
 
-: ?CONDITION    ( f -- )        
+: ?CONDITION    ( f -- )
                 NOT ABORT" Conditionals Wrong"   ;
 
-: >MARK         ( -- addr )     
-                XHERE NIP 0 X,   ;
-
-: >RESOLVE      ( addr -- )     
-                XHERE -ROT SWAP !L   ;
-
-: <MARK         ( -- addr )     
-                XHERE NIP ;
-
-: <RESOLVE      ( addr -- )     
-                X, ;
-
-: ?>MARK        ( -- f addr )   
-                TRUE >MARK   ;
-
-: ?>RESOLVE     ( f addr -- )   
-                SWAP ?CONDITION >RESOLVE  ;
-
-: ?<MARK        ( -- f addr )   
-                TRUE   <MARK   ;
-
-: ?<RESOLVE     ( f addr -- )   
-                SWAP ?CONDITION <RESOLVE  ;
+: >MARK         ( -- addr )     XHERE 0 X,   ;
+: >RESOLVE      ( addr -- )     XHERE SWAP !   ;
+: <MARK         ( -- addr )     XHERE ;
+: <RESOLVE      ( addr -- )     X, ;
+: ?>MARK        ( -- f addr )   TRUE >MARK   ;
+: ?>RESOLVE     ( f addr -- )   SWAP ?CONDITION >RESOLVE  ;
+: ?<MARK        ( -- f addr )   TRUE   <MARK   ;
+: ?<RESOLVE     ( f addr -- )   SWAP ?CONDITION <RESOLVE  ;
 
 comment:
         LEAVE and ?LEAVE could be non-immediate in this system, but the 83
@@ -541,7 +256,7 @@ comment;
 : BEGIN         ( -- )
                 COMPILE DOBEGIN ?<MARK                          ; IMMEDIATE
 
-: AGAIN         ( -- ) 
+: AGAIN         ( -- )
                 COMPILE DOAGAIN ?<RESOLVE                       ; IMMEDIATE
 
 : UNTIL         ( n -- )
@@ -550,28 +265,28 @@ comment;
 : WHILE         ( n -- )
                 COMPILE ?WHILE ?>MARK 2SWAP ( <- added )        ; IMMEDIATE
 
-: REPEAT        ( -- )       ( 2SWAP removed ) 
+: REPEAT        ( -- )       ( 2SWAP removed )
                 COMPILE DOREPEAT ?<RESOLVE ?>RESOLVE            ; IMMEDIATE
 
 : DO            ( lim start -- )
                 COMPILE (DO)   ?>MARK                           ; IMMEDIATE
 
-: ?DO           ( lim start -- ) 
+: ?DO           ( lim start -- )
                 COMPILE (?DO)  ?>MARK                           ; IMMEDIATE
 
 : LOOP          ( -- )
-                COMPILE (LOOP)  2DUP 2+ ?<RESOLVE ?>RESOLVE     ; IMMEDIATE
+                COMPILE (LOOP)  2DUP CELL+ ?<RESOLVE ?>RESOLVE  ; IMMEDIATE
 
 : +LOOP         ( n -- )
-                COMPILE (+LOOP) 2DUP 2+ ?<RESOLVE ?>RESOLVE     ; IMMEDIATE
+                COMPILE (+LOOP) 2DUP CELL+ ?<RESOLVE ?>RESOLVE  ; IMMEDIATE
 
-: IF            ( n -- ) 
+: IF            ( n -- )
                 COMPILE  ?BRANCH  ?>MARK                        ; IMMEDIATE
 
-: ELSE          ( -- ) 
+: ELSE          ( -- )
                 COMPILE  BRANCH ?>MARK  2SWAP ?>RESOLVE         ; IMMEDIATE
 
-: THEN          ( -- ) 
+: THEN          ( -- )
                 COMPILE DOTHEN ?>RESOLVE                        ; IMMEDIATE
 
 : FORWARD       ( -- )
@@ -580,7 +295,7 @@ comment;
 : CONTINUE      ( -- )
                 2OVER [COMPILE] REPEAT                          ; IMMEDIATE
 
-: BREAK         ( -- ) 
+: BREAK         ( -- )
                 COMPILE EXIT [COMPILE] THEN                     ; IMMEDIATE
 
 : AFT           ( -- )
@@ -592,10 +307,8 @@ comment;
 : NEXT          ( -- )
                 COMPILE NEXT| ?<RESOLVE                         ; IMMEDIATE
 
-: ,VIEW         ( -- )  
+: ,VIEW         ( -- )
                 LOADLINE @ Y, ;
-
-HEADERLESS
 
 : NOHEADROOM    ( -- )
                 TRUE ABORT" Out of HEAD memory!" ;
@@ -603,28 +316,12 @@ HEADERLESS
 : NOLISTROOM    ( -- )
                 TRUE ABORT" Out of LIST memory!" ;
 
-HEADERS
+BUILTIN HEAD-LIMIT      ( -- addr )     \ end of the HEAD region
+BUILTIN LIST-LIMIT      ( -- addr )     \ end of the LIST region
 
-CODE SPCHECK    ( -- f1 f2 )           \ HEAD AND LIST SPACE CHECK
-                MOV AX, YDP             \ get head DP
-                SHR AX, # 1             \ convert to ssegment
-                SHR AX, # 1
-                SHR AX, # 1
-                SHR AX, # 1
-                ADD AX, # 6             \ add 6 segments for headroom
-                CMP AX, ' #HEADSEGS >BODY \ are we out of space yet
-             >  IF      MOV AX, # ' NOHEADROOM
-                        JMP AX
-                THEN
-                MOV AX, XDPSEG          \ load up LIST segment
-                SUB AX, XSEG            \ convert to size of list so far
-                ADD AX, # 6             \ add 6 for headroom
-                CMP AX, ' #LISTSEGS >BODY \ are we out of space yet
-             >  IF      MOV AX, # ' NOLISTROOM
-                        JMP AX
-                THEN
-                NEXT
-                END-CODE
+: SPCHECK       ( -- )                  \ HEAD AND LIST SPACE CHECK
+                YHERE 96 + HEAD-LIMIT U>  IF  NOHEADROOM  THEN
+                XHERE 96 + LIST-LIMIT U>  IF  NOLISTROOM  THEN ;
 
 : %ALREADY_DEF  ( a1 -- a1 )   \ Is the word at A1 already defined?
                 WARNING @
@@ -639,26 +336,16 @@ DEFER ?ALREADY_DEF      ' %ALREADY_DEF IS ?ALREADY_DEF
                 SPCHECK
                 DUP C@ 31 > ABORT" Name TOO LONG, > 31 chars!"
                 ?ALREADY_DEF
-                ALIGN  YHERE 2- Y@ CNHASH  HERE CNHASH  <>
-                IF      YHERE HERE CNHASH DUP Y@ ROT UMIN SWAP
-                        Y! ( >NAME hash entry )
-                THEN    ,VIEW
+                ALIGN  ,VIEW
                 YHERE OVER CURRENT @ HASH DUP @  Y,  ( link  ) ! ( current )
                 YHERE LAST ! ( remember nfa )
-                YHERE ?CS: ROT  DUP C@  WIDTH @  MIN 1+ >R  ( yh cs str )
-                YHERE YS: R@ CMOVEL ( copy str ) R> YDP +! ALIGN ( nam )
-                128 SWAP YCSET   128 YHERE 1- YCSET   ( delimiter Bits )
+                YHERE SWAP  DUP C@  WIDTH @  MIN 1+ >R  ( yh str )
+                YHERE R@ CMOVE ( copy str ) R> YDP +!
+                128 SWAP CSET   128 YHERE 1- CSET   ( delimiter Bits )
                 HERE Y, ( CFA in header )
-                YHERE HERE CNHASH 2+ Y! ( valid stopper in next n hash entry)
                 ;
 
 DEFER "HEADER   ' <"HEADER> IS "HEADER
-
-: ,CALL         ( -- )
-                232 C, 0 HERE 2+ - , ;        \ Compiles addr 0000 !!!!
-
-: ,JUMP         ( -- )
-                233 C, 0 HERE 2+ - , ;
 
 : <HEADER>      ( | name -- )
                 BL WORD ?UPPERCASE "HEADER ;
@@ -666,53 +353,40 @@ DEFER "HEADER   ' <"HEADER> IS "HEADER
 DEFER HEADER    ' <HEADER> IS HEADER
 
 : "CREATE       ( str-addr -- )
-                "HEADER ,CALL ;USES >NEXT ,-X
+                "HEADER CT-DOVAR , ;
 
-: CREATE        ( | name -- )  
-                HEADER ,CALL ;USES >NEXT ,-X
+: CREATE        ( | name -- )
+                HEADER CT-DOVAR , ;
 
-: !CSP          ( -- )  
+: !CSP          ( -- )
                 SP@ CSP !   ;
 
-: ?CSP          ( -- )  
+: ?CSP          ( -- )
                 SP@ CSP @ <> ABORT" Stack Changed"   ;
 
-: HIDE          ( -- )  
-                LAST @ DUP N>LINK Y@ SWAP CURRENT @ YHASH ! ;
+: HIDE          ( -- )
+                LAST @ DUP N>LINK @ SWAP CURRENT @ YHASH ! ;
 
-: REVEAL        ( -- )  
+: REVEAL        ( -- )
                 LAST @ DUP N>LINK    SWAP CURRENT @ YHASH ! ;
 
-: (;USES)       ( -- )
-                2R> @L LAST @ NAME> dup>r 3 + - R> 1+ ! ;
-
-: (;CODE)       ( -- )
-                2R> @L LAST @ NAME>
-                dup>r 232 ( CALL ) R@ C!       \ Make a CALL not JUMP
-                3 + - R> 1+ !  ;
+BUILTIN NEW-DOES        ( list-addr -- ct ) \ a code token for a DOES> clause
+BUILTIN (DOES>)         ( -- )          \ set LAST's code token, then EXIT
 
 : DOES>         ( -- )
-                COMPILE (;CODE) HERE X, 232 ( CALL ) C,
-                [ [FORTH] ASSEMBLER DODOES META ] LITERAL
-                HERE 2+ - , XHERE PARAGRAPH + DUP XDPSEG !
-                XSEG @ - , XDP OFF ; IMMEDIATE
+\ The rest of the definition is the DOES> clause; it gets its own code
+\ token, compiled in-line after (DOES>).
+                COMPILE (DOES>) XHERE 0 X,  XHERE NEW-DOES SWAP ! ; IMMEDIATE
 
 VOCABULARY ASSEMBLER
-
 DEFER SETASSEM  \ Setup for assembly stuff to follow
-
 ' NOOP IS SETASSEM
 
-: [             ( -- )  
+: [             ( -- )
                 STATE OFF   ;   IMMEDIATE
 
-: ;USES         ( -- )  
-                ?CSP   COMPILE  (;USES)
-                [COMPILE] [   REVEAL   ASSEMBLER   ; IMMEDIATE
-
-: ;CODE         ( -- )  
-                ?CSP   COMPILE  (;CODE) HERE X,
-                [COMPILE] [   REVEAL   SETASSEM ; IMMEDIATE
+\ ;USES and ;CODE attach native code to a defining word; they return with
+\ the abstract-machine assembler (kernel-design.md 5).
 
 : (])           ( -- )
                 STATE ON
@@ -729,13 +403,9 @@ DEFER SETASSEM  \ Setup for assembly stuff to follow
 DEFER ]         ' (]) IS ]
 
 : MAKEDUMMY     ( name -- )
-                HEADER ,JUMP
-                XHERE PARAGRAPH +       \ absolute paragraph of new def
-                DUP XDPSEG !            \ set new XHERE segment
-                XSEG @ - ,              \ compile relative paragraph of def
-                XDP OFF
-                COMPILE UNNEST
-                ;USES  NEST ,-X
+                HEADER CT-NEST ,
+                XALIGN XHERE ,
+                COMPILE UNNEST ;
 
 : ANEW          ( name -- )
                 >IN @ >R DEFINED NIP  R@ >IN !
@@ -744,13 +414,9 @@ DEFER ]         ' (]) IS ]
                                                         \ Add if needed
 : (:)           ( -- )
                 !CSP   CURRENT @ CONTEXT !
-                HEADER ,JUMP
-                XHERE PARAGRAPH +
-                DUP XDPSEG !
-                XSEG @ - ,
-                XDP OFF
-                HIDE
-                ;USES   NEST ,-X
+                HEADER CT-NEST ,
+                XALIGN XHERE ,
+                HIDE ;
 
 : :             ( -- )
                 (:) ] ;
@@ -759,43 +425,39 @@ DEFER ]         ' (]) IS ]
                 STATE @ 0= ABORT" Not Compiling!"
                 ?CSP   COMPILE UNNEST   REVEAL   [COMPILE] [  ; IMMEDIATE
 
-: RECURSIVE     ( -- )   
+: RECURSIVE     ( -- )
                 REVEAL ;   IMMEDIATE
 
-: CONSTANT      ( n -- ) 
-                HEADER ,JUMP ,     ;USES DOCONSTANT ,-X
+: CONSTANT      ( n -- )
+                HEADER CT-DOCONST , ,  ;
 
-: VALUE         ( n -- ) 
-                HEADER ,JUMP ,     ;USES DOVALUE    ,-X
+: VALUE         ( n -- )
+                HEADER CT-DOVALUE , ,  ;
 
-: VARIABLE      ( -- )   
-                CREATE 0 ,         ;USES >NEXT      ,-X
+: VARIABLE      ( -- )
+                CREATE 0 ,  ;
 
 : ARRAY         ( n1 -- )
-                CREATE ALLOT       ;USES >NEXT      ,-X
+                CREATE ALLOT  ;
 
 : DEFER         ( -- )
-                CREATE ['] CRASH , ;USES DODEFER    ,-X
+                HEADER CT-DODEFER , ['] CRASH ,  ;
 
-DODEFER RESOLVES <DEFER>
-
-: VOCABULARY    ( -- )  
+: VOCABULARY    ( -- )
                 CREATE   #THREADS 0 DO   0 ,  LOOP
                 HERE  VOC-LINK @ ,  VOC-LINK !
                 DOES> CONTEXT !  ;
 
- RESOLVES <VOCABULARY>
-
-: DEFINITIONS   ( -- ) 
+: DEFINITIONS   ( -- )
                 CONTEXT @ CURRENT !   ;
 
 : 2CONSTANT     ( d1 | <name> -- )
                 CREATE   , ,    ( d# -- )
-                DOES> 2@   ;    ( -- d# )   DROP
+                DOES> 2@   ;    ( -- d# )
 
 : 2VARIABLE     ( | <name> -- )
                 0 0 2CONSTANT   ( -- )
-                DOES> ;         ( -- addr )   DROP
+                DOES> ;         ( -- addr )
 
 : <RUN>         ( -- )
         STATE @ IF      ]
@@ -807,6 +469,8 @@ DEFER RUN       ' <RUN> IS RUN
 
 DEFER ERRFIX    ' NOOP IS ERRFIX
 
+DEFER QUIT                              \ resolved in KERNEL4
+
 : (?ERROR)      ( adr len f -- )
                 IF      ['] <RUN> IS RUN ERRFIX
                         2>R SP0 @ SP!   PRINTING OFF
@@ -814,4 +478,3 @@ DEFER ERRFIX    ' NOOP IS ERRFIX
                 ELSE    2DROP  THEN  ;
 
 ' (?ERROR) IS ?ERROR
-

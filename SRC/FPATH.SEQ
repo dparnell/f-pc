@@ -1,12 +1,8 @@
 \ FPATH.SEQ     Allow easy open/load of files from OTHER directories
+\                                                       F-PC native port
 
-\ Link this file into the FILELIST chain.
+\ Paths are DOS style (C:\DIR\SUB); the VM maps them to host paths.
 
-FILES DEFINITIONS
-
-VARIABLE FPATH.SEQ
-
-FORTH DEFINITIONS
 
 comment:
 
@@ -81,6 +77,7 @@ CREATE PATHHNDL B/HCB ALLOT     \ A temporary handle
                 swap                            \ bring name to top
                 dup  2+ c@ ASCII : =            \ do we already have a drive?
                 over 1+ c@ ASCII \ = or         \ or a path specified?
+                over 1+ c@ ASCII / = or         \ or a host absolute path?
                 r> 0= or 0=                     \ or handle is empty
                                                 \ skip prepend if we do
              if dup c@ >r >r                    \ save name location & length

@@ -75,10 +75,11 @@ vm_t *vm_new(ucell memsize, host_t *host)
     /* fixed system area */
     ucell a = MEM_RESERVED;
     vm->sysvar = a;            a += SV_COUNT * 8;
-    for (int i = 0; i < SV_COUNT; i++)
-        wr32(vm, vm->sysvar + (ucell)i * 8, T_DOVAR);   /* each slot is a VARIABLE */
+    for (int i = 0; i < SV_COUNT; i++)          /* each slot is a VARIABLE or VALUE */
+        wr32(vm, vm->sysvar + (ucell)i * 8, SV_IS_VALUE(i) ? T_DOVALUE : T_DOVAR);
     vm->tib = a;               a += TIB_SIZE;
-    vm->up = a;                a += USER_CELLS * CELL;
+    vm->dosbuf = a;            a += 256;
+    ucell up = a;              a += USER_CELLS * CELL;
     vm->tramp = a;             a += NTRAMP * 8 + 8;     /* + the HALT code field */
     wr32(vm, vm->tramp + NTRAMP * 8, T_HALT);
     a = aligned(a);
@@ -97,6 +98,7 @@ vm_t *vm_new(ucell memsize, host_t *host)
 
     vm->sp = vm->sp0;
     vm->rp = vm->rp0;
+    sv_set(vm, SV_UP, up);
     uv_set(vm, U_SP0, vm->sp0);
     uv_set(vm, U_RP0, vm->rp0);
     uv_set(vm, U_DP, vm->code_base);
@@ -106,6 +108,14 @@ vm_t *vm_new(ucell memsize, host_t *host)
     sv_set(vm, SV_WIDTH, 31);
     sv_set(vm, SV_CAPS, TRUE_F);
     sv_set(vm, SV_WARNING, TRUE_F);
+    sv_set(vm, SV_TICKTIB, vm->tib);
+    sv_set(vm, SV_ATTRIB, 7);
+    sv_set(vm, SV_CURSOR, 0x0607);
+    {
+        int c = 80, r = 25;
+        if (host->size) host->size(host, &c, &r);
+        sv_set(vm, SV_COLS, (ucell)c); sv_set(vm, SV_ROWS, (ucell)r); sv_set(vm, SV_CROWS, 7);
+    }
     return vm;
 }
 
@@ -245,9 +255,9 @@ L_DODEFER:
     t1 = rd32(vm, w + 4);
     if (!t1) { SYNC(); vm_throw(vm, E_UNDEFINED, "Uninitialized DEFER"); }
     w = t1; goto exec;
-L_DOUSER:  PUSH(vm->up + rd32(vm, w + 4)); NEXT;
+L_DOUSER:  PUSH(vm_up(vm) + rd32(vm, w + 4)); NEXT;
 L_DOUSERDEFER:
-    t1 = rd32(vm, vm->up + rd32(vm, w + 4));
+    t1 = rd32(vm, vm_up(vm) + rd32(vm, w + 4));
     if (!t1) { SYNC(); vm_throw(vm, E_UNDEFINED, "Uninitialized DEFER"); }
     w = t1; goto exec;
 L_HALT:
@@ -335,13 +345,48 @@ L_COMPILE:
     wr32(vm, t2, t1);
     sv_set(vm, SV_XDP, t2 + 4);
     NEXT;
+L_PFETCHTO:    t1 = INLINE(); PUSH(rd32(vm, t1 + 4)); NEXT;
+L_PUFETCHTO:   t1 = INLINE(); PUSH(rd32(vm, vm_up(vm) + rd32(vm, t1 + 4))); NEXT;
+L_PUSTORETO:   t1 = INLINE(); wr32(vm, vm_up(vm) + rd32(vm, t1 + 4), POP()); NEXT;
+L_PINCRTO:     t1 = INLINE(); wr32(vm, t1 + 4, rd32(vm, t1 + 4) + 1); NEXT;
+L_PDECRTO:     t1 = INLINE(); wr32(vm, t1 + 4, rd32(vm, t1 + 4) - 1); NEXT;
+L_POFFTO:      t1 = INLINE(); wr32(vm, t1 + 4, 0); NEXT;
+L_PONTO:       t1 = INLINE(); wr32(vm, t1 + 4, 0xFFFFFFFFu); NEXT;
+L_PADDRTO:     t1 = INLINE(); PUSH(t1 + 4); NEXT;
+L_PSAVESTORETO: t1 = INLINE() + 4; RPUSH(rd32(vm, t1)); wr32(vm, t1, POP()); NEXT;
+L_PSAVETO:     t1 = INLINE() + 4; RPUSH(rd32(vm, t1)); NEXT;
+L_PRESTORETO:  t2 = RPOP(); t1 = INLINE() + 4; wr32(vm, t1, t2); NEXT;
+L_PUSAVESTORETO: t1 = INLINE(); t1 = vm_up(vm) + rd32(vm, t1 + 4); RPUSH(rd32(vm, t1)); wr32(vm, t1, POP()); NEXT;
+L_PUSAVETO:    t1 = INLINE(); t1 = vm_up(vm) + rd32(vm, t1 + 4); RPUSH(rd32(vm, t1)); NEXT;
+L_PURESTORETO: t2 = RPOP(); t1 = INLINE(); t1 = vm_up(vm) + rd32(vm, t1 + 4); wr32(vm, t1, t2); NEXT;
 L_PSTORETO:    t1 = INLINE(); wr32(vm, t1 + 4, POP()); NEXT;
 L_PPLUSSTORETO: t1 = INLINE(); wr32(vm, t1 + 4, rd32(vm, t1 + 4) + POP()); NEXT;
 L_PIS:
     t1 = INLINE();
-    if (rd32(vm, t1) == T_DOUSERDEFER) wr32(vm, vm->up + rd32(vm, t1 + 4), POP());
+    if (rd32(vm, t1) == T_DOUSERDEFER) wr32(vm, vm_up(vm) + rd32(vm, t1 + 4), POP());
     else wr32(vm, t1 + 4, POP());
     NEXT;
+L_DOCASE:
+L_DOENDCASE: NEXT;
+L_DOENDOF: ip = rd32(vm, ip); NEXT;
+L_POF:                          /* ( n1 n2 -- n1 ) or ( n1 n1 -- ) */
+    t1 = POP();
+    if (t1 != S(0)) { ip = rd32(vm, ip); NEXT; }
+    sp += 4; ip += 4;
+    NEXT;
+L_NEXTBAR:                      /* FOR ... NEXT */
+    t1 = R(0);
+    wr32(vm, rp, t1 - 1);
+    if (t1 != 0) { ip = rd32(vm, ip); NEXT; }
+    rp += 4; ip += 4;
+    NEXT;
+L_GOTO:   w = INLINE(); ip = RPOP(); goto exec;
+L_EXECCOLON:                    /* ( n -- ) execute the n-th xt following, then exit */
+    t1 = POP();
+    w = rd32(vm, ip + 4 * t1);
+    ip = RPOP();
+    goto exec;
+L_BOUNDS: t1 = S(0); t2 = S(1); SSET(1, t1 + t2); SSET(0, t2); NEXT;
 L_PDOES:
     t1 = INLINE();                                  /* handler token */
     wr32(vm, name_to_cfa(vm, sv(vm, SV_LAST)), t1);
@@ -387,6 +432,8 @@ L_SPFETCH: t1 = sp; PUSH(t1); NEXT;
 L_SPSTORE: sp = POP(); NEXT;
 L_RPFETCH: PUSH(rp); NEXT;
 L_RPSTORE: rp = POP(); NEXT;
+L_QDROP:  t1 = POP(); if (!t1) { sp += 4; } PUSH(t1); NEXT;
+L_RPICK:  SSET(0, R(S(0))); NEXT;
 L_DEPTH:   t1 = (vm->sp0 - sp) / 4; PUSH(t1); NEXT;
 
     /* ---- arithmetic ---- */
@@ -524,6 +571,21 @@ L_ON:      wr32(vm, POP(), 0xFFFFFFFFu); NEXT;
 L_OFF:     wr32(vm, POP(), 0); NEXT;
 L_INCR:    t1 = POP(); wr32(vm, t1, rd32(vm, t1) + 1); NEXT;
 L_DECR:    t1 = POP(); wr32(vm, t1, rd32(vm, t1) - 1); NEXT;
+L_ZDECR:  t1 = POP(); n1 = (cell)rd32(vm, t1) - 1; wr32(vm, t1, n1 < 0 ? 0 : (ucell)n1); NEXT;
+L_CSET:   t1 = POP(); t2 = POP(); wr8(vm, t1, rd8(vm, t1) | t2); NEXT;
+L_CRESET: t1 = POP(); t2 = POP(); wr8(vm, t1, rd8(vm, t1) & ~t2); NEXT;
+L_CTOGGLE: t1 = POP(); t2 = POP(); wr8(vm, t1, rd8(vm, t1) ^ t2); NEXT;
+L_DPLUSSTORE: {                 /* ( d addr -- ); hi cell at addr */
+    t1 = POP();
+    udcell d = (udcell)POP() << 32; d |= POP();
+    udcell m = (udcell)rd32(vm, t1) << 32 | rd32(vm, t1 + 4);
+    m += d;
+    wr32(vm, t1, (ucell)(m >> 32)); wr32(vm, t1 + 4, (ucell)m);
+    NEXT; }
+L_PCFETCH:
+L_PFETCH: SSET(0, 0xFF); NEXT;  /* no I/O ports: read as floating bus */
+L_PCSTORE:
+L_PSTORE: sp += 8; NEXT;
 L_CMOVE: {
     t3 = POP(); t2 = POP(); t1 = POP();
     if (t3) {
@@ -554,9 +616,21 @@ L_DTRAILING:
     while (t2 > 0 && rd8(vm, t1 + t2 - 1) == ' ') t2--;
     SSET(0, t2);
     NEXT;
-L_COMPARE: {                /* ( a1 a2 n -- -1|0|1 ) */
+L_COMP: {                   /* ( a1 a2 n -- -1|0|1 ) */
     t3 = POP(); t2 = POP(); t1 = S(0);
     int r = t3 ? memcmp(vm_ptr(vm, t1, t3), vm_ptr(vm, t2, t3), t3) : 0;
+    SSET(0, r < 0 ? 0xFFFFFFFFu : r > 0 ? 1u : 0u);
+    NEXT; }
+L_CAPSCOMP: {               /* as COMP, ignoring case (OR $20, as F-PC did) */
+    t3 = POP(); t2 = POP(); t1 = S(0);
+    int r = 0;
+    if (t3) {
+        const uint8_t *a = vm_ptr(vm, t1, t3), *b = vm_ptr(vm, t2, t3);
+        for (ucell i = 0; i < t3 && !r; i++) {
+            int x = a[i] | 0x20, y = b[i] | 0x20;
+            r = x < y ? -1 : x > y;
+        }
+    }
     SSET(0, r < 0 ? 0xFFFFFFFFu : r > 0 ? 1u : 0u);
     NEXT; }
 L_SKIP:                      /* ( a n c -- a' n' ) */
@@ -575,7 +649,11 @@ L_UPPER: {
     uint8_t *p = vm_ptr(vm, t1, t2);
     for (ucell i = 0; i < t2; i++) if (p[i] >= 'a' && p[i] <= 'z') p[i] -= 32;
     NEXT; }
-L_SLASHSTRING: t3 = POP(); SSET(0, S(0) - t3); SSET(1, S(1) + t3); NEXT;
+L_SLASHSTRING:              /* n is clamped to len when 0 <= n, as in F-PC */
+    t3 = POP();
+    if ((cell)t3 >= 0 && t3 > S(0)) t3 = S(0);
+    SSET(0, S(0) - t3); SSET(1, S(1) + t3);
+    NEXT;
 L_PLACE:        /* ( a n dest -- ) */
     t3 = POP(); t2 = POP(); t1 = POP();
     if (t2 > 255) t2 = 255;

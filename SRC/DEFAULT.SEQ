@@ -1,15 +1,11 @@
-\ DEFAULT       Open file specified from command line.  by Tom Zimmer
+\ DEFAULT       Open file specified from command line.  F-PC native port
 
-\ Link this file into the FILELIST chain.
+\ DOS-LINE is the command tail (a counted string), set up by the VM from
+\ the command line arguments it did not use itself.
 
-FILES DEFINITIONS
+BUILTIN DOS-LINE        ( -- a1 )
 
-VARIABLE DEFAULT.SEQ
-
-FORTH DEFINITIONS
-
-128 CONSTANT DOS-LINE
-CREATE CFGHNDL STRING,-T KERNEL.CFG" B/HCB ALLOT
+CREATE CFGHNDL ," KERNEL.CFG" B/HCB ALLOT
 
 : DOS>TIB       ( --- )
                 dos-line count dup #tib ! tib swap cmove >in off ;
@@ -27,4 +23,3 @@ CREATE CFGHNDL STRING,-T KERNEL.CFG" B/HCB ALLOT
                 then    ;               \ skip whole thing if dosline is null
 
 ' HDEFAULT IS DEFAULT
-

@@ -66,7 +66,13 @@ enum {
     X(VOCLINK,"VOC-LINK") X(WARNING,"WARNING") X(CAPS,"CAPS")          \
     X(LOADLINE,"LOADLINE") X(OUT,"#OUT") X(LINE,"#LINE") X(XDP,"XDP")  \
     X(YDP,"YDP") X(WIDTH,"WIDTH") X(LOADING,"LOADING")                 \
-    X(DEFBASE,"DEFBASE") X(FENCE,"FENCE")
+    X(DEFBASE,"DEFBASE") X(FENCE,"FENCE") X(PRIOR,"PRIOR") X(RNUM,"R#")   \
+    X(TICKTIB,"'TIB") X(ENDQ,"END?") X(TOINWORD,">IN_WORD")              \
+    X(ATTRIB,"ATTRIB") X(BIOSCHAR,"BIOSCHAR") X(BIOSKEYVAL,"BIOSKEYVAL")   \
+    X(COLS,"COLS") X(ROWS,"ROWS") X(CROWS,"CROWS") X(UP,"UP")            \
+    X(CURSOR,"CURSOR-SHAPE")
+/* these slots are VALUEs (code field DOVALUE), the rest VARIABLEs */
+#define SV_IS_VALUE(i) ((i) == SV_COLS || (i) == SV_ROWS || (i) == SV_CROWS)
 
 enum {
 #define X(id, name) SV_##id,
@@ -107,6 +113,13 @@ typedef struct host {
     int  (*key)(struct host *h);            /* BIOS-style code, -1 = EOF */
     int  (*keyq)(struct host *h);
     void (*flush)(struct host *h);
+    /* screen: put n chars at (x,y) with attribute; move the cursor;
+       tty-style output at the cursor (handles CR LF BS BEL, scrolls) */
+    void (*put)(struct host *h, int x, int y, const uint8_t *s, size_t n, int attr);
+    void (*gotoxy)(struct host *h, int x, int y);
+    void (*tty)(struct host *h, int c, int attr);
+    void (*size)(struct host *h, int *cols, int *rows);
+    void (*suspend)(struct host *h, int on);   /* hand the terminal over */
     void *priv;
 } host_t;
 
@@ -117,12 +130,13 @@ struct vm {
     uint8_t *mem;
     ucell    memsize;
 
-    ucell ip, w, sp, rp, up;           /* VM addresses                    */
+    ucell ip, w, sp, rp;               /* VM addresses                    */
     ucell sp0, rp0;
 
     ucell sysvar;                      /* address of sysvar block         */
     ucell tib;                         /* TIB address                     */
     ucell tramp;                       /* trampoline area                 */
+    ucell dosbuf;                      /* default DTA (128) + DOS-LINE (128) */
     int   depth;                       /* nesting of vm_execute           */
 
     ucell code_base, code_end;         /* regions                         */
@@ -144,6 +158,8 @@ struct vm {
     int      exit_code;
 
     void    *seed;                     /* seed interpreter state           */
+    ucell    heap_free;                /* allocator free list (dos.c)      */
+    void    *dos;                      /* DOS emulation state              */
 };
 
 /* ---- memory access -------------------------------------------------------- */
@@ -191,7 +207,8 @@ static inline uint8_t *vm_ptr(vm_t *vm, ucell a, ucell n)
 static inline ucell sv_addr(vm_t *vm, int i) { return vm->sysvar + (ucell)i * 8 + 4; }
 static inline ucell sv(vm_t *vm, int i) { return rd32(vm, sv_addr(vm, i)); }
 static inline void sv_set(vm_t *vm, int i, ucell v) { wr32(vm, sv_addr(vm, i), v); }
-static inline ucell uv_addr(vm_t *vm, int i) { return vm->up + (ucell)i * CELL; }
+static inline ucell vm_up(vm_t *vm) { return sv(vm, SV_UP); }   /* user area */
+static inline ucell uv_addr(vm_t *vm, int i) { return vm_up(vm) + (ucell)i * CELL; }
 static inline ucell uv(vm_t *vm, int i) { return rd32(vm, uv_addr(vm, i)); }
 static inline void uv_set(vm_t *vm, int i, ucell v) { wr32(vm, uv_addr(vm, i), v); }
 

@@ -8,9 +8,13 @@ entry here is a bug.
 Reasons:
 - **W**: cell width (16 → 32 bits). Wraparound, unsigned maximum, double-cell
   splitting and byte offsets all change.
-- **H**: test harness. The DOSBox harness logs load errors as
-  `*** ERROR at line N : ...`. Natively, the error report is the F-PC style
-  `file = … at Line N` / source line / `---^-- message`.
+- **H**: test harness. The DOSBox harness logs load errors itself, as
+  `*** ERROR at line N : ...`. Natively, F-PC's own `(DOERROR)` report
+  appears (`file = … at Line N` / source line / `---^-- message`), as it does
+  on the screen under DOS. Natively each test ends with BYE's ` Leaving..`,
+  which the DOSBox harness does not log.
+- **C**: `CMOVE` is a byte-wise ascending move in the port (kernel-design.md
+  §1); the original moved 16-bit words, so overlapping moves differ.
 - **S**: segment words were removed (flat memory model, kernel-design.md §2.1).
 
 ## arith
@@ -34,9 +38,18 @@ Reasons:
 | line | oracle | port | why |
 |---|---|---|---|
 | create | `20 30` | `1310720 20` | W: the test uses 16-bit cell offsets (`TBL 2+`, `TBL 4 +`) |
-| forget | `*** ERROR …` | F-PC-style error report | H. The test deliberately ends with an undefined word. |
+| forget | `*** ERROR …` | F-PC's `(DOERROR)` report | H. The test deliberately ends with an undefined word, so there is no ` Leaving..`. |
 
-## Not run natively yet
-- **strings**: uses kernel words (`">$`) that arrive with the ported kernel (M2).
+## strings
+| line | oracle | port | why |
+|---|---|---|---|
+| cmove | `aabbdd` | `aaaaaa` | C |
+| (end) | | ` Leaving..` | H |
+
+## arith, stack, control
+Each also ends with ` Leaving..` (H).
+
+## Not run natively
+Tests listed in `tests/expected/SKIP`:
 - **farmem**: tests `@L !L C@L CMOVEL LFILL PARAGRAPH +XSEG` (S). It stays as
-  a DOSBox-only oracle; a flat-model replacement is `tests/listspace.seq` (M2).
+  a DOSBox-only oracle.

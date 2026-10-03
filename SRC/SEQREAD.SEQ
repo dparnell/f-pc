@@ -1,14 +1,8 @@
-\ SEQREAD.SEQ   Sequential read and load file           by Tom Zimmer
-
-\ Link this file into the FILELIST chain.
-
-FILES DEFINITIONS
-
-VARIABLE SEQREAD.SEQ
-
-FORTH DEFINITIONS
+\ SEQREAD.SEQ   Sequential read and load file           F-PC native port
 
 DECIMAL
+
+VOCABULARY FILES        \ one VARIABLE per loaded file, for VIEW
 
 DEFER OTHER.CHECK       ' NOOP IS OTHER.CHECK   \ allow extra termination
                         ( a1 f1 -- a1 f2 )      \ testing.
@@ -18,11 +12,11 @@ DEFER OTHER.CHECK       ' NOOP IS OTHER.CHECK   \ allow extra termination
     0 VALUE WITHPATH            \ should the PATH be included in the file var
 16384 VALUE IBLEN               \ current input buffer length
 16384 VALUE IBFULL              \ full buffer size, used to restore IBLEN
-
 IBLEN 0 POINTER INBSEG          \ the input buffer
 
 \ A couple of editor words, needed to give the information editor when
 \ a compile error has occured.
+
     0 VALUE SCREENCHAR
   $0A VALUE DELIMITER
 
@@ -30,54 +24,43 @@ IBLEN 0 POINTER INBSEG          \ the input buffer
 \ normal Forth BLOCK files. You should use BLKTOSEQ.SEQ for this though.
 
   255 VALUE OBLEN               \ output buffer length
-
     0 VALUE INSTART
     0 VALUE INLENGTH
    VARIABLE TOTALLINES
-     CREATE OUTBUF OBLEN 1+ ALLOT \ the line output buffer
 
+     CREATE OUTBUF OBLEN 1+ ALLOT ALIGN \ the line output buffer
 7 B/HCB * CONSTANT MAXNEST        \  maximum of 7 hcb's
-
        CREATE HNDLS MAXNEST B/HCB + ALLOT
-        HNDLS ' SEQHANDLE >BODY !-T           \ PRESET POINTER
-     VARIABLE FILEPOINTER 2 allot \ most recent read
-     VARIABLE LOADING             \ Are we in the proccess of loading a file?
-            0 LOADING !-T         \ initialize to not loading.
-       CREATE CONHNDL B/HCB  ALLOT      1 CONHNDL >HNDLE !-T
-       CREATE PRNHNDL B/HCB  ALLOT      4 PRNHNDL >HNDLE !-T
+        HNDLS !> SEQHANDLE        \ PRESET POINTER
+   2VARIABLE FILEPOINTER          \ most recent read
+     BUILTIN LOADING              \ Are we in the proccess of loading a file?
 
-: CONSOLEL      ( SEG C1 -- )
-                OUTPAUSE
-                SWAP >R SP@ 1 CONHNDL R> EXHWRITE 2DROP
-                #OUT INCR ;
+       CREATE CONHNDL B/HCB  ALLOT      CONHNDL CLR-HCB  1 CONHNDL >HNDLE !
+       CREATE PRNHNDL B/HCB  ALLOT      PRNHNDL CLR-HCB  4 PRNHNDL >HNDLE !
 
 : (CONSOLE)     ( C1 -- )
-                ?CS: SWAP CONSOLEL ;
-
-: PRINTL        ( SEC C1 -- )
                 OUTPAUSE
-                SWAP >R SP@ 1 PRNHNDL R> EXHWRITE 2DROP
+                SP@ 1 CONHNDL HWRITE 2DROP
                 #OUT INCR ;
 
 : (PRINT)       ( C1 --- )
-                ?CS: SWAP PRINTL ;
-
-: PRNTYPEL      ( SEG A1 N1 --- )
                 OUTPAUSE
-                0MAX ROT PRNHNDL SWAP EXHWRITE #OUT +! ;
+                SP@ 1 PRNHNDL HWRITE 2DROP
+                #OUT INCR ;
 
-: CONTYPEL      ( SEG A1 N1 --- )
+: PRNTYPE       ( A1 N1 --- )
                 OUTPAUSE
-                0MAX ROT CONHNDL SWAP EXHWRITE #OUT +! ;
+                0MAX TUCK PRNHNDL HWRITE DROP #OUT +! ;
 
-: (TYPEL)       ( SEG A1 N1 --- )       \ External type, from other segment
-                PRINTING @
-                IF      PRNTYPEL
-                ELSE    CONTYPEL
-                THEN    ;
+: CONTYPE       ( A1 N1 --- )
+                OUTPAUSE
+                0MAX TUCK CONHNDL HWRITE DROP #OUT +! ;
 
 : (TYPE)        ( A1 N1 --- )
-                ?CS: -ROT TYPEL ;
+                PRINTING @
+                IF      PRNTYPE
+                ELSE    CONTYPE
+                THEN    ;
 
 DEFER LOADSTAT  ' NOOP IS LOADSTAT
 
@@ -87,87 +70,40 @@ DEFER LOADSTAT  ' NOOP IS LOADSTAT
 : .SEQHANDLE        ( --- )
                 seqhandle count type ;
 
-CODE CURPOINTER ( handle --- double-current )
-                pop bx
-                add bx, # hndloffset
-                mov bx, 0 [bx]
-                sub cx, cx
-                mov dx, cx
-                mov ax, # $4201  \ from end of file
-                int $21
-                push ax
-                push dx
-                next
-                end-code
+BUILTIN CURPOINTER      ( handle --- double-current )
 
-\ : SAVEPOINTER   ( --- )
-\                 seqhandle curpointer inlength 0 d- filepointer 2! ;
-
-CODE GET_ALINE  ( --- a1 )
-                push es                         \ Save ES for later restoral
-                mov di, ' instart >body         \ Searching from INSTART
-                mov ax, ' DELIMITER >body       \ Searching for line delimiter
-                mov cx, ' inlength >body        \ for INLENGTH clipped to OBLEN
-                cmp cx, ' oblen >body           \ if INLENGTH > OBLEN
-              > if      mov cx, ' oblen >body   \ clip search length to OBLEN
-                then    mov dx, cx              \ save search length in DX
-          cx<>0 if      mov es, ' inbseg >body  \ searching INBSEG segment
-                        repnz           scasb   \ Scan for Linefeed char
-                then    sub dx, cx              \ DX = length of line
-                sub ' inlength >body dx         \ subtract line from remaining
-                mov outbuf dl byte              \ set the length of OUTBUF
-                mov bx, si                      \ save IP for later restoral
-                mov si, ' instart >body         \ moving from INSTART
-                add ' instart >body dx          \ set start to after line
-                mov cx, dx                      \ cx = length to move
-                mov di, # outbuf 1+             \ moving to OUTBUF
-                mov ds, ' inbseg >body          \ from INBSEG segment
-                mov ax, cs      mov es, ax      \ to CODE segment
-                TEST DI, # 1
-                JZ 0 $
-                JCXZ 0 $
-                MOVSB
-                DEC CX
-        0 $:    SHR CX, # 1
-                REPNZ           MOVSW
-                RCL CX, # 1
-                REPNZ           MOVSB
-                mov ax, cs      mov ds, ax      \ restore DS
-                mov si, bx                      \ restore IP
-                inc loadline word               \ bump line counter
-                mov bx, # filepointer           \ Set BX to point to FILEPOINTER
-                sub cx, cx                      \ clear CX
-                mov cl, outbuf                  \ read byte length of OUTBUF
-                add 2 [bx], cx                  \ Add to 32bit contents of
-                adc 0 [bx], # 0 word            \ FILEPOINTER
-                pop es                          \ restore ES
-                mov ax, # outbuf                \ return address of buffer
-                1push           end-code
+: GET_ALINE     ( --- a1 )
+\ Move the next line, up to and including the DELIMITER, from the input
+\ buffer to OUTBUF.
+                INBSEG INSTART + INLENGTH OBLEN MIN     ( a n )
+                2DUP DELIMITER SCAN NIP DUP IF 1- THEN - ( a len )
+                DUP NEGATE %+!> INLENGTH
+                DUP %+!> INSTART
+                DUP OUTBUF C!
+                OUTBUF 1+ SWAP CMOVE
+                LOADLINE INCR
+                OUTBUF C@ 0 FILEPOINTER D+!
+                OUTBUF ;
 
 : FILLBUFF      ( --- )         \ Refill the input buffer.
-                inbseg instart over 0 inlength cmovel
+                INBSEG INSTART + INBSEG INLENGTH CMOVE
                 %off> instart
-                inlength iblen inlength -
-                seqhandle inbseg exhread        \ perform the actual read
+                INBSEG INLENGTH + IBLEN INLENGTH -
+                seqhandle HREAD                 \ perform the actual read
                 %+!> inlength                   \ adjust buffer length
                                 \
                                 \ strip off any Control Z's at end of file by
                 -6 -1           \ scaning the last 6 chars of the read buffer
                                 \ when a FILLBUFF occurs.
                 do      inlength i + 0< ?leave          \ leave if begin buf
-                        inbseg inlength i + c@L 26 =    \ is it ^Z?
+                        INBSEG INLENGTH + I + C@ 26 =   \ is it ^Z?
                         if      bl
-                                inbseg inlength i + c!L \ change to BLANK
+                                INBSEG INLENGTH + I + C! \ change to BLANK
                         then
-            -1 +loop    ( savepointer ) ;
+            -1 +loop    ;
 
-CODE ?FILLBUFF  ( --- )         \ refill INBUF if needed
-                cmp ' inlength >body # oblen 1+ word
-            u>= if      next
-                then                            \ If we got here, then
-                mov ax, # ' fillbuff            \ go and re-fill the buffer
-                jmp ax
-                end-code
+: ?FILLBUFF     ( --- )         \ refill INBUF if needed
+                INLENGTH OBLEN 1+ U< IF  FILLBUFF  THEN ;
 
 : %LINEREAD     ( --- a1 )      \ read a line delimited by CRLF
                 ?fillbuff       \ re-fill buffer if needed.
@@ -211,7 +147,7 @@ $0A VALUE DEFBASE
 
 : (?SERROR)     ( a1 n1 f1 --- )
                 dup ?base_restore
-                %@> loading
+                loading @
                 if
                         if      2>R sp0 @ sp! printing off loading off
                                 ['] <run> is run errfix
@@ -237,14 +173,19 @@ $0A VALUE DEFBASE
                         dup %!> seqhandle clr-hcb
                 then    ;
 
+: MEMCHK        ( f1 -- )
+\ If flag is true, Terminate execution and return to DOS with error message.
+                IF      ." Insufficient Memory"
+                        0 0 BDOS
+                THEN ;
+
 : SEQINIT       ( --- )
                 noop hndls %!> seqhandle
                 hndls   maxnest over + swap
                 do      i clr-hcb
          b/hcb +loop
-                iblen paragraph (lit) inbseg >body 4 + ! \ set read buf size
-\ set the pointer's size in paragraphs to the current size of IBLEN.
-                inbseg 0= memchk                         \ force allocation
+                iblen 0 sizeof!> inbseg         \ set read buf size
+                inbseg 0= memchk                \ force allocation
                 conhndl clr-hcb " CON." conhndl ">handle
                 1 conhndl >hndle !
                 prnhndl clr-hcb " PRN." prnhndl ">handle
@@ -261,7 +202,6 @@ $0A VALUE DEFBASE
                 ibreset ;
 
 DEFER GETFILE       ( --- <a1> f1 )     \ return a1 filename addr and
-
 ' FALSE IS GETFILE                      \ Default to failed
 
 : FILE>TIB      ( a1 --- )              \ given a counted string a1, insert it
@@ -295,28 +235,15 @@ DEFER GETFILE       ( --- <a1> f1 )     \ return a1 filename addr and
 : HIDELINES     ( --- )         \ disable displaying of loaded lines
                 0 %!> listvar ;
 
-CODE CRLF>BL'S  ( a1 --- a1 )   \ change CRLF at end of string to blanks
-                pop bx          \ leaving the string address on the stack
-                push bx         \ Same as -> DUP COUNT + 2- DUP @ $0D0A =
-                mov al, 0 [bx]  \            IF 8224 SWAP ! ELSE DROP DROP ;
-                sub ah, ah
-                add bx, ax
-                dec bx
-                cmp 0 [bx], # $0A0D word        \ if line ends in CRLF
-             0= if      mov 0 [bx], # 8224 word \ change then to blanks
-                then    next
-                end-code
+: CRLF>BL'S     ( a1 --- a1 )   \ change CRLF (or LF) at end of string to blanks
+                DUP COUNT + 1- DUP C@ $0A =     \ also handles LF-only lines
+                IF      BL OVER C!  1- DUP C@ $0D =
+                        IF  BL SWAP C!  ELSE  DROP  THEN
+                ELSE    DROP
+                THEN    ;
 
-CODE SETTIB     ( a1 --- )      \ Set TIB to counted string a1
-                pop bx
-                mov al, 0 [bx]
-                inc bx
-                mov 'tib bx
-                sub ah, ah
-                mov #tib ax
-                mov >in # 0 WORD        \ 05/25/90 tjz
-                next
-                end-code
+: SETTIB        ( a1 --- )      \ Set TIB to counted string a1
+                COUNT #TIB ! 'TIB !  >IN OFF ;
 
 : %.LOADLINE    ( a1 --- a1 )
                 cr loadline @ 5 u.r space
@@ -324,26 +251,11 @@ CODE SETTIB     ( a1 --- )      \ Set TIB to counted string a1
 
 DEFER .LOADLINE         ' %.LOADLINE IS .LOADLINE
 
-CODE ?.LOADLINE ( a1 --- a1 )
-                mov cx, ' listvar >body
-                inc cx
-          cx<>0 if      next                    \ if LISTVAR = -1, leave
-                then
-                mov ax, # ' .loadline           \ if LISTVAR <> zero, continue
-                jmp ax  end-code
+: ?.LOADLINE    ( a1 --- a1 )   \ show the line if LISTVAR is -1
+                LISTVAR -1 = IF  .LOADLINE  THEN ;
 
-CODE LENGTH.CHECK ( a1 --- a1 f1 )
-                mov ax, # true
-                mov cx, ' inlength >body        \ if read length <> 0
-          cx<>0 if      1push                   \ then we aren't done
-                then
-                pop di                          \ get a copy of line buf ptr
-                push di
-                cmp 0 [di], # 0 byte            \ if line buffer <> 0
-            0<> if      1push                   \ then we aren't done
-                then
-                mov ax, # false
-                1push   end-code                \ else we are done
+: LENGTH.CHECK  ( a1 --- a1 f1 ) \ false when the input is exhausted
+                INLENGTH IF  TRUE  ELSE  DUP C@ 0<>  THEN ;
 
 : FILLTIB       ( --- )
                 lineread crlf>bl's ?.loadline settib ;
@@ -377,25 +289,25 @@ CODE LENGTH.CHECK ( a1 --- a1 f1 )
 : <LOAD>        ( --- )
                 loadstat
                 ibfull %!> iblen         \ set maximum length read buffer
-                true  %save!> loading
-                      %save>  'tib
-                      %save>  >in
-                false %save!> #tib
-                      %save>  loadline
-                      %save>  run
+                true  save!> loading
+                      save>  'tib
+                      save>  >in
+                false save!> #tib
+                      save>  loadline
+                      save>  run
                 0 %!> screenchar
                 begin   lineread
                         length.check    ( -- a1 f1 )
                         other.check     ( -- a1 f1 )
                 while   crlf>bl's ?.loadline settib run
                 repeat  drop
-                %@> loadline %+!> totallines
-                %restore> run
-                %restore> loadline
-                %restore> #tib
-                %restore> >in
-                %restore> 'tib
-                %restore> loading
+                loadline @ totallines +!
+                restore> run
+                restore> loadline
+                restore> #tib
+                restore> >in
+                restore> 'tib
+                restore> loading
                 loading @               \ if we are still loading,
                 if      256   %!> iblen \ use a small read buffer
                 else    ibfull %!> iblen \ else use the full size buffer
@@ -414,11 +326,10 @@ DEFER LOADER    ' <LOAD> IS LOADER
                         loop
                 then    ;
 
-
 : LOADED,       ( --- )         \ refactored to support new view.seq by REP
-                %save> 'tib
-                %save> >in
-                %save> #tib             \ save interpretation status
+                save> 'tib
+                save> >in
+                save> #tib             \ save interpretation status
                 seqhandle count
                 withpath 0=             \ Should the PATH not be
                 if                      \ included in the file VARIABLE?
@@ -428,18 +339,18 @@ DEFER LOADER    ' <LOAD> IS LOADER
                                 1 /string
                         repeat  2drop
                 then
-                %!> #tib                \ set #tib
-                %!> 'tib                \ set tib to seqhandle
-                %off> >in               \ clear >in
-                %save> context          \ save current context
-                %save> current          \  and current vocab state
+                #tib !                  \ set #tib
+                'tib !                  \ set tib to seqhandle
+                >in off                 \ clear >in
+                context @ >r            \ save current context
+                current @ >r            \  and current vocab state
                 files definitions       \ select files vocabulary
                 variable                \ make the header
-                %restore> current
-                %restore> context       \ restore vocabulary state
-                %restore> #tib
-                %restore> >in
-                %restore> 'tib ;
+                r> current !
+                r> context !            \ restore vocabulary state
+                restore> #tib
+                restore> >in
+                restore> 'tib ;
 
  TRUE VALUE ?LOADED,    \ Allow disabling LOADED, for one time.
 FALSE VALUE ?NOLOADED,
@@ -448,33 +359,32 @@ FALSE VALUE ?NOLOADED,
                 ?loaded,   ?noloaded, 0=  and
                 if
                         loaded,
-                        0 %save!> loadline
-                        here 2- >r  \ save pointer to files variable  rep
+                        0 save!> loadline
+                        here cell- >r  \ save pointer to files variable  rep
                         0.0 seqhandle movepointer
                         0.0 filepointer 2!
                         loader
                                         \ make sure the variable still exists
-                        r@ body> @rel>abs       \ is the CFA pointing to
-                        ['] loading @rel>abs =  \ DOVAR ?
+                        r@ body> @ CT-DOVAR =   \ is the CFA a VARIABLE?
                         if    here r> ! \ store end in file variable    rep
                         else  r>drop    \ else discard the address      tjz
                         then
                 else
                         %on> ?loaded,    \ do loaded, on following floads
-                        0 %save!> loadline
+                        0 save!> loadline
                         0.0 seqhandle movepointer
                         0.0 filepointer 2!
                         loader
-                then    %restore> loadline ;
+                then    restore> loadline ;
 
 : CHARREAD      ( --- c1 )      \ Read a character from the current file.
                 loading @
-        if      begin   %@> >in   %@> #tib =    \ If nothing in line
+        if      begin   >in @   #tib @ =        \ If nothing in line
                         inlength 0> and         \ and input buf not empty
                 while   ?fillbuff               \ Optionally refill buffer
                         filltib                 \ refill the TIB
                 repeat
-        then    %@> >in   %incr> >in   tib + c@ ;
+        then    >in @   >in incr   tib + c@ ;
 
 : ?FILEOPEN     ( --- )                 \ Verify a file is open.
                 seqhandle >hndle @ 0<
@@ -485,10 +395,8 @@ FALSE VALUE ?NOLOADED,
                 IBRESET
                 <fload> ;
 
-
 : \S            ( n1 --- )              \ Ignore the rest of the file.
                 seqhandle endfile 2drop \ Move to end of file
                 loadline off
                 IBRESET
-                %@> #tib %!> >in ;      \ Ignore rest of line
-
+                #tib @ >in ! ;          \ Ignore rest of line

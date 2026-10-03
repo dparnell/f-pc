@@ -40,6 +40,7 @@ typedef struct seed {
     infile_t *in;               /* current source file, NULL = terminal     */
     int interactive;
     char **paths; int npaths;
+    ucell builtin_limit;        /* code fields below this came from the VM  */
 } seed_t;
 
 #define SEED(vm) ((seed_t *)(vm)->seed)
@@ -55,7 +56,8 @@ static void allot(vm_t *vm, cell n)
 }
 static void comma(vm_t *vm, ucell v) { ucell h = here(vm); allot(vm, 4); wr32(vm, h, v); }
 static void ccomma(vm_t *vm, ucell v) { ucell h = here(vm); allot(vm, 1); wr8(vm, h, v); }
-static void align(vm_t *vm) { while (here(vm) & 3) ccomma(vm, 0); }
+/* advance HERE to a cell boundary without writing: WORD's buffer is at HERE */
+static void align(vm_t *vm) { allot(vm, (cell)(aligned(here(vm)) - here(vm))); }
 
 static ucell xhere(vm_t *vm) { return sv(vm, SV_XDP); }
 static void xcomma(vm_t *vm, ucell v)
@@ -102,7 +104,8 @@ static void xstring(vm_t *vm, const uint8_t *s, ucell n)
 /* ---- headers ---------------------------------------------------------------- */
 static ucell hash_thread(const uint8_t *s, ucell n, ucell voc)
 {
-    ucell c0 = n > 0 ? s[0] : ' ', c1 = n > 1 ? s[1] : ' ';
+    n &= 31;
+    ucell c0 = n > 0 ? s[0] & 0x7F : ' ', c1 = n > 1 ? s[1] & 0x7F : ' ';
     return voc + (((c0 * 2 + c1) * 2 + n) & (NTHREADS - 1)) * CELL;
 }
 
@@ -206,11 +209,12 @@ static ucell cfa_to_nfa(vm_t *vm, ucell cfa)
 /* WORD: parse from TIB, leave a counted string at HERE followed by a blank */
 static ucell parse_word(vm_t *vm, int delim)
 {
-    ucell tib = vm->tib, n = sv(vm, SV_NTIB), in = sv(vm, SV_TOIN);
+    ucell tib = sv(vm, SV_TICKTIB), n = sv(vm, SV_NTIB), in = sv(vm, SV_TOIN);
     if (in > n) in = n;
 #define ISDELIM(c) (delim == ' ' ? (c) <= ' ' : (c) == (ucell)delim)
     while (in < n && ISDELIM(rd8(vm, tib + in))) in++;
     ucell start = in;
+    sv_set(vm, SV_TOINWORD, start);
     while (in < n && !ISDELIM(rd8(vm, tib + in))) in++;
     ucell len = in - start;
     if (in < n) in++;                       /* skip the delimiter */
@@ -228,7 +232,7 @@ static ucell parse_word(vm_t *vm, int delim)
 /* PARSE: ( c -- a n ), no leading skip */
 static void parse_delim(vm_t *vm, int delim, ucell *a, ucell *len)
 {
-    ucell tib = vm->tib, n = sv(vm, SV_NTIB), in = sv(vm, SV_TOIN);
+    ucell tib = sv(vm, SV_TICKTIB), n = sv(vm, SV_NTIB), in = sv(vm, SV_TOIN);
     if (in > n) in = n;
     ucell start = in;
     while (in < n && rd8(vm, tib + in) != (ucell)delim) in++;
@@ -378,6 +382,7 @@ static int read_line(FILE *f, char *buf, int max)
 static void set_tib(vm_t *vm, const char *s, int n)
 {
     if (n > TIB_SIZE) n = TIB_SIZE;
+    sv_set(vm, SV_TICKTIB, vm->tib);
     memcpy(vm->mem + vm->tib, s, (size_t)n);
     sv_set(vm, SV_NTIB, (ucell)n);
     sv_set(vm, SV_TOIN, 0);
@@ -475,7 +480,7 @@ static FILE *ci_open(const char *path, char *found, size_t foundsz)
 static FILE *open_source(vm_t *vm, const char *name, char *found, size_t foundsz)
 {
     seed_t *sd = SEED(vm);
-    char nm[512], try[1100];
+    char nm[512], try[1600];
     size_t i;
     snprintf(nm, sizeof nm, "%s", name);
     for (i = 0; nm[i]; i++) if (nm[i] == '\\') nm[i] = '/';
@@ -513,6 +518,7 @@ void seed_include(vm_t *vm, const char *name)
     uint8_t savetib[TIB_SIZE];
     memcpy(savetib, vm->mem + vm->tib, TIB_SIZE);
     ucell ntib = sv(vm, SV_NTIB), toin = sv(vm, SV_TOIN), line = sv(vm, SV_LOADLINE);
+    ucell ttib = sv(vm, SV_TICKTIB);
     in->prev = sd->in;
     sd->in = in;
     sv_set(vm, SV_LOADING, sv(vm, SV_LOADING) + 1);
@@ -525,6 +531,7 @@ void seed_include(vm_t *vm, const char *name)
     sv_set(vm, SV_LOADING, sv(vm, SV_LOADING) - 1);
     memcpy(vm->mem + vm->tib, savetib, TIB_SIZE);
     sv_set(vm, SV_NTIB, ntib); sv_set(vm, SV_TOIN, toin); sv_set(vm, SV_LOADLINE, line);
+    sv_set(vm, SV_TICKTIB, ttib);
 }
 
 /* ---- error reporting and the top level ---------------------------------------------------- */
@@ -538,7 +545,7 @@ static void report_error(vm_t *vm)
         snprintf(buf, sizeof buf, " at Line %u", sd->in->line);
         vm_types(vm, "file = "); vm_types(vm, sd->in->path); vm_types(vm, buf);
         vm_emit(vm, '\n');
-        vm_type(vm, vm->mem + vm->tib, sv(vm, SV_NTIB));
+        vm_type(vm, vm_ptr(vm, sv(vm, SV_TICKTIB), sv(vm, SV_NTIB)), sv(vm, SV_NTIB));
         vm_emit(vm, '\n');
         ucell w = here(vm);
         ucell pos = sv(vm, SV_TOIN);
@@ -626,7 +633,10 @@ void p_XHERE(vm_t *vm)  { push(vm, xhere(vm)); }
 void p_XCOMMA(vm_t *vm) { xcomma(vm, pop(vm)); }
 void p_XCCOMMA(vm_t *vm) { xccomma(vm, pop(vm)); }
 void p_YHERE(vm_t *vm)  { push(vm, yhere(vm)); }
-void p_PAD(vm_t *vm)    { push(vm, here(vm) + 80 + 256); }
+void p_PAD(vm_t *vm)    { push(vm, here(vm) + 80); }
+void p_YCOMMA(vm_t *vm) { ycomma(vm, pop(vm)); }
+void p_YCCOMMA(vm_t *vm) { yccomma(vm, pop(vm)); }
+void p_SOURCE(vm_t *vm) { push(vm, sv(vm, SV_TICKTIB)); push(vm, sv(vm, SV_NTIB)); }
 void p_TIB(vm_t *vm)    { push(vm, vm->tib); }
 void p_WORD(vm_t *vm)   { push(vm, parse_word(vm, (int)(pop(vm) & 0xFF))); }
 void p_PARSE(vm_t *vm)
@@ -670,7 +680,7 @@ void p_NUMBER(vm_t *vm)         /* ( a -- d ) */
 void p_DIGIT(vm_t *vm)          /* ( c base -- n f | c f ) */
 {
     int base = (int)pop(vm); ucell c = pop(vm);
-    int v = digit_val((int)c, base);
+    int v = (c >= 'a' && c <= 'z') ? -1 : digit_val((int)c, base);
     if (v < 0) { push(vm, c); push(vm, 0); } else { push(vm, (ucell)v); push(vm, TRUE_F); }
 }
 void p_TONUMBER(vm_t *vm)       /* ( ud a n -- ud' a' n' ) */
@@ -688,6 +698,24 @@ void p_TONUMBER(vm_t *vm)       /* ( ud a n -- ud' a' n' ) */
 }
 void p_NAMEFROM(vm_t *vm) { push(vm, nfa_cfa(vm, pop(vm))); }
 void p_TONAME(vm_t *vm)   { push(vm, cfa_to_nfa(vm, pop(vm))); }
+void p_PFIND(vm_t *vm)          /* ( here alf -- cfa flag | here false ) */
+{
+    ucell lfa = pop(vm), a = top(vm), n = rd8(vm, a);
+    const uint8_t *s = vm_ptr(vm, a + 1, n);
+    for (; lfa; lfa = rd32(vm, lfa)) {
+        ucell nfa = lfa + 4;
+        if ((rd8(vm, nfa) & 31) != n) continue;
+        ucell i;
+        for (i = 0; i < n; i++)
+            if ((rd8(vm, nfa + 1 + i) & 0x7F) != s[i]) break;
+        if (i < n) continue;
+        wr32(vm, vm->sp, nfa_cfa(vm, nfa));
+        push(vm, (rd8(vm, nfa) & 0x40) ? 1 : TRUE_F);
+        return;
+    }
+    push(vm, 0);
+}
+void p_NEWDOES(vm_t *vm) { push(vm, vm_add_handler(vm, HK_DOES, NULL, pop(vm), NULL)); }
 void p_TOLINK(vm_t *vm)   { ucell n = cfa_to_nfa(vm, pop(vm)); push(vm, n ? n - 4 : 0); }
 void p_TOBODY(vm_t *vm)   { push(vm, pop(vm) + 4); }
 void p_BODYFROM(vm_t *vm) { push(vm, pop(vm) - 4); }
@@ -758,7 +786,7 @@ void p_DOTR(vm_t *vm) { cell w = (cell)pop(vm), n = (cell)pop(vm); out_num(vm, n
 void p_UDOTR(vm_t *vm) { cell w = (cell)pop(vm); out_num(vm, pop(vm), 0, w, 0); }
 void p_DDOTR(vm_t *vm) { cell w = (cell)pop(vm); dcell d = (dcell)dpop(vm); out_num(vm, d < 0 ? 0 - (udcell)d : (udcell)d, d < 0, w, 0); }
 
-static ucell pad_addr(vm_t *vm) { return here(vm) + 80 + 256; }
+static ucell pad_addr(vm_t *vm) { return here(vm) + 80; }
 void p_BEGINNUM(vm_t *vm) { uv_set(vm, U_HLD, pad_addr(vm)); }
 void p_HOLD(vm_t *vm)
 {
@@ -816,11 +844,11 @@ void p_EVALUATE(vm_t *vm)
     ucell n = pop(vm), a = pop(vm);
     uint8_t savetib[TIB_SIZE];
     memcpy(savetib, vm->mem + vm->tib, TIB_SIZE);
-    ucell ntib = sv(vm, SV_NTIB), toin = sv(vm, SV_TOIN);
+    ucell ntib = sv(vm, SV_NTIB), toin = sv(vm, SV_TOIN), ttib = sv(vm, SV_TICKTIB);
     set_tib(vm, (const char *)vm_ptr(vm, a, n), (int)n);
     interpret(vm);
     memcpy(vm->mem + vm->tib, savetib, TIB_SIZE);
-    sv_set(vm, SV_NTIB, ntib); sv_set(vm, SV_TOIN, toin);
+    sv_set(vm, SV_NTIB, ntib); sv_set(vm, SV_TOIN, toin); sv_set(vm, SV_TICKTIB, ttib);
 }
 void p_FLOAD(vm_t *vm)
 {
@@ -830,6 +858,14 @@ void p_FLOAD(vm_t *vm)
     memcpy(name, vm->mem + w + 1, n); name[n] = 0;
     seed_include(vm, name);
 }
+void p_SEEDERROR(vm_t *vm)      /* ( a n f -- ) ?ERROR while bootstrapping */
+{
+    ucell f = pop(vm), n = pop(vm), a = pop(vm);
+    if (!f) return;
+    if (n > 150) n = 150;
+    vm_throw(vm, E_ABORTQ, "%.*s", (int)n, (const char *)vm_ptr(vm, a, n));
+}
+void p_INCLUDE(vm_t *vm) { p_FLOAD(vm); }   /* the seed's FLOAD, never shadowed */
 void p_WORDS(vm_t *vm)
 {
     ucell voc = rd32(vm, SEED(vm)->context);
@@ -900,6 +936,15 @@ void p_VOCABULARY(vm_t *vm)
 void p_HIDE(vm_t *vm) { hide(vm); }
 void p_REVEAL(vm_t *vm) { reveal(vm); }
 void p_RBRACKET(vm_t *vm) { sv_set(vm, SV_STATE, TRUE_F); }
+/* BUILTIN name  -- assert that the VM provides name (kernel-design.md 4.2) */
+void p_BUILTIN(vm_t *vm)
+{
+    ucell w = parse_name(vm);
+    ucell n = rd8(vm, w);
+    ucell nfa = search(vm, vm->mem + w + 1, n);
+    if (!nfa || nfa_cfa(vm, nfa) >= SEED(vm)->builtin_limit)
+        vm_throw(vm, E_UNDEFINED, "BUILTIN %.*s: not provided by the VM", (int)n, (char *)vm->mem + w + 1);
+}
 void p_CTSTORE(vm_t *vm) { ucell cfa = pop(vm); wr32(vm, cfa, pop(vm)); }
 void p_FORGET(vm_t *vm)
 {
@@ -908,7 +953,7 @@ void p_FORGET(vm_t *vm)
     ucell nfa = search(vm, vm->mem + w + 1, n);
     if (!nfa) vm_throw(vm, E_UNDEFINED, "%.*s <- What?", (int)n, (char *)vm->mem + w + 1);
     ucell cfa = nfa_cfa(vm, nfa), vfa = nfa - 8;
-    if (cfa < sv(vm, SV_FENCE) || vfa < sv(vm, SV_FENCE))
+    if (vfa < sv(vm, SV_FENCE))
         vm_throw(vm, E_ABORTQ, "Below fence");
     /* drop vocabularies created after the word */
     ucell link = sv(vm, SV_VOCLINK);
@@ -986,7 +1031,7 @@ void p_QUOTE(vm_t *vm)
     parse_quote(vm, &a, &n);
     if (compiling(vm)) { compile_xt(vm, XT(PQUOTE)); xstring(vm, vm->mem + a, n); return; }
     /* interpreting: copy to a transient buffer above PAD */
-    ucell buf = pad_addr(vm) + 256;
+    ucell buf = pad_addr(vm) + 512;
     if (n > 255) n = 255;
     memmove(vm_ptr(vm, buf, n + 1), vm->mem + a, n);
     push(vm, buf); push(vm, n);
@@ -1057,7 +1102,7 @@ static void store_into(vm_t *vm, ucell runtime, int plus)
     ucell xt = tick(vm, NULL);
     if (compiling(vm)) { compile_xt(vm, runtime); xcomma(vm, xt); return; }
     ucell v = pop(vm);
-    ucell a = rd32(vm, xt) == T_DOUSERDEFER ? vm->up + rd32(vm, xt + 4) : xt + 4;
+    ucell a = (rd32(vm, xt) == T_DOUSERDEFER || rd32(vm, xt) == T_DOUSER) ? vm_up(vm) + rd32(vm, xt + 4) : xt + 4;
     wr32(vm, a, plus ? rd32(vm, a) + v : v);
 }
 void p_IS(vm_t *vm)          { store_into(vm, XT(PIS), 0); }
@@ -1076,6 +1121,16 @@ static ucell def_const(vm_t *vm, const char *name, ucell v)
     comma(vm, T_DOCONST); comma(vm, v);
     head_for(vm, name, cfa);
     return cfa;
+}
+
+ucell seed_find(vm_t *vm, const char *name)
+{
+    char up[32];
+    size_t n = strlen(name);
+    if (n > 31) return 0;
+    for (size_t i = 0; i < n; i++) up[i] = (char)toupper((unsigned char)name[i]);
+    ucell nfa = search(vm, (const uint8_t *)up, (ucell)n);
+    return nfa ? nfa_cfa(vm, nfa) : 0;
 }
 
 void seed_add_path(vm_t *vm, const char *dir)
@@ -1127,6 +1182,7 @@ void seed_init(vm_t *vm)
     comma(vm, 0);
     sv_set(vm, SV_VOCLINK, link);
     wr32(vm, sd->context, sd->forth);
+    wr32(vm, sd->context + 4, sd->forth);      /* as after ONLY FORTH ALSO */
     sv_set(vm, SV_CURRENT, sd->forth);
 
     /* 4. headers */
@@ -1179,8 +1235,17 @@ void seed_init(vm_t *vm)
     def_const(vm, "CT-DODEFER", T_DODEFER);
     def_const(vm, "CT-DOUSER", T_DOUSER);
     def_const(vm, "CT-DOUSERDEFER", T_DOUSERDEFER);
-    def_const(vm, "UP", uv_addr(vm, 0) - 0);   /* address of the user area */
+    def_const(vm, "LIMIT", vm->code_end);
+    def_const(vm, "FIRST", vm->code_end - 16);
+    def_const(vm, "SP-LIMIT", vm->sp0 - DSTACK_CELLS * CELL);
+    def_const(vm, "TIB0", vm->tib);
+    def_const(vm, "DOS-LINE", vm->dosbuf + 128);
+    def_const(vm, "USER-SIZE", U_END * CELL);
+    def_const(vm, "USER-MAX", USER_CELLS * CELL);
+    def_const(vm, "LIST-LIMIT", vm->list_end);
+    def_const(vm, "HEAD-LIMIT", vm->head_end);
     sv_set(vm, SV_WARNING, TRUE_F);
-    sv_set(vm, SV_FENCE, here(vm));
+    sv_set(vm, SV_FENCE, yhere(vm));
+    sd->builtin_limit = here(vm);
     vm->catch_jmp = NULL;
 }

@@ -9,4 +9,5 @@ void seed_include(vm_t *vm, const char *name);   /* throws on error      */
 int  seed_load(vm_t *vm, const char *path);      /* 0 ok, else throw code */
 int  seed_eval(vm_t *vm, const char *line);
 int  seed_quit(vm_t *vm);                        /* REPL until EOF/BYE  */
+ucell seed_find(vm_t *vm, const char *name);     /* xt or 0             */
 #endif

@@ -1,30 +1,25 @@
-\ HANDLES.SEQ   Handle impementation file               by Tom Zimmer
+\ HANDLES.SEQ   Handle impementation file               F-PC native port
 
-\ Link this file into the FILELIST chain.
-
-FILES DEFINITIONS
-
-VARIABLE HANDLES.SEQ
-
-FORTH DEFINITIONS
-
-\ This file contains the code to talk to a file with the
-\ DOS 2.00+ handle routines.
+\ This file contains the code to talk to a file with the DOS 2.00+ handle
+\ routines. The VM emulates those DOS functions over the host's files
+\ (vm/dos.c); DOS paths are mapped to host paths, case-insensitively.
 
 DECIMAL
 
-70 CONSTANT B/HCB
-68 CONSTANT HNDLOFFSET
+76 CONSTANT B/HCB
+72 CONSTANT HNDLOFFSET
 64 CONSTANT B/FILENAME
+
 VARIABLE RWERR
 
                 \ Attrib is normally  zero (0) for Read/Write.
                 \ Attrib may be set to one (1) for Write ONLY.
                 \ Attrib may be set to two (2) for Read  ONLY.
-: >ATTRIB       ( handle --- attrib-addr )      66 + ;
 
+: >ATTRIB       ( handle --- attrib-addr )      68 + ;
 : >HNDLE        ( handle --- handle-addr )      HNDLOFFSET + ;
 : >NAM          ( handle --- name-string-addr ) 1+   ;
+
 : CLR-HCB       ( HANDLE - ) DUP B/HCB ERASE -1 SWAP >HNDLE ! ;
 
                 \  defining    running
@@ -32,17 +27,17 @@ VARIABLE RWERR
                  CREATE HERE B/HCB ALLOT CLR-HCB ;
 
         \       The HANDLE memory data structure is as shown here.
-
-        \         1byte    65 bytes      2 bytes    2 bytes
+        \
+        \         1byte    65 bytes      cell       cell
         \       [ count  ] [ name....0 ] [ attrib ] [ handle > -1 ]
-        \         addr       addr+1        addr+66    addr+68
+        \         addr       addr+1        addr+68    addr+72
         \          |          |             |          |
         \          |          |_>NAM        |_>ATTRIB  |_>HNDLE
         \          |
         \          |_Address of the array returned by a word
         \            defined with HANDLE.
 
-CREATE DEFEXT 3 C,-T ASCII S C,-T ASCII E C,-T ASCII Q C,-T 4 ALLOT
+CREATE DEFEXT 3 C, ASCII S C, ASCII E C, ASCII Q C, 4 ALLOT
 
 : ?DEF.EXT      ( handle --- )    \ maybe add an extension to file
                  dup c@ 60 > if drop exit then
@@ -96,114 +91,20 @@ CREATE DEFEXT 3 C,-T ASCII S C,-T ASCII E C,-T ASCII Q C,-T 4 ALLOT
                 ASCII . over c! 1+ >r count r@ over >r
                 swap cmove r> r> + 0 over c! r@ - 1- r> c! ;
 
-CODE HDOS1      ( cx dx fun -- ax cf | error-code 1 )
-                pop ax
-                pop dx
-                pop cx
-                int $21
-                push ax
-             u< if
-                mov al, # 1
-             else
-                mov al, # 0
-             then
-                sub ah, ah
-                1push
-                end-code
-
-CODE HDOS3      ( bx cx dx ds fun -- ax cf | error-code 1 )
-                pop ax
-                pop ds
-                pop dx
-                pop cx
-                pop bx
-                int $21
-                push ax
-             u< if
-                mov al, # 1
-             else
-                mov al, # 0
-             then
-                sub ah, ah
-                push ax
-                mov ax, cs
-                mov ds, ax
-                next
-                end-code
-
-CODE HDOS4      ( bx cx dx fun -- ax cf | error-code 1 )
-                pop ax
-                pop dx
-                pop cx
-                pop bx
-                int $21
-                push ax
-             u< if
-                mov al, # 1
-             else
-                mov al, # 0
-             then
-                sub ah, ah
-                1push
-                end-code
-
-CODE MOVEPOINTER ( double-offset handle --- )
-                pop bx
-                ADD bx, # HNDLOFFSET
-                mov bx, 0 [bx]
-                pop cx
-                pop dx
-                mov ax, # $4200  \ from start of file
-                int $21
-                next
-                end-code
-
-CODE ENDFILE    ( handle --- double-end )
-                pop bx
-                add bx, # hndloffset
-                mov bx, 0 [bx]
-                mov cx, # 0
-                mov dx, # 0
-                mov ax, # $4202  \ from end of file
-                int $21
-             u< if
-                sub ax, ax
-             then
-                push ax
-                push dx
-                next
-                end-code
+BUILTIN HDOS1           ( cx dx fun -- ax cf | error-code 1 )
+BUILTIN HDOS4           ( bx cx dx fun -- ax cf | error-code 1 )
+BUILTIN MOVEPOINTER     ( double-offset handle --- )
+BUILTIN ENDFILE         ( handle --- double-end )
 
 DEFER PATHSET   ( handle --- f1 )
-
 ' 0= IS PATHSET
-
 \   Code loaded later is plugged into PATHSET, to prepend the
 \ current path to the handle specified on the top of the stack.
 \
 \   The returned vlue is zero if the path was set properly, or
 \ non-zero if an error occured while setting the path.
 
-CODE <HRENAME>  ( handle1 handle2 --- ax cf=0 | error-code 1 )
-                pop di
-                add di, # 1
-                pop dx
-                push es         \ Save ES for later restoral
-                mov ax, ds
-                mov es, ax      \ set es to ds
-                add dx, # 1
-                mov ax, # $5600  \ from start of file
-                int $21
-                pop es          \ Restore ES
-                push ax
-             u< if
-                mov ax, # 1
-             else
-                mov ax, # 0
-             then
-                1push
-                end-code
-                        \ returns 18 if the rename was good, not zero.
+BUILTIN <HRENAME>       ( handle1 handle2 --- ax cf=0 | error-code 1 )
 
 : HRENAME       ( handle1 handle2 --- return-code )
                 DUP PATHSET DROP OVER PATHSET DROP
@@ -227,6 +128,7 @@ CODE <HRENAME>  ( handle1 handle2 --- ax cf=0 | error-code 1 )
 
 \ This word allow you to set the default read/write mode used by F-PC.
 \ It is used as follows:
+\
 \                               READ-WRITE DEF-RWMODE
 \                       or      READ-ONLY  DEF-RWMODE
 \
@@ -272,15 +174,7 @@ CODE <HRENAME>  ( handle1 handle2 --- ax cf=0 | error-code 1 )
                 0 0 rot >nam $4100 hdos4
                 if $0FF and else drop 0 then ;
 
-                \ extended read
-: EXHREAD       ( a1 n1 handle segment -- length-read )
-                >r >hndle @ -rot swap r> $3F00 hdos3
-                if      $0FF and rwerr ! 0 then ;
-
-                \ extended write
-: EXHWRITE      ( a1 n1 handle segment -- length-written )
-                >r >hndle @ -rot swap r> $4000 hdos3
-                if      $0FF and rwerr ! 0 then ;
+\ The segment-taking EXHREAD and EXHWRITE are gone; use HREAD and HWRITE.
 
 : HWRITE        ( a1 n1 handle --- length-written )
                 >hndle @ -rot swap    \ handle count addr
@@ -302,50 +196,11 @@ CODE <HRENAME>  ( handle1 handle2 --- ax cf=0 | error-code 1 )
 \                 5       archive
 \
 \ The upper three bits are reserved, and should always be zero.
+\ Only names that fit DOS's 8.3 form are found.
 
-CODE FIND-FIRST ( adr attr -- t/f )     \ find first file including type attr
-                xor     bx, bx          \ adr is null terminated filename
-                mov     ax, # $4E00     \ return FALSE if name was found
-                pop     cx
-                pop     dx
-                int     $21
-                jnc     1 $
-                dec     bx      \ error. in BX set true
-        1 $:    push    bx
-                next            end-code
+BUILTIN FIND-FIRST      ( adr attr -- t/f )     \ FALSE if a name was found
+BUILTIN FIND-NEXT       ( -- t/f )              \ FALSE if another was found
+BUILTIN DTA@            ( -- addr )     \ get the data transfer address
+BUILTIN DTA!            ( addr -- )     \ set the data transfer address
 
-CODE FIND-NEXT  ( -- t/f )              \ find next occurance of name above
-                xor     bx, bx          \ return FALSE if another was found
-                mov     ax, # $4F00
-                int     $21
-                jnc     1 $
-                dec     bx      \ error
-        1 $:    push    bx
-                next            end-code
-
-\ : FINDFIRST     ( string --- f1 )
-\                 $010 swap $4E00 hdos1 drop $0FF and ;
-\ : FINDNEXT      ( --- f1 )
-\                       $000  $000 $4F00 hdos1 drop $0FF and ;
-
-CODE DTA@       ( -- seg offset )       \ get the data transfer seg&offset
-                mov     ah, # $2F
-                mov     cx, es
-                int     $21
-                push    es
-                push    bx
-                mov     es, cx
-                next            end-code
-
-CODE DTA!       ( seg offset -- )       \ set the data transfer seg&offset
-                mov     cx, ds
-                pop     dx
-                pop     ds
-                mov     ah, # $1A
-                int     $21
-                mov     ds, cx
-                next            end-code
-
-: SET-DTA       ( a1 --- )
-                ?cs: swap dta! ;
-
+: SET-DTA       ( a1 --- )      DTA! ;

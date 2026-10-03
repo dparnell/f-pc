@@ -1,2 +1,16 @@
 
-tests/control.seq: file not found
+if: yes no yes 
+do: 0 1 2 3 4 
+-loop: 10 7 4 1 
++loop: 0 3 6 9 
+?do: none 
+leave: 0 1 2 3 
+nest: 0 1 10 11 20 21 
+until: 0 1 2 3 
+while: 0 1 2 3 
+again: 5 
+recurse: 5040 1 
+wrap loop: 32767 16383 -1 -16385 
+loop data: 0 
+execute: 0 1 2 3 4 
+ Leaving..

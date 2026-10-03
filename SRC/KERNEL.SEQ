@@ -1,0 +1,32 @@
+\ KERNEL.SEQ    Load the F-PC kernel onto the VM's seed.   F-PC native port
+
+\ This replaces META86.SEQ's load list (kernel-design.md 4.3): the C seed
+\ FLOADs the kernel source in the original order; the kernel's own words
+\ shadow the seed's as they are defined. INCLUDE is the seed's FLOAD:
+\ the kernel defines its own FLOAD (FPATH.SEQ) before it can run it.
+
+WARNING OFF
+DECIMAL
+
+INCLUDE KERNEL1.SEQ
+INCLUDE VIDEO.SEQ
+INCLUDE KERNEL2.SEQ
+INCLUDE VIDEO2.SEQ
+INCLUDE KERNEL3.SEQ
+' SEED-ERROR IS ?ERROR          \ report errors to the seed until COLD
+INCLUDE EXPAND.SEQ
+INCLUDE EMMEXEC.SEQ
+INCLUDE POINTER.SEQ
+INCLUDE EQUCOLON.SEQ
+INCLUDE SAVEREST.SEQ
+INCLUDE HANDLES.SEQ
+INCLUDE SEQREAD.SEQ
+' SEED-ERROR IS ?ERROR
+INCLUDE FPATH.SEQ
+INCLUDE DEFAULT.SEQ
+INCLUDE HCRITICA.SEQ
+INCLUDE KERNEL4.SEQ
+
+' (?SERROR) IS ?ERROR           \ F-PC's own error handling from now on
+
+WARNING ON
