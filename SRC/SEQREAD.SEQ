@@ -10,8 +10,8 @@ DEFER OTHER.CHECK       ' NOOP IS OTHER.CHECK   \ allow extra termination
 \       Read sequential lines from a file, delimited by CRLF.
 
     0 VALUE WITHPATH            \ should the PATH be included in the file var
-16384 VALUE IBLEN               \ current input buffer length
-16384 VALUE IBFULL              \ full buffer size, used to restore IBLEN
+32000 VALUE IBLEN               \ current input buffer length
+32000 VALUE IBFULL              \ full buffer size, used to restore IBLEN
 IBLEN 0 POINTER INBSEG          \ the input buffer
 
 \ A couple of editor words, needed to give the information editor when
