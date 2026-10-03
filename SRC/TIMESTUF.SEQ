@@ -1,10 +1,14 @@
 \ TIMESTUF.SEQ          More words associated with timing       Tom Zimmer
+\                                                       F-PC native port
 
 : SEC-ELAPSED   ( --- N1 )    \ RETURN ELAPSED SECONDS < 18 HRS
                 TIME-ELAPSED B>SEC ; ( -- N1 )
 
 : 10TH-ELAPSED  ( --- N1 )
                 TIME-ELAPSED 0 100 UM/MOD DROP 10 UM/MOD NIP ;
+
+\ SECONDS TENTHS etc. busy-wait on the DOS clock (centisecond resolution),
+\ calling PAUSE. TODO-PORT: a host sleep built-in (MS) would avoid spinning.
 
 DEFER PAUSE-FUNC        ' NOOP IS PAUSE-FUNC
 
@@ -34,18 +38,12 @@ DEFER PAUSE-FUNC        ' NOOP IS PAUSE-FUNC
                 cr .elapsed
                 cr ." Total lines compiled  = " totallines @ 5 u.r
                 cr ." Compiled lines/minute = "
-                totallines @ time-elapsed over 32000 u> or
-                if      ." Too much time has elapsed to calculate LPM"
-                        2drop
-                else    >R 60 10000 R@ */MOD
-                        10 * SWAP DUP 10 >
-                        IF      >R 100 100 100 r> r> SWAP */ */
-                                10 /MOD  SWAP 4 > IF 1+ THEN +
-                        ELSE    r>drop DROP
-                        THEN    2DUP 100 / SWAP 100 / * 3200 >  \ 05/25/90 tjz
-                        IF      10 / 1000 */ 10 *D 5 D.R
-                        ELSE    1000 */ 5 u.R
-                        THEN
+                totallines @ time-elapsed drop ( lines centiseconds )
+                \ 32-bit cells: the original's 16-bit range juggling is
+                \ not needed. LPM = lines * 6000 / centiseconds.
+                ?dup 0=
+                if      drop ." Too little time has elapsed to calculate LPM"
+                else    6000 swap */ 5 u.r
                 then    ;
 
 : TILLKEY       ( N1 --- )      \ WAIT UP TO N1 SECONDS FOR A KEY THEN GO ON.

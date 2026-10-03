@@ -1,4 +1,6 @@
 \ CASE.SEQ      Case statment                           by Bob Smith
+\                                                       F-PC native port
+\ Unchanged: no cell size or segment dependencies.
 
 
 : CASE          ( -- )

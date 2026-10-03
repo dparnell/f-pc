@@ -1,34 +1,46 @@
-\ VOCABS.SEQ    ONLY ALSO vocabulary operators.
+\ VOCABS.SEQ    ONLY ALSO vocabulary operators.         F-PC native port
 
-CONTEXT DUP @ SWAP 2+ !   ( Make FORTH also )
+\ CONTEXT is an array of #VOCS cells; the last one always holds ROOT.
+
+CONTEXT DUP @ SWAP CELL+ !   ( Make FORTH also )
 
 VOCABULARY ROOT   ROOT DEFINITIONS
 
 : ALSO          ( -- )
-                CONTEXT DUP 2+ #VOCS 2- 2* CMOVE>   ;
+                CONTEXT DUP CELL+ #VOCS 2- CELLS CMOVE>   ;
 
 : ONLY          ( -- )
-                ['] ROOT >BODY  CONTEXT #VOCS 1- 2* 2DUP ERASE + !
+                ['] ROOT >BODY  CONTEXT #VOCS 1- CELLS 2DUP ERASE + !
                 ROOT ;
 
 : SEAL          ( -- )
-                ' >BODY   CONTEXT #VOCS 2* ERASE   CONTEXT !   ;
+                ' >BODY   CONTEXT #VOCS CELLS ERASE   CONTEXT !   ;
 
 : PREVIOUS      ( -- )
-                CONTEXT DUP 2+ SWAP #VOCS 2- 2* CMOVE
-                CONTEXT #VOCS 2- 2* + OFF   ;
+                CONTEXT DUP CELL+ SWAP #VOCS 2- CELLS CMOVE
+                CONTEXT #VOCS 2- CELLS + OFF   ;
 
 : FORTH         ( --- ) FORTH ;
 : DEFINITIONS   ( --- ) DEFINITIONS   ;
 
 : ORDER         ( -- )
                 CR ." Context: " CONTEXT #VOCS 0 DO DUP @ ?DUP
-                IF  BODY> >NAME .ID THEN   2+ LOOP DROP
+                IF  BODY> >NAME .ID THEN   CELL+ LOOP DROP
                 CR ." Current: " CURRENT @ BODY> >NAME .ID  ;
 
 : VOCS          ( -- )
-                CR VOC-LINK @ BEGIN   DUP #THREADS 2* -
+                CR VOC-LINK @ BEGIN   DUP #THREADS CELLS -
                 BODY> >NAME .ID ?CR @ DUP 0= UNTIL   DROP   ;
+
+\ Native port: the VM's seed interpreter left primitive ONLY ALSO and
+\ PREVIOUS headers in FORTH, which would shadow the ROOT words above
+\ whenever FORTH is searched first. Point FORTH's names at ROOT's words.
+' FORTH-VOC >IS @ >BODY CURRENT !       \ define in FORTH (the kernel's
+                                        \ FORTH; ROOT's FORTH is a :),
+                                        \ still searching ROOT first
+' ONLY     ALIAS ONLY
+' ALSO     ALIAS ALSO
+' PREVIOUS ALIAS PREVIOUS
 
 ONLY FORTH ALSO DEFINITIONS
 VOCABULARY HIDDEN               \ Some vocabularies we will need.

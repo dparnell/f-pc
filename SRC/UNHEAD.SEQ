@@ -1,4 +1,11 @@
 \ UNHEAD.SEQ         New BE-heading mechainism for F-PC      by Tom Zimmer
+\                                                       F-PC native port
+
+\ Native port: head space is the HEAD region of the flat address space
+\ (YHERE .. HEAD-LIMIT), so Y@ Y! become @ !, thread and link cells are
+\ 4 bytes, and the internal (headerless) heads are built down from
+\ HEAD-LIMIT instead of from the top of the head segment. A header is
+\ VFA cell, LFA cell, count byte, name (WIDTH max), CFA cell.
 
 \ A new BEHEAD mechanism for F-PC.
 
@@ -16,43 +23,46 @@
                 begin   dup @ r@ u>             \ while link is above tlink
                 while   dup @
 \                       dup l>name .id ?cr
-                        y@ over !               \ unlink top head
+                        @ over !                \ unlink top head
                 repeat  @                       \ then check entire chain
                 ?dup                            \ unless thread is zero
-        if      begin   dup y@ ?dup             \ while not at chain end
+        if      begin   dup @ ?dup              \ while not at chain end
                 while   dup r@ u>               \ if head is above tlink
                         if
 \                               dup l>name .id ?cr
-                                y@ over y!      \ unlink this head
+                                @ over !        \ unlink this head
                         else    nip             \ discard previous link
                         then
                 repeat  drop
         then    r>drop ;
 
 : unvoc         ( tlink voc-body -- )   \ unlink vocabulary
-                #threads 2* 0
+                #threads cells 0
                 do      2dup i +        \ -- head thread
                         unthread        \ *unlink above head
-             2 +loop    2drop ;         \ *cleanup stack
+          cell +loop    2drop ;         \ *cleanup stack
 
-#headsegs 4089 min 16 um* drop value I:end
+head-limit 128 - value I:end   \ leave room for SPCHECK
 
 : unhead        ( a1 -- )       \ unlink all heads above a1
                 >r voc-link
                 begin   @ ?dup
-                while   dup #threads 2* -       \ *step back to body
+                while   dup #threads cells -    \ *step back to body
                         r@ swap                 \ -- tlink voc-body
                         unvoc                   \ unlink vocabulary
                 repeat
                 r> ydp @ umin ydp !             \ reduce header pointer
-                #headsegs 4089 min 16 um* drop !> i:end ;
+                head-limit 128 - !> i:end ;
 
 0 value beheadable
 0 value save_"header
 
 : "iheader      ( a1 -- )
                 save> ydp                               \ save head ptr
-                I:end over c@ 5 + - dup ydp ! !> I:end  \ to end of head spc
+                I:end over c@ width @ min 13 + -        \ room for the head
+                cell negate and                         \ cell aligned
+                dup yhere 96 + u< abort" Out of HEAD memory!"
+                dup ydp ! !> I:end                      \ to end of head spc
                 <"header>                               \ make the header
                 restore> ydp                            \ restore head ptr
                 save_"header 0= ?exit                    \ leave if empty

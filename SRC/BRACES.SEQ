@@ -1,4 +1,6 @@
 \ BRACE.SEQ     Braces used to enclose source code        by Glen B. Haydon
+\                                                       F-PC native port
+\ Unchanged: no cell size or segment dependencies.
 
 : <}>           ( --- )
                 loading @ 0=

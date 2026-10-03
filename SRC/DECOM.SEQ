@@ -1,4 +1,5 @@
 \ DECOM.SEQ     The F-PC decompiler         Enhancements by Tom Zimmer
+\                                                       F-PC native port
 
 \    A Forth decompiler is a utility program that translates
 \ executable forth code back into source code.  Normally this is
@@ -48,7 +49,8 @@ ONLY FORTH ALSO HIDDEN DEFINITIONS ALSO
 
 headerless
 
- 0 VALUE DECOMSEG
+ 0 VALUE DECOMSEG      \ native port: the list address being shown;
+                        \ IPs (and PFASAV) are absolute list addresses
  0 VALUE ?DEBUG
 19 VALUE SPLIT-L#
 19 VALUE SCROLL-L#
@@ -65,43 +67,47 @@ headerless
 
 ' INIT-SPLIT IS INITSTUFF
 
-: DECOMSEG@     ( N1 --- )
-                DECOMSEG SWAP @L ;
+: DECOMSEG@     ( IP --- n1 )   \ IP is an absolute list address now
+                @ ;
 
 : ASSOCIATIVE:
    CONSTANT
    DOES>         ( N -- INDEX )
       DUP @ ( N PFA CNT )   -ROT DUP @ 0 ( CNT N PFA CNT 0 )
-      DO   2+   2DUP @ = ( CNT N PFA' BOOL )
+      DO   CELL+   2DUP @ = ( CNT N PFA' BOOL )
          IF 2DROP DROP   I 0 0   LEAVE   THEN
             ( CLEAR STACK AND RETURN INDEX THAT MATCHED )
       LOOP   2DROP   ;
 
 : .WORD         ( IP -- IP' )
-                DUP DECOMSEG@ >NAME YC@ 64 AND
-                IF      DUP YC@ 31 AND 10 + ?LINE
+                DUP DECOMSEG@ >NAME DUP C@ 64 AND
+                IF      DUP C@ 31 AND 10 + ?LINE
                         ." [COMPILE] "
-                THEN    DUP DECOMSEG@ >NAME.ID   2+   ;
+                THEN    DROP DUP DECOMSEG@ >NAME.ID   CELL+   ;
 
-: (LIT+)        ( IP -- IP' )    6 ?LINE 4 + ;
+\ Native port: tokens and in-line operands are cells, branch targets are
+\ absolute list addresses, and in-line strings are counted strings padded
+\ to a cell boundary.
 
-: .LIT          ( IP -- IP' )    (LIT+) DUP 2- DECOMSEG@ DECOM. ;
+: (LIT+)        ( IP -- IP' )    6 ?LINE 2 CELLS + ;
 
-: .[']          ( IP -- IP' )    CRTAB ." ['] " 2+ ;
+: .LIT          ( IP -- IP' )    (LIT+) DUP CELL- DECOMSEG@ DECOM. ;
 
-: .IS           ( IP -- IP' )    ." IS " 2+ ;
+: .[']          ( IP -- IP' )    CRTAB ." ['] " CELL+ ;
+
+: .IS           ( IP -- IP' )    ." IS " CELL+ ;
 
 : .IF           ( IP -- IP' )    CRTAB ." IF " (LIT+) TAB +TAB ;
 
 : .ELSE         ( IP -- IP' )    -TAB CRTAB ." ELSE " (LIT+) TAB +TAB ;
 
-: .CASE         ( IP -- IP' )    CRTAB ." CASE " 2+ TAB ;
+: .CASE         ( IP -- IP' )    CRTAB ." CASE " CELL+ TAB ;
 
 : .OF           ( IP -- IP' )    CRTAB ." OF " (LIT+) TAB +TAB ;
 
 : .ENDOF        ( IP -- IP' )    -TAB CRTAB ." ENDOF " (LIT+) TAB ;
 
-: .ENDCASE      ( IP -- IP' )    CRTAB ." ENDCASE " 2+ TAB ;
+: .ENDCASE      ( IP -- IP' )    CRTAB ." ENDCASE " CELL+ TAB ;
 
 : .DO           ( IP -- IP' )    CRTAB ." DO  " (LIT+) TAB +TAB ;
 
@@ -119,42 +125,41 @@ headerless
 
 : .AGAIN        ( IP -- IP' )    -TAB CRTAB ." AGAIN " (LIT+) TAB ;
 
-: .BEGIN        ( IP -- IP' )    CRTAB 2+ ." BEGIN " TAB +TAB ;
+: .BEGIN        ( IP -- IP' )    CRTAB CELL+ ." BEGIN " TAB +TAB ;
 
-: .THEN         ( IP -- IP' )    -TAB CRTAB 2+ ." THEN " TAB ;
+: .THEN         ( IP -- IP' )    -TAB CRTAB CELL+ ." THEN " TAB ;
+
+: .NEXT         ( IP -- IP' )    CRTAB ." NEXT " (LIT+) TAB ;
+                                \ NEXT| (FOR ... NEXT), new in the port
 
 : .QUOTE        ( IP -- IP' )    .WORD   .WORD ;
 
-                \ Print the string at offset n1, and adjust n1 to the
-                \ end of the string, while aligning it. Prepend a "
-                \ space, and append a " space to the string
-: ."X$"         ( N1 --- N1+LEN )
-                DUP '"' FEMIT SPACE
-                DECOMSEG SWAP 2DUP C@L 1+ >R ?CS: "BUF R@ CMOVEL
-                R> DUP 1 AND + + "BUF COUNT TYPE '"' FEMIT SPACE ;
+                \ Print the in-line counted string at a1, and return the
+                \ cell aligned address after it. Prepend a " space, and
+                \ append a " space to the string
+: ."X$"         ( A1 --- A2 )
+                '"' FEMIT SPACE
+                COUNT 2DUP TYPE + ALIGNED '"' FEMIT SPACE ;
 
 : .STRING."     ( IP -- IP' )
-                2+ DECOMSEG OVER C@L 5 + ?LINE
+                CELL+ DUP C@ 5 + ?LINE
                 '.' FEMIT ."X$" ;
 
-: .STRING"      ( IP -- IP' )
-                2+ DUP 2+ SWAP DECOMSEG@ DUP C@ 4 + ?LINE
-                '"' FEMIT SPACE
-                COUNT TYPE
-                '"' FEMIT SPACE ;
+: .STRING"      ( IP -- IP' )   \ (") has an in-line string now
+                CELL+ DUP C@ 4 + ?LINE
+                ."X$" ;
 
 : .STRING""     ( IP -- IP' )
-                2+ DECOMSEG OVER C@L 5 + ?LINE
+                CELL+ DUP C@ 5 + ?LINE
                 '"' FEMIT ."X$" ;
 
 : .ABORT"       ( IP -- IP' )
-                2+ DUP DECOMSEG@ C@ 10 + ?LINE
+                CELL+ DUP C@ 10 + ?LINE
                 ." ABORT" ."X$" ;
 
-: .(;CODE)    ( IP -- IP' )
-                .WORD   DOES?
-                IF  ." DOES> "
-                ELSE  DROP FALSE  THEN  ;
+: .(DOES>)      ( IP -- IP' )   \ (DOES>) is followed by the clause's
+                                \ code token; the clause's list follows.
+                CRTAB ." DOES> " 2 CELLS + ;
 
 : .UNNEST     ( IP -- IP' )
                 ." ; "   DROP   0   ;
@@ -167,9 +172,9 @@ headerless
    (  2 ) '   BRANCH       ,         (  3 ) '   (LOOP)       ,
    (  4 ) '   (+LOOP)      ,         (  5 ) '   (DO)         ,
    (  6 ) '   COMPILE      ,         (  7 ) '   (.")         ,
-   (  8 ) '   (ABORT")     ,         (  9 ) '   (;CODE)      ,
+   (  8 ) '   (ABORT")     ,         (  9 ) '   (DOES>)      ,
    ( 10 ) '   UNNEST       ,         ( 11 ) '   (")          ,
-   ( 12 ) '   (?DO)        ,         ( 13 ) '   (;USES)      ,
+   ( 12 ) '   (?DO)        ,         ( 13 ) '   NEXT|        ,
    ( 14 ) '   ?UNTIL       ,         ( 15 ) '   ?WHILE       ,
    ( 16 ) '   DOAGAIN      ,         ( 17 ) '   DOREPEAT     ,
    ( 18 ) '   DOBEGIN      ,         ( 19 ) '   DOTHEN       ,
@@ -184,9 +189,9 @@ headerless
                 (  2 )     .ELSE        (  3 )     .LOOP
                 (  4 )     .+LOOP       (  5 )     .DO
                 (  6 )     .QUOTE       (  7 )     .STRING."
-                (  8 )     .ABORT"      (  9 )     .(;CODE)
+                (  8 )     .ABORT"      (  9 )     .(DOES>)
                 ( 10 )     .UNNEST      ( 11 )     .STRING"
-                ( 12 )     .?DO         ( 13 )     .FINISH
+                ( 12 )     .?DO         ( 13 )     .NEXT
                 ( 14 )     .UNTIL       ( 15 )     .WHILE
                 ( 16 )     .AGAIN       ( 17 )     .REPEAT
                 ( 18 )     .BEGIN       ( 19 )     .THEN
@@ -194,6 +199,50 @@ headerless
                 ( 22 )     .IS          ( 23 )     .OF
                 ( 24 )     .ENDOF       ( 25 )     .CASE
                 ( 26 )     .ENDCASE     ( 27 )     .WORD      ;
+
+\ Native port: the VM's seed interpreter compiled the kernel's first
+\ definitions with its own built-in (") (.") (ABORT") etc., which the
+\ kernel later redefines under the same names. Map such shadowed xts to
+\ the current word of the same name, so both decompile alike.
+
+32 CONSTANT MAX-SHADOWS
+CREATE SHADOWS  MAX-SHADOWS 2* CELLS ALLOT      \ pairs: new, old
+VARIABLE #SHADOWS
+
+: CANON         ( xt -- xt' )   \ the current version of a shadowed xt
+                #SHADOWS @ 0
+                ?DO     DUP SHADOWS I 2* CELLS + 2@ >R =
+                        IF      DROP R>
+                        ELSE    R>DROP
+                        THEN
+                LOOP    ;
+
+: NAME>HERE     ( nfa -- a1 )   \ the name as a plain counted string
+                HERE 32 CMOVE
+                $C0 HERE CRESET                 \ real count only
+                $80 HERE COUNT + 1- CRESET      \ last char's high bit
+                BL HERE COUNT + C! HERE ;
+
+: ?SHADOW       ( lfa -- )
+                DUP LINK> SWAP L>NAME NAME>HERE FIND    ( cfa cfa' f )
+                IF      2DUP <> OVER EXECUTION-CLASS 27 < AND
+                        #SHADOWS @ MAX-SHADOWS < AND
+                        IF      SHADOWS #SHADOWS @ 2* CELLS + 2!
+                                #SHADOWS INCR EXIT
+                        THEN
+                THEN    2DROP ;
+
+: FIND-SHADOWS  ( -- )
+                #SHADOWS OFF
+                ['] FORTH-VOC >IS @ >BODY
+                #THREADS 0
+                DO      DUP I CELLS + @
+                        BEGIN   ?DUP
+                        WHILE   DUP ?SHADOW @
+                        REPEAT
+                LOOP    DROP ;
+
+FIND-SHADOWS
 
 0 VALUE PFALINE
 0 VALUE DIDPFA
@@ -215,12 +264,12 @@ headerless
                 THEN
         THEN    INCR> TOPCRS ;
 
-: .PFA          ( LIST_SEGMENT -- )
+: .LIST         ( LIST-ADDR -- ) \ decompile the token list at list-addr
                 DUP PREVLIST <>                 \ reset when new definition
                 IF      OFF> #EMPTY
                         DUP !> PREVLIST
                 THEN
-                >BODY   @ +XSEG =: DECOMSEG 0
+                DUP =: DECOMSEG         \ IPs are absolute list addresses
                 SAVESTATE
                 0TAB +TAB
                 COLS 10 - RMARGIN !
@@ -239,9 +288,10 @@ headerless
                                 PFALINE SPLIT-L# 4 - 0MAX - 0MAX !> #EMPTY
                                 ON> DIDPFA
                         THEN
-                        DECOMSEG@ EXECUTION-CLASS .EXECUTION-CLASS >NORM
+                        DECOMSEG@ CANON EXECUTION-CLASS .EXECUTION-CLASS >NORM
                         OFF> ?DEFATTRIB
                         DUP 0= KEY? OR
+                        OVER XHERE U< 0= OR     \ ran off the end of list space
                         ?DEBUG
                         IF
                                 #LINE @ SPLIT-L# 2- >=  \ hit bottom
@@ -254,8 +304,11 @@ headerless
                 RESTORE> CR
                 RESTORESTATE ;
 
+: .PFA          ( CFA -- )      \ decompile a colon definition's list
+                >BODY @ .LIST ;
+
 : .IMMEDIATE   ( CFA -- )
-                >NAME YC@ 64 AND
+                >NAME C@ 64 AND
                 IF      ." IMMEDIATE"   THEN   ;
 
 : .CONSTANT     ( CFA -- )
@@ -265,19 +318,32 @@ headerless
                 DUP >BODY ?   ." VALUE "      >NAME.ID   ;
 
 : .VARIABLE     ( CFA -- )
-                DUP C@ 232 =
-                IF      DUP >BODY .   ." VARIABLE "   DUP >NAME.ID
-                        ." Value = " >BODY ?
-                ELSE    >NAME.ID  THEN ;
+                DUP >BODY .   ." VARIABLE "   DUP >NAME.ID
+                ." Value = " >BODY ? ;
 
 : .:            ( CFA -- )
                 ." : "  DUP >NAME .ID CR TAB .PFA   ;
 
-: .DOES>        ( BODY -- )
-                DUP>R BODY> @REL>ABS DUP R@ 2+ =  \ Self defining word
-                IF      R@ @ >NAME .ID
-                ELSE    DUP >.ID
-                THEN    R>DROP ." DOES> " .PFA   ;
+\ A DOES> clause's code token says nothing about where its list is, so
+\ find the "(DOES>) token" pair that DOES> compiled in front of it, by
+\ scanning list space down from XHERE (lists are cell aligned).
+: DOES-LIST     ( ct -- list-addr | 0 )
+                XHERE ALIGNED CELL-
+                BEGIN   DUP LIMIT U>
+                WHILE   2DUP @ =
+                        IF      DUP CELL- @ ['] (DOES>) =
+                                IF      NIP CELL+ EXIT
+                                THEN
+                        THEN    CELL-
+                REPEAT  2DROP 0 ;
+
+: .DOES>        ( CFA -- )
+                @ DUP FIRST-DOES-CT =           \ the seed's VOCABULARY
+                IF      DROP ." is a VOCABULARY " EXIT
+                THEN    DOES-LIST ?DUP
+                IF      DUP >.ID ." DOES> " .LIST
+                ELSE    ." is a DOES> word (clause not found) "
+                THEN    ;
 
 : .USER-VARIABLE   ( CFA -- )
                 DUP >BODY ?   ." USER VARIABLE "   DUP >NAME.ID
@@ -292,23 +358,20 @@ headerless
 
 : .OTHER   ( CFA -- )
         DUP     >NAME.ID
-        DUP C@  232 <>                  \ cfa doesn't contain a call for code
-        IF      DROP    ." is Code, load DISASSEM to see it."
-                                        EXIT
-        THEN
         DUP DOES?                       \ Is this a DOES> word?
-        IF      .DOES>  DROP            EXIT
-        THEN    2DROP   ." is Unknown"   ;
+        IF      DROP .DOES>             EXIT
+        THEN    2DROP   ." is a built-in primitive (in the VM)" ;
 
 headers
 
 7 CONSTANT MAX-CLASSES
 
+\ classified by code token (CT-xxx) now
 MAX-CLASSES ASSOCIATIVE: DEFINITION-CLASS
-   ( 0 )   '      QUIT @REL>ABS ,   ( 1 )   '  #VOCS @REL>ABS ,
-   ( 2 )   '     STATE @REL>ABS ,   ( 3 )   '   BASE @REL>ABS ,
-   ( 4 )   '        CR @REL>ABS ,   ( 5 )   '   EMIT @REL>ABS ,
-   ( 6 )   '  DECOMSEG @REL>ABS ,
+   ( 0 )   CT-NEST       ,   ( 1 )   CT-DOCONST     ,
+   ( 2 )   CT-DOVAR      ,   ( 3 )   CT-DOUSER      ,
+   ( 4 )   CT-DODEFER    ,   ( 5 )   CT-DOUSERDEFER ,
+   ( 6 )   CT-DOVALUE    ,
 
 : .DEFINITION-CLASS     ( N1 --- )
                 0MAX MAX-CLASSES MIN EXEC:
@@ -319,7 +382,7 @@ MAX-CLASSES ASSOCIATIVE: DEFINITION-CLASS
 
 : ((SEE))       ( Cfa -- )
                 SAVE> ATTRIB
-                CR   DUP DUP @REL>ABS
+                CR   DUP DUP @
                 DEFINITION-CLASS
                 .DEFINITION-CLASS
                 .IMMEDIATE

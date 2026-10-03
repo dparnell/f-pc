@@ -1,4 +1,8 @@
-\ TIMER.SEQ      Time measurment words for F-PC.
+\ TIMER.SEQ      Time measurment words for F-PC.         F-PC native port
+
+\ DOS functions 2Ah/2Ch (date/time) are emulated by the VM over the host
+\ clock; 2Bh/2Dh (set date/time) are refused, so SETDATE/SETTIME report
+\ "Invalid". STIME and TTIME are now 2VARIABLEs (two 32-bit cells).
 
 : GETDATE       ( --- Y MD ) 0 0 42 OS2 DROP ;
 
@@ -63,16 +67,19 @@ DEFER BUILD-DATE   ' <M/D/Y> IS BUILD-DATE
 
 : .DATE         GETDATE FORM-DATE COUNT TYPE ;
 
-VARIABLE STIME 0 ,
-VARIABLE TTIME 0 ,
+2VARIABLE STIME
+2VARIABLE TTIME
 
 : T>B           SPLIT 100 * + SWAP 0 SWAP
                 SPLIT >R 6000 *D D+ R> 1000 * 360 *D D+ ;
 
+\ TTIME 2@ must give ( HM Sh ) like GETTIME: the cell at TTIME (top of
+\ stack) is Sh, the cell at TTIME+4 is HM. Byte offsets are for 4-byte
+\ little-endian cells.
 : B>T           0 100 UM/MOD >R 100 UM/MOD SWAP TTIME C!
                              R>  60 UM/MOD SWAP TTIME 1+ C!
-                                 60   /MOD      TTIME 3 + C!
-                                                TTIME 2+ C! ;
+                                 60   /MOD      TTIME 5 + C!
+                                                TTIME 4 + C! ;
 
 : TIME-RESET    GETTIME T>B STIME 2! ;  \ RESET TIMER
 

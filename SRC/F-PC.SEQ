@@ -30,8 +30,8 @@ FLOAD VALIDATE.SEQ .( .)   \ old version checking for F-PC
 FLOAD DECOM.SEQ    .( .)   \ decompiler,                        OPTIONAL
 FLOAD DUMP.SEQ     .( .)   \ dump utility,                      OPTIONAL
 FLOAD CASE.SEQ     .( .)   \ A CASE utility needed by PASM.SEQ
-FLOAD PASM.SEQ     .( .)   \ Prefix/Postfix assembler for 8086/8088
-FLOAD NEWLAB.SEQ   .( .)   \ new local label definition file
+FLOAD AMASM.SEQ    .( .)   \ Abstract-machine assembler (was PASM, 8086)
+\ NEWLAB.SEQ (PASM local labels) is not needed: AMASM has local labels
 FLOAD LOADEXE.SEQ  .( .)   \ The load part of the SAVE-EXE mechanism
 FLOAD SAVEEXE.SEQ  .( .)   \ The save part of the SAVE-EXE mechanism
 \ Now we can save the system back to disk at any time.

@@ -1,4 +1,6 @@
 \ COMMENT.SEQ   Allow multiple line comments in files.  by Tom Zimmer
+\                                                       F-PC native port
+\ Unchanged: no cell size or segment dependencies.
 
 ' <run> value crunsave
 

@@ -1,4 +1,9 @@
 \ HYPER.SEQ     Simple ALL Vocabulary search for FPC     by Tom Zimmer
+\                                                       F-PC native port
+
+\ OVER.SWAP.HASH.@ was a CODE word in the 16-bit kernel; high level here.
+: over.swap.hash.@ ( a1 voc-body -- a1 lfa )    \ head of a1's thread
+                over swap hash @ ;
 
 \ a couple of definition search words. The first HFIND searches all possible
 \ vocabularies, the second VFIND searches a specific vocabulary for a word.
@@ -13,7 +18,7 @@
                 dup>r ['] forth >body                   \ check FORTH first
                 over.swap.hash.@ (find) ?dup 0=
                 if      voc-link @                      \ then the rest
-                        begin   r@ over #threads 2* -
+                        begin   r@ over #threads cells -
                                 over.swap.hash.@ (find)
                                 if      nip nip
                                         true true
@@ -33,7 +38,7 @@
                                         \ a3 = a1 if a1 was not found
                                         \ f1 boolean TRUE if found
                 swap here over c@ 1+ cmove
-                $2020 here count + !
+                $20202020 here count + !
                 here ?uppercase swap >body
                 over.swap.hash.@ (find) ;
 

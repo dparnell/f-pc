@@ -1,15 +1,12 @@
 \ LARGEST.SEQ   Return the largest element of an array of words
+\                                                       F-PC native port
 
-code largest    ( a1 n1 --- a2 n2 )
-                pop cx          \ count of array to search
-                pop bx          \ starting address of array
-                mov ax, # 0     \ starting highest value = 0
-                mov dx, bx      \ highest value addr = start address
-          here  cmp 0 [bx], ax
-             u> if      mov dx, bx
-                        mov ax, 0 [bx]
-                then
-                add bx, # 2     \ bump to next element
-                loop
-                2push           end-code
-
+\ Native port: high level (was an 8086 CODE word); elements are cells,
+\ compared unsigned. Returns the address and value of the first largest
+\ element, or a1 0 if all are zero.
+: largest       ( a1 n1 --- a2 n2 )
+                >r dup 0 rot r> cells bounds
+                ?do     i @ over u>
+                        if      2drop i i @
+                        then
+          cell +loop    ;

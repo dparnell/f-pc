@@ -1,4 +1,9 @@
 \ DEFERS.SEQ    Adds the ability to make a defered word chain. Tom Zimmer
+\                                                       F-PC native port
+
+\ Native port: a user DEFER is recognised by its code token CT-DOUSERDEFER
+\ (its body holds an offset into the user area), and a colon definition by
+\ CT-NEST; the first cell of its token list is the xt compiled by DEFERS.
 
 comment:
 
@@ -31,14 +36,14 @@ on the word defined later than the word you want to remove:
 comment;
 
 : DEFERS        ( T1 -- )
-                ' DUP @REL>ABS [ ' KEY @REL>ABS ] LITERAL = >R
+                ' DUP @ CT-DOUSERDEFER = >R
                 >BODY @ R> IF UP @ + @ THEN X, ; IMMEDIATE
 
 : UNDEFER       ( T1 -- )
-                ' DUP @REL>ABS [ ' KEY @REL>ABS ] LITERAL = >R
+                ' DUP @ CT-DOUSERDEFER = >R
                 >BODY R> IF @ UP @ + THEN DUP @
-                DUP @REL>ABS [ ' DEFERS @REL>ABS ] LITERAL <>
+                DUP @ CT-NEST <>
                 ABORT" Can only UNDEFER through a : (colon) definition."
-                >BODY @ +XSEG 0 @L SWAP ! ;
+                >BODY @ @ SWAP ! ;
 
 

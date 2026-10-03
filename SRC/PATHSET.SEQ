@@ -1,4 +1,10 @@
 \ PATHSET.SEQ   Words used to set the path of a file.   by Tom Zimmer
+\                                                       F-PC native port
+
+\ PDOS (DOS 47h) returns the host's current directory without a leading
+\ slash and with \ separators, so "C:\home\me\dir\FILE.SEQ" results; the
+\ VM drops the drive and maps it back to /home/me/dir/FILE.SEQ. A name
+\ starting with \ or / is left alone. Sizes come from B/FILENAME.
 
    0 value flhndl            \ plugged later
 
@@ -23,25 +29,29 @@
                 dup c@ 0= if drop true exit then    \ leave if no name
                 pathhndl clr-hcb
                 dup =: flhndl ?drive.extract >r
-                flhndl >nam c@ '\' <> dup           \ leave if got path
-        if      drop
-                '\' pathhndl 1+ c! 64 pathhndl c!
-                pathhndl 2+ r@ pdos dup 0=
-                if      drop
-                        pathhndl 1+ 64 0   \ determine path length
-                        do      dup i + c@ 0= if i pathhndl c! leave then
-                        loop    drop pathhndl c@ 1 >
+                flhndl >nam c@ dup '\' <> swap '/' <> and   \ leave if got path
+        if      '\' pathhndl 1+ c!
+                pathhndl 2+ r@ pdos 0=
+                if      pathhndl 1+ dup 255 0 scan drop \ determine path length
+                        swap - 255 min pathhndl c!
+                        pathhndl c@ 1 >
                         if      '\' pathhndl count + c!
                                 pathhndl c@ 1+ pathhndl c!
-                        then    flhndl c@ pathhndl c@ + 62 > dup 0=
-                        if      drop
-                                flhndl 1+ pathhndl c@ over + flhndl c@ cmove>
+                        then
+                        \ Native port: if the result would not fit in the
+                        \ handle (host directories are deep), or PDOS may
+                        \ have cut the directory short (63 chars), leave
+                        \ the name relative: the host resolves it against
+                        \ the same current directory.
+                        flhndl c@ pathhndl c@ + b/filename 3 - > 0=
+                        pathhndl c@ 64 < and
+                        if      flhndl 1+ pathhndl c@ over + flhndl c@ cmove>
                                 pathhndl count flhndl 1+ swap cmove
                                 pathhndl c@ flhndl c@ + flhndl c!
-                                false
+                        else    r>drop 0 >r     \ and no drive either
                         then
                 then
-        then    r> flhndl ?drive.prepend 0 flhndl count + c! ;
+        then    r> flhndl ?drive.prepend 0 flhndl count + c! false ;
 
 ' PREPEND.PATH IS PATHSET
 

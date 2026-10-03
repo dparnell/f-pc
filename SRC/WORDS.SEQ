@@ -1,4 +1,9 @@
 \ WORDS.SEQ     The WORDS definition       Enhancements by Tom Zimmer
+\                                                       F-PC native port
+
+\ Native port: heads are ordinary memory, threads are cells, and word
+\ types are told apart by code token (CT-xxx); "CODE" words are the VM's
+\ built-ins, whose tokens are below FIRST-DOES-CT.
 
 headerless
 
@@ -16,7 +21,7 @@ CREATE W$ 64 ALLOT
        W$ 64 ERASE
 
 : ?INNAME       ( NFA --- F1 )
-                @> YSEG SWAP ?CS: HERE 31 CMOVEL
+                HERE 32 CMOVE
                 $C0 HERE CRESET                 \ mask to real count only
                 $80 HERE COUNT + DUP OFF        \ clear end of name to NULL
                 1- CRESET                       \ mast high bit of last char
@@ -24,12 +29,13 @@ CREATE W$ 64 ALLOT
                 W$ 32 + COUNT HERE COUNT SEARCH NIP AND ;
 
 : ?CODENAME     ( NFA --- F1 )
-                NAME> C@ DUP ( CALL) 232 <> SWAP ( JMP) 233 <> AND ;
+                NAME> @ DUP FIRST-DOES-CT U<    \ a built-in, but not
+                SWAP CT-DOUSERDEFER 1+ U< 0= AND ; \ a CT-xxx runtime
 
 0 VALUE WORDTYPE
 
 : ?WORDTYPE     ( NFA --- F1 )
-                NAME> @REL>ABS WORDTYPE = ;
+                NAME> @ WORDTYPE = ;
 
 : ?TOTALWORDS   ( NFA --- FALSE )
                 DROP FALSE
@@ -47,11 +53,11 @@ DEFER ?W.NAME
 DEFER W.NAME    ' <W.NAME> IS W.NAME
 
 : .VOCWORDS     ( A1 --- )
-                DUP HERE 500 + #THREADS 2* CMOVE
+                DUP HERE 500 + #THREADS CELLS CMOVE
                 BODY> >NAME VADDR !     VYET OFF
                 BEGIN   HERE 500 + #THREADS LARGEST DUP
                         ?KEYPAUSE
-                WHILE   DUP L>NAME W.NAME Y@ SWAP !
+                WHILE   DUP L>NAME W.NAME @ SWAP !
                 REPEAT  2DROP ;
 
 DEFER ?W.TEST   ' NOOP IS ?W.TEST
@@ -71,43 +77,43 @@ headers
 : ?:.*          ( --- )
                 W$ 1+     " :.*" CAPS-COMP 0=
                 W$ 1+ " COLON.*" CAPS-COMP 0= OR
-                IF      ['] ?*.* @REL>ABS =: WORDTYPE
+                IF      CT-NEST =: WORDTYPE
                         ['] ?WORDTYPE IS ?W.NAME
                 THEN    ;
 
 : ?VARIABLE.*   ( --- )
                 W$ 1+ " VARIABLE.*" CAPS-COMP 0=
-                IF      ['] TOTALWORDS @REL>ABS =: WORDTYPE
+                IF      CT-DOVAR =: WORDTYPE
                         ['] ?WORDTYPE IS ?W.NAME
                 THEN    ;
 
 : ?USER-VARIABLE.* ( --- )
                 W$ 1+ " USER-VARIABLE.*" CAPS-COMP 0=
-                IF      ['] BASE @REL>ABS =: WORDTYPE
+                IF      CT-DOUSER =: WORDTYPE
                         ['] ?WORDTYPE IS ?W.NAME
                 THEN    ;
 
 : ?CONSTANT.*   ( --- )
                 W$ 1+ " CONSTANT.*" CAPS-COMP 0=
-                IF      ['] BL       @REL>ABS =: WORDTYPE
+                IF      CT-DOCONST =: WORDTYPE
                         ['] ?WORDTYPE IS ?W.NAME
                 THEN    ;
 
 : ?VALUE.*      ( --- )
                 W$ 1+ " VALUE.*" CAPS-COMP 0=
-                IF      ['] WORDTYPE @REL>ABS =: WORDTYPE
+                IF      CT-DOVALUE =: WORDTYPE
                         ['] ?WORDTYPE IS ?W.NAME
                 THEN    ;
 
 : ?DEFERED.*    ( --- )
                 W$ 1+ " DEFERED.*" CAPS-COMP 0=
-                IF      ['] ?W.TEST @REL>ABS =: WORDTYPE
+                IF      CT-DODEFER =: WORDTYPE
                         ['] ?WORDTYPE IS ?W.NAME
                 THEN    ;
 
 : ?USER-DEFERED.* ( --- )
                 W$ 1+ " USER-DEFERED.*" CAPS-COMP 0=
-                IF      ['] EMIT @REL>ABS =: WORDTYPE
+                IF      CT-DOUSERDEFER =: WORDTYPE
                         ['] ?WORDTYPE IS ?W.NAME
                 THEN    ;
 
@@ -162,7 +168,7 @@ DEFER PREWORDS  ' NOOP IS PREWORDS
                         FALSE =: CONTEXTONLY
                         IF      CONTEXT @ .VOCWORDS
                         ELSE    VOC-LINK @
-                                BEGIN   DUP #THREADS 2* - .VOCWORDS
+                                BEGIN   DUP #THREADS CELLS - .VOCWORDS
                                         @ DUP 0=
                                 UNTIL   DROP
                         THEN

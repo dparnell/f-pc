@@ -1,4 +1,4 @@
-\ UTILS.SEQ     Some basic utilities
+\ UTILS.SEQ     Some basic utilities                    F-PC native port
 
 3.6000 2CONSTANT FPCVER#        \ version number of F-PC, always 5 digits
 
@@ -14,7 +14,7 @@
                 @ .   ;
 
 : YCOUNT        ( a1 --- a2 n1 )
-                DUP 1+ SWAP YC@ ;
+                DUP 1+ SWAP C@ ;        \ head space is ordinary memory now
 
 : ?ENOUGH       ( n -- )
                 DEPTH 1- > ABORT" Not enough Parameters" ;
@@ -27,11 +27,13 @@ TRUE  VALUE ?DOSIO
 : EEOL          ( col -- )
                 COLS ?DOSIO + SP>COL ;
 
+\ The three spaces are regions of the flat address space; LIMIT,
+\ LIST-LIMIT and HEAD-LIMIT are their ends.
 : .FREE         ( -- )
                 ." Free Bytes:"
-                 ."  CODE = "       SP@       HERE - (U.) TYPE
-                ." , LIST = " #LISTSEGS XHERE DROP XSEG @ - - 16 *D 1 D.R
-                ." , HEAD = " #HEADSEGS 16 * YHERE - (U.) TYPE ;
+                 ."  CODE = "       LIMIT      HERE - (U.) TYPE
+                ." , LIST = " LIST-LIMIT XHERE - (U.) TYPE
+                ." , HEAD = " HEAD-LIMIT YHERE - (U.) TYPE ;
 
 : DRIVE?        ( -- )   0 25 BDOS 'A' + EMIT ." : "  ;
 
@@ -49,18 +51,49 @@ VARIABLE PFASAV         -1 PFASAV !     \ Current offset into definition.
 : $.R   ( addr len n1 -- )   TUCK UMIN TUCK - -ROT TYPE SPACES ;
 : $.L   ( addr len n1 -- )   TUCK UMIN TUCK - SPACES TYPE ;
 
+\ Code fields hold code tokens. Built-in tokens (including the CT-xxx
+\ runtimes) come first; every DOES> clause adds a token after them. The
+\ seed's VOCABULARY clause (used by FORTH) is the first one added.
+' FORTH @ CONSTANT FIRST-DOES-CT
+
 : DOES?         ( IP -- IP' F )  \ IP IS ACTUALLY CFA, IP' IS PFA
-                DUP >BODY SWAP @REL>ABS @REL>ABS
-                ['] FORTH      @REL>ABS @REL>ABS = ;
+                DUP >BODY SWAP @ FIRST-DOES-CT U< 0= ;
+                \ TODO-PORT: AM CODE words will also get tokens above
+                \ FIRST-DOES-CT; tell them apart when the AM arrives.
 
-' HEX @REL>ABS CONSTANT 'DOCOL
+CT-NEST CONSTANT 'DOCOL
 
-: >.ID          ( A1 --- )
+VARIABLE L>C-BEST
+
+: (L>C)         ( a1 cfa -- a1 ) \ keep cfa if its list is the closest below a1
+                DUP @ CT-NEST <> IF DROP EXIT THEN
+                DUP >BODY @ 2 PICK OVER U< IF 2DROP EXIT THEN
+                L>C-BEST @ ?DUP
+                IF      >BODY @ OVER U> IF 2DROP EXIT THEN
+                THEN    DROP L>C-BEST ! ;
+
+: LIST>CFA      ( a1 -- cfa | 0 ) \ the colon definition whose token list
+                                  \ holds list address a1; searches every
+                                  \ vocabulary (new: there is no CALL to
+                                  \ back up to in the native port)
+                L>C-BEST OFF
+                VOC-LINK @
+                BEGIN   ?DUP
+                WHILE   DUP #THREADS CELLS - #THREADS 0
+                        DO      DUP I CELLS + @
+                                BEGIN   ?DUP
+                                WHILE   >R 2 PICK R@ LINK> (L>C) DROP
+                                        R> @
+                                REPEAT
+                        LOOP    DROP @
+                REPEAT  DROP L>C-BEST @ ;
+
+: >.ID          ( A1 --- )      \ A1 is an address in a token list
                 DUP 200 U< IF DROP EXIT THEN
-                128 0
-                DO      DUP @REL>ABS 'DOCOL =
-                        IF  LEAVE ELSE 1- THEN
-                LOOP    >NAME .ID ;
+                LIST>CFA ?DUP
+                IF      >NAME .ID
+                ELSE    ." ??? "
+                THEN    ;
 
 : U<=   ( u1 u2 -- f )   U> NOT   ;
 : U>=   ( u1 u2 -- f )   U< NOT   ;
@@ -95,19 +128,20 @@ VARIABLE #TIMES   ( # times already performed )   1 #TIMES !
 DEFER AT?
 DEFER -LINE
 
+\ The return stack holds one cell per nesting level now: R> / >R.
 : SAVECURSOR    ( -- )          \ save all of the current cursor stuff
-                2R>
+                R>
                 @> ATTRIB >R            \ save attribute
                 GET-CURSOR >R           \ cursor shape
                 @> #OUT @> #LINE 2>R    \ and position
-                2>R ;
+                >R ;
 
 : RESTCURSOR    ( -- )          \ restore all of the cursor stuff
-                2R>
+                R>
                 2R> AT                  \ restore position
                 R> SET-CURSOR           \ shape
                 R> ATTRIB !             \ and attribute
-                2>R ;
+                >R ;
 
 0 VALUE ?DOINGMAC       \ Are we doing a macro, moved her from macros
                         \ to make it available for testing by programs
@@ -129,7 +163,7 @@ VARIABLE #PAGE
                 THEN    ;
 
 : ALIAS         ( A1 | alias_NAME --- )
-                HEADER LAST @ 1 TRAVERSE 1+ Y! ;
+                HEADER LAST @ 1 TRAVERSE 1+ ! ;
 
 : \UNLESS       ( NAME --- )    \ comment out line unless name is defined
                 DEFINED NIP 0=
@@ -174,7 +208,7 @@ VARIABLE NLEN
 0 VALUE ?DEFATTRIB
 
 : >NAME.ID      ( CFA --- )
-                >NAME DUP YC@ 31 AND DUP ?LINE NLEN !
+                >NAME DUP C@ 31 AND DUP ?LINE NLEN !
                 ?DEFATTRIB
                 IF      %.ID
                 ELSE    .ID
@@ -263,21 +297,25 @@ VARIABLE STATV          STATV OFF
                 WHILE   2SWAP 2DROP 1 /STRING
                 REPEAT  DROP ;
 
-CREATE DSBUF    6 ALLOT
+CREATE DSBUF    3 CELLS ALLOT
 
 : !USED         ( --- )         \ Save the current dictionary pointers
                 HERE DSBUF !
-                XHERE PARAGRAPH + DSBUF 2+ !
-                YHERE DSBUF 4 + ! ;
-     0 DSBUF !
-XSEG @ DSBUF 2+ !
-     0 DSBUF 4 + !
+                XHERE DSBUF CELL+ !
+                YHERE DSBUF 2 CELLS + ! ;
+
+\ Initially the region bases. The built-ins' code fields are laid down
+\ first, at the start of CODE space, one cell per token; LIMIT is the
+\ start of LIST space and LIST-LIMIT the start of HEAD space.
+' (HALT) DUP @ CELLS -  DSBUF !
+LIMIT                   DSBUF CELL+ !
+LIST-LIMIT              DSBUF 2 CELLS + !
 
 : .USED         ( --- )
-                CR ."   CODE    LIST   HEAD   TOTAL  bytes used"
-                CR HERE DSBUF @ - DUP 6 U.R 0
-                XHERE PARAGRAPH + DSBUF 2+ @ - 16 *D 2DUP 8 UD.R D+
-                YHERE DSBUF 4 + @ - DUP 7 U.R 0 D+ 8 UD.R CR ;
+                CR ."    CODE     LIST     HEAD    TOTAL  bytes used"
+                CR HERE DSBUF @ - DUP 8 U.R 0
+                XHERE DSBUF CELL+ @ - 0 2DUP 9 UD.R D+
+                YHERE DSBUF 2 CELLS + @ - DUP 9 U.R 0 D+ 9 UD.R CR ;
 
 : USED          ( <command_line> --- )
                 !USED INTERPRET .USED ;
@@ -291,22 +329,25 @@ DEFER NEWPAGE   ' %NEWPAGE IS NEWPAGE
 
 VARIABLE EMMHEAD
 
+\ The POINTER chain (POINTER.SEQ) links the link cells of the bodies:
+\ body+0 address, +4 link, +8 size in bytes. Memory comes from the VM's
+\ heap (ALLOCATE), not DOS, so there is no "DOS memory available/total".
 : .MEM          ( -- )
                 SAVE> BASE DECIMAL
-                CR ." -------- DOS memory usage" cr
+                CR ." -------- Heap (POINTER) memory usage" cr
                 0 PHEAD @
                 BEGIN   ?DUP
                         ?KEYPAUSE
-                WHILE   DUP 2+ @ 16 UM* 6 D.R ."  bytes "
-                        DUP 2- @ ?DUP
-                        IF      ." at segment " H.
-                                DUP 2+ @ ROT + SWAP     \ accumulate summ
+                WHILE   DUP CELL+ @ 8 U.R ."  bytes "
+                        DUP CELL- @ ?DUP
+                        IF      ." at " H.
+                                DUP CELL+ @ ROT + SWAP  \ accumulate summ
                         ELSE    ." Unallocated"
                         THEN    YDP @
                         IF      #out @ 40 <
-                                if      29 SP>COL DUP 2- BODY> >NAME .ID
+                                if      29 SP>COL DUP CELL- BODY> >NAME .ID
                                         39 #line @ at 40 sp>col
-                                else    69 SP>COL DUP 2- BODY> >NAME .ID
+                                else    69 SP>COL DUP CELL- BODY> >NAME .ID
                                         cr
                                 then
                         ELSE    #out @ 40 <
@@ -316,28 +357,24 @@ VARIABLE EMMHEAD
                         THEN    @
                 REPEAT  #out @ 0> if cr then
                 ." --------" CR
-                ( pars -- ) 16 UM* 8 D.R
-                ."  bytes TOTAL used by F-PC, excluding Unallocated"
+                ( bytes -- ) 8 U.R
+                ."  bytes TOTAL used by POINTERs, excluding Unallocated"
                 CR ." --------" CR
-                MAXBLOCK 16 UM* 2DUP 8 D.R ."  bytes DOS memory Available" CR
-                #PARS @ 0 2 UM/MOD TUCK + 16 UM* ROT 16 UM* D+ D+ 8 D.R
-                                \ the above garbage is done to assure
-                                \ we get an unsigned result, as #PARS
-                                \ could be negative to start with.
-                ."  bytes DOS memory Total" CR
-                EMM-PRESENT?
+                EMM-PRESENT?            \ always false in the native port
                 IF      ." -------- Expanded Memory Version "
                         HEX     EMM-GET-VERSION 0 <# # '.' HOLD # #> TYPE
                         DECIMAL ."  at Paragraph " ?emm: h.
                         EMMHEAD @
                         BEGIN   ?DUP
                                 ?KEYPAUSE
-                        WHILE   CR DUP 2+ @ 16 *D 8 D.R ."  bytes "
-                                DUP 2- @
-                                IF      ." on handle " dup 4 + @ .
+                        \ TODO-PORT: cell layout of EMMPTR's chain, if
+                        \ expanded memory ever comes back.
+                        WHILE   CR DUP CELL+ @ 8 U.R ."  bytes "
+                                DUP CELL- @
+                                IF      ." on handle " dup 2 CELLS + @ .
                                 ELSE    ." Unallocated"
                                 THEN    YDP @
-                                IF      32 SP>COL DUP 2- BODY> >NAME .ID
+                                IF      32 SP>COL DUP CELL- BODY> >NAME .ID
                                 THEN    @
                         REPEAT
                         CR EMM-AVAIL-PAGES 16384 *D 8 D.R
@@ -372,12 +409,12 @@ VARIABLE EMMHEAD
 \ ***************************************************************************
 
 : !tbl+         ( a1 n1 --- a2 )
-\ store n1 to address a1 and return a2= a1+2
-                over ! 2+ ;
+\ store n1 to address a1 and return a2= a1+cell
+                over ! CELL+ ;
 
 : @tbl+         ( a1 --- a2 n1 )
-\ n1 = value at address a1; a2= a1+2
-                dup @ swap 2+ swap ;
+\ n1 = value at address a1; a2= a1+cell
+                dup @ swap CELL+ swap ;
 
 \ ***************************************************************************
 \ HOPEN.FPATH attempts to open the handle a1, which only contains a filename,

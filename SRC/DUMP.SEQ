@@ -1,4 +1,9 @@
 \ DUMP.SEQ      A simple dump utility      Enhancements by Tom Zimmer
+\                                                       F-PC native port
+
+\ Native port: memory is flat, so addresses are single cells shown as 8
+\ hex digits. LDUMP lost its segment argument: LDUMP ( addr len -- ).
+\ YDUMP and XDUMP are DUMP (head and list space are ordinary memory).
 
 DECIMAL
 
@@ -11,10 +16,10 @@ DECIMAL
 \ contents of the location.  DL can be used to dump a line of
 \ text from a screen.
 
-VARIABLE DUMPSEG
+VARIABLE DUMPSEG                \ unused now, kept for old code
 
 : %DUMPC@       ( A1 --- C1 )
-                DUMPSEG @ SWAP C@L ;
+                C@ ;
 
 DEFER DUMPC@    ' %DUMPC@ IS DUMPC@
 
@@ -26,8 +31,8 @@ I: EMIT.   ( char -- )
    127 AND DUP BL 126 BETWEEN NOT IF DROP '.' THEN EMIT ;
 
 : DLN   ( addr --- )
-   CR   ." ณ" DUMPSEG @ 0 <# ':' HOLD # # # # #> TYPE
-        DUP 0 <# # # # # #> TYPE ." ณ " 8 2DUP D.2W
+   CR   ." ณ" SPACE
+        DUP 0 <# # # # # # # # # #> TYPE ." ณ " 8 2DUP D.2W
    OVER + 8 D.2W ." ณ"   16 BOUNDS
    ?DO   I DUMPC@ EMIT.   LOOP  ." ณ" ;
 
@@ -35,7 +40,7 @@ I: .HEAD ( addr len -- addr' len' )
         OVER 15 AND
         CR ." ีอออออออออั"
         49 0 DO ." อ" LOOP ." ั" 16 0 DO ." อ" LOOP ." ธ"
-        CR ." ณ SEG:OFF ณ "
+        CR ." ณ ADDRESS ณ "
         16 0 DO DUP I + 15 AND 2 .R SPACE LOOP ." ณ"
         16 0 DO DUP I + 15 AND 1 .R LOOP DROP  ." ณ"
         CR ." ฦอออออออออุ"
@@ -45,21 +50,20 @@ I: .FOOT ( --- )
         CR ." ิอออออออออฯ"
         49 0 DO ." อ" LOOP ." ฯ" 16 0 DO ." อ" LOOP ." พ" CR ;
 
-: LDUMP         ( SEG addr len -- )
-                ROT DUMPSEG !
+: LDUMP         ( addr len -- )
                 BASE @ -ROT HEX .HEAD BOUNDS
                 DO      I DLN  KEY? ?LEAVE
             16 +LOOP    BASE !  .FOOT ;
 
 : DUMP          ( A1 N1 --- )
-                ?CS: -ROT LDUMP ;
+                LDUMP ;
 
 : YDUMP         ( A1 N1 --- )
-                YSEG @ -ROT LDUMP ;
+                LDUMP ;
 
-: XDUMP         ( SEG N1 --- )
-                SWAP +XSEG 0 ROT LDUMP ;
+: XDUMP         ( A1 N1 --- )   \ was ( list-seg n1 ): dumped a list
+                LDUMP ;
 
 : DU            ( addr -- addr+64 )
-                DUP 64 DUMPSEG @ -ROT LDUMP 64 +   ;
+                DUP 64 LDUMP 64 +   ;
 
