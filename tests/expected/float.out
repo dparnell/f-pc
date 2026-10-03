@@ -41,4 +41,7 @@ fperr:
 
 Floating Point argument out of range for FACOS    FACOS 
 0 
-input2: -0.500000  100.000000  0.002000  150.000000 10 15  Leaving..
+input2: -0.500000  100.000000  0.002000  150.000000 10 15 
+ftraps: 
+Floating Point Divsion by zero. 0 
+Invalid Floating Point Operation. 0  +INFINITY  Leaving..

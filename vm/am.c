@@ -147,3 +147,19 @@ void p_NEWAMCODE(vm_t *vm)
     ucell data = pop(vm);
     push(vm, vm_add_handler(vm, HK_AMCODE, data ? am_does : am_code, data, NULL));
 }
+
+/* CT-KIND ( ct -- n ) the handler kind of code token ct: 0 inline
+ * primitive, 1 C built-in, 2 DOES> clause, 3 abstract-machine code (CODE
+ * or ;CODE); -1 if ct is not a token. CT-DATA ( ct -- a ) its data: the
+ * DOES> list or the op stream address (0 for built-ins). */
+void p_CTKIND(vm_t *vm)
+{
+    ucell ct = pop(vm);
+    push(vm, ct < vm->nhandlers ? (ucell)vm->handlers[ct].kind : (ucell)-1);
+}
+
+void p_CTDATA(vm_t *vm)
+{
+    ucell ct = pop(vm);
+    push(vm, ct < vm->nhandlers ? vm->handlers[ct].data : 0);
+}

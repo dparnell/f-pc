@@ -1117,13 +1117,24 @@ VARIABLE F.R#INT
 \ F-PC native port: the VM checks float stack underflow and overflow
 \ itself, and keeps no exception flags, so ?FSTACK only checks the
 \ (soft) FSTACK-SIZE limit before the usual checks.
-\ TODO-PORT: the 8087 version also reported invalid operation, division
-\ by zero and overflow from the sticky status flags.  That needs a
-\ built-in that reads (and clears) the host's floating point exception
-\ flags; see docs/port-notes/tools-T1.md.
+\ F-PC native port: the 8087's sticky exception flags are the host's,
+\ read (and cleared) by the FEXCEPT@ built-in in the same bit layout.
+\ ?STACK runs after every word, so reporting them would also stop
+\ deliberate infinities and NaNs; FTRAPS ON turns the reports on.
+VARIABLE FTRAPS   FTRAPS OFF
+
 : ?FSTACK  ( -- )
         FDEPTH FSTACK-SIZE >
         IF      FCLEAR TRUE ABORT" Floating point Stack Overflow "
+        THEN
+        FEXCEPT@ FTRAPS @ AND DUP 1 AND
+        IF      FCLEAR  CR ." Invalid Floating Point Operation. "
+        THEN
+        DUP 4 AND
+        IF      FCLEAR  CR ." Floating Point Divsion by zero. "
+        THEN
+        8 AND
+        IF      FCLEAR  CR ." Floating Point Overflow. "
         THEN
         (?STACK) ;
 

@@ -7,6 +7,7 @@
  */
 #include "vm.h"
 
+#include <fenv.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -126,6 +127,17 @@ void p_PFDOT(vm_t *vm)
     if ((ucell)len > n) len = (int)n;
     memcpy(vm_ptr(vm, a, (ucell)len), buf, (size_t)len);
     push(vm, (ucell)len);
+}
+
+/* FEXCEPT@ ( -- n ) read and clear the host's sticky floating point
+ * exception flags, as 8087 status-word bits: 1 invalid operation,
+ * 4 zero divide, 8 overflow, $10 underflow, $20 inexact. */
+void p_FEXCEPTFETCH(vm_t *vm)
+{
+    int e = fetestexcept(FE_ALL_EXCEPT);
+    feclearexcept(FE_ALL_EXCEPT);
+    push(vm, (e & FE_INVALID ? 1 : 0) | (e & FE_DIVBYZERO ? 4 : 0) | (e & FE_OVERFLOW ? 8 : 0)
+           | (e & FE_UNDERFLOW ? 0x10 : 0) | (e & FE_INEXACT ? 0x20 : 0));
 }
 
 void float_init(vm_t *vm, ucell lo, ucell hi)
