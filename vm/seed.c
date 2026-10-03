@@ -199,15 +199,18 @@ static void reveal(vm_t *vm)
 }
 
 /* walk every vocabulary; return the nfa whose CFA is cfa, or 0 */
+/* the header of cfa; with ALIASes there are several, and the oldest (the
+   lowest in head space) is the word's own name */
 static ucell cfa_to_nfa(vm_t *vm, ucell cfa)
 {
+    ucell best = 0;
     for (ucell link = sv(vm, SV_VOCLINK); link; link = rd32(vm, link)) {
         ucell voc = link - NTHREADS * CELL;
         for (int t = 0; t < NTHREADS; t++)
             for (ucell lfa = rd32(vm, voc + (ucell)t * 4); lfa; lfa = rd32(vm, lfa))
-                if (nfa_cfa(vm, lfa + 4) == cfa) return lfa + 4;
+                if (nfa_cfa(vm, lfa + 4) == cfa && (!best || lfa + 4 < best)) best = lfa + 4;
     }
-    return 0;
+    return best;
 }
 
 /* ---- parsing ------------------------------------------------------------------ */
