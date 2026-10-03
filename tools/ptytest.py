@@ -9,6 +9,8 @@ SCRIPT is a sequence of steps separated by ';;':
     resize:CxR    resize the terminal (sends SIGWINCH)
     screen        print the emulated screen
     attrs:ROW     print the attributes (fg/bg) of a screen row
+    expect:TEXT   fail (exit 1) unless TEXT is somewhere on the screen
+    reject:TEXT   fail if TEXT is on the screen
 
 Needs the pyte terminal emulator (pip install pyte).
 """
@@ -60,6 +62,7 @@ def main():
                 stream.feed(data)
 
     pump(0.5)
+    failures = []
     for step in script.split(";;"):
         step = step.strip()
         if step.startswith("keys:"):
@@ -81,11 +84,20 @@ def main():
             for line in screen.display:
                 print(f"|{line}|")
             print(f"+{'-' * cols}+")
+        elif step.startswith("expect:") or step.startswith("reject:"):
+            text = step[7:]
+            found = any(text in line for line in screen.display)
+            if found != step.startswith("expect:"):
+                failures.append(step)
+                print(f"FAILED {step}")
+                for line in screen.display:
+                    print(f"|{line}|")
         elif step.startswith("attrs:"):
             row = int(step[6:])
             print(" ".join(f"{c.fg}/{c.bg}" for c in screen.buffer[row].values()))
     os.kill(pid, signal.SIGTERM)
     pump(0.2)
+    sys.exit(1 if failures else 0)
 
 
 if __name__ == "__main__":

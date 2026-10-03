@@ -10,6 +10,7 @@ make -C vm image    # load SRC/F-PC.SEQ and save F-PC.IMG (as EXTEND.BAT made F-
 vm/fpc -i F-PC.IMG  # full F-PC: sign-on, status line, SED editor, debugger...
 vm/fpc              # bare kernel, loaded from SRC/KERNEL.SEQ (~6 ms)
 make -C vm test     # regression tests: from source, from an image, without JIT
+make -C vm test-ui  # UI scenarios in a pseudo-terminal (needs: pip install pyte)
 ```
 
 Running `fpc`:
@@ -32,14 +33,15 @@ Running `fpc`:
 | M6: native CODE words | Done. AM assembler (`SRC/AMASM.SEQ`), interpreter, sljit JIT (about 6x faster than the interpreter) |
 | M7: debugger, multitasker, SDL | Debugger done, on a VM trace hook. Multitasker (`MULTASK.SEQ`, not loaded by default) and SDL not started |
 
-## What was verified interactively
+## What is verified interactively
 
-These were driven in a pseudo-terminal with `tools/ptytest.py`:
+`tests/ui/*.ui` scenarios run in a pseudo-terminal (`tools/runtests-ui.sh`) and check:
 - **Sign-on and prompt.** The sign-on screen, the status line and the `ok` prompt.
 - **Resize.** Shrinking and growing the terminal reflows the screen.
 - **SED.** Opening a file (`FILE X` then `1 EDIT`), cursor keys, typing, F10 save with a `.BAK` backup, and the editor window resizing.
 - **Debugger.** `DEBUG word`: stepping, Nest, Unnest and Continue, with the source shown in the top pane.
-- **Batch mode.** `SEE`, `WORDS` and `DUMP`.
+- **Menus and help.** The ESC menu bar with the File drop-down, and F1 hypertext help.
+- **Batch mode** (checked by hand): `SEE`, `WORDS` and `DUMP`.
 
 ## Known gaps / next steps
 
@@ -50,7 +52,6 @@ These were driven in a pseudo-terminal with `tools/ptytest.py`:
 - **`GETDISKFREE`** reports a large disk.
 - **PRN.** The VM discards printer output unless `PFILE` redirects it.
 - **Performance.** Primitives are C built-ins, with no top-of-stack caching yet; the JIT covers only CODE words.
-- **UI tests.** The interactive checks above are not yet automated tests.
 
 ## Differences from the original worth knowing
 

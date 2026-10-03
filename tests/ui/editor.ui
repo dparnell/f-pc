@@ -1,0 +1,5 @@
+# SED opens a file, edits it, and fits a smaller terminal after a resize.
+size 80x20
+setup printf 'line one\r\nline two\r\nline three\r\n' > ED1.TXT
+script wait:1;;keys:FILE ED1.TXT\r;;keys:1 EDIT\r;;wait:1;;expect:INSERT  Line=1/3;;keys:\e[B\e[BNew ;;expect:Newline three;;resize:60x12;;wait:1;;expect:Newline three;;expect:MENU=ESC;;keys:\e[21~;;wait:1
+check grep -q 'Newline three' ED1.TXT && test -f ED1.BAK

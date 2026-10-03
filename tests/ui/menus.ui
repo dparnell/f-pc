@@ -1,0 +1,3 @@
+# ESC shows the menubar; Enter drops the File menu down.
+size 80x25
+script wait:1;;keys:\e;;wait:1;;expect:Press ENTER and use;;keys:\r;;wait:1;;expect:Edit  current file

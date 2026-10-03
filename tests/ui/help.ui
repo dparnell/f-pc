@@ -1,0 +1,3 @@
+# F1 opens the hypertext help in the browser.
+size 80x25
+script wait:1;;keys:\eOP;;wait:1;;expect:Welcome to the Hypertext HELP system;;expect:BROWSE

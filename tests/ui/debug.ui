@@ -1,0 +1,3 @@
+# DEBUG single-steps a definition and can nest into a word it calls.
+size 80x24
+script wait:1;;keys:: TT 3 0 DO I . LOOP ;\r;;keys:: T2 5 TT . ;\r;;keys:DEBUG T2\r;;keys:T2\r;;wait:1;;expect:Cont, Done, Forth;;keys:\r;;keys:N;;expect:TT  nesting;;keys:C;;wait:1;;expect:UNNEST

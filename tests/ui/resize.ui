@@ -1,0 +1,3 @@
+# The screen follows the terminal size, and the prompt keeps working.
+size 80x25
+script wait:1;;resize:50x10;;keys:COLS . ROWS .\r;;expect:50 10  ok;;resize:100x30;;keys:COLS . ROWS .\r;;expect:100 30  ok

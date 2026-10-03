@@ -13,6 +13,10 @@ $(OBJS): vm.h prims.def seed.h amops.def
 image: fpc
 	cd ../SRC && ./../vm/fpc --batch - FLOAD F-PC.SEQ FSAVE ../F-PC BYE </dev/null >/dev/null
 
+# interactive UI scenarios in a pseudo-terminal (needs python pyte)
+test-ui: fpc image
+	../tools/runtests-ui.sh
+
 sljitLir.o: sljit/sljitLir.c
 	$(CC) $(CFLAGS) -w -DSLJIT_CONFIG_AUTO=1 -c -o $@ sljit/sljitLir.c
 
@@ -29,4 +33,4 @@ test: fpc
 clean:
 	rm -f fpc $(OBJS) test.img
 
-.PHONY: test clean image
+.PHONY: test test-ui clean image
