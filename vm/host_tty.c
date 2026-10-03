@@ -49,6 +49,7 @@ typedef struct {
     struct termios saved;
     int raw;
     int cols, rows;
+    int tcols, trows;           /* the terminal's real size, for clipping */
     uint8_t *shadow;            /* what the terminal shows: char,attr pairs */
     int scols, srows;
     int cur_attr;
@@ -348,12 +349,14 @@ static void t_refresh(host_t *h, vm_t *vm, int full)
         outs(t, "\033[0m\033[2J");
     }
     outs(t, "\033[?25l");
-    for (int y = 0; y < rows; y++) {
+    term_size(&t->tcols, &t->trows);            /* never draw past the terminal */
+    int vr = rows < t->trows ? rows : t->trows, vc = cols < t->tcols ? cols : t->tcols;
+    for (int y = 0; y < vr; y++) {
         int last = -2;
-        for (int x = 0; x < cols; x++) {
+        for (int x = 0; x < vc; x++) {
             size_t i = ((size_t)y * cols + x) * 2;
             if (buf[i] == t->shadow[i] && buf[i + 1] == t->shadow[i + 1]) continue;
-            if (y == rows - 1 && x == cols - 1) {       /* avoid scrolling at the corner */
+            if (y == t->trows - 1 && x == t->tcols - 1) {   /* avoid scrolling at the corner */
                 t->shadow[i] = buf[i]; t->shadow[i + 1] = buf[i + 1];
             }
             if (x != last + 1) move_to(t, x, y);
@@ -365,6 +368,8 @@ static void t_refresh(host_t *h, vm_t *vm, int full)
     }
     int cx, cy;
     screen_cursor(vm, &cx, &cy);
+    if (cx >= vc) cx = vc - 1;
+    if (cy >= vr) cy = vr - 1;
     move_to(t, cx, cy);
     if (((sv(vm, SV_CURSOR) >> 8) & 0x20) == 0) outs(t, "\033[?25h");   /* $2000 = hidden */
     flushout(t);
