@@ -181,6 +181,16 @@ static cell fdiv64(vm_t *vm, dcell a, cell b, cell *rem)
     return (cell)q;
 }
 
+/* a signal asked for attention: Control-C, or a screen refresh is due */
+static void attend(vm_t *vm)
+{
+    if (vm->interrupt) { vm->interrupt = 0; vm_throw(vm, E_INTERRUPT, "Interrupted"); }
+    if (vm->attention & 2) {
+        vm->attention &= ~2;
+        if (vm->host->refresh) vm->host->refresh(vm->host, vm, 0);
+    }
+}
+
 static ucell name_to_cfa(vm_t *vm, ucell nfa)
 {
     return rd32(vm, nfa + 1 + (rd8(vm, nfa) & 31));
@@ -221,8 +231,8 @@ void vm_execute(vm_t *vm, ucell xt)
 #define R(n)     rd32(vm, rp + 4u * (n))
 #define INLINE() (ip += 4, rd32(vm, ip - 4))
 #define NEXT     goto next
-#define CHECK_INTERRUPT() do { if (vm->interrupt) { vm->interrupt = 0; SYNC(); \
-        vm_throw(vm, E_INTERRUPT, "Interrupted"); } } while (0)
+#define CHECK_INTERRUPT() do { if (vm->interrupt | vm->attention) { SYNC(); \
+        attend(vm); } } while (0)
 
 next:
     w = rd32(vm, ip); ip += 4;

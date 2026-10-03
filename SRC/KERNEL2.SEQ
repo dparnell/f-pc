@@ -286,10 +286,13 @@ DEFER KEYTABLE  ( a n1 char n2 -- a n1+1 char )
                                 \ parameters used by NEXPECT, so a background
                                 \ task can display the stack when both shift
                                 \ keys are pressed together.
-                        DUP BL <
-                        IF      DUP KEYTABLE DROP
-                        ELSE    DUP 127 =
-                                IF   DEL-IN   ELSE   CHAR   THEN  DROP
+                        DUP K-RESIZE =          \ the terminal was resized:
+                        IF      DROP            \ nothing to do here
+                        ELSE    DUP BL <
+                                IF      DUP KEYTABLE DROP
+                                ELSE    DUP 127 =
+                                        IF   DEL-IN   ELSE   CHAR   THEN  DROP
+                                THEN
                         THEN
                 REPEAT  3DROP ;
 

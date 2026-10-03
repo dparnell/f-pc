@@ -129,6 +129,7 @@ typedef struct host {
 
 host_t *host_batch_new(void);
 host_t *host_tty_new(void);
+void    host_tty_attach(host_t *h, vm_t *vm);
 
 /* ---- the VM ------------------------------------------------------------- */
 struct vm {
@@ -153,6 +154,7 @@ struct vm {
     ucell       nhandlers, maxhandlers;
 
     volatile sig_atomic_t interrupt;
+    volatile sig_atomic_t attention;   /* 2 = refresh due, 4 = resize pending */
     host_t  *host;
 
     jmp_buf *catch_jmp;                /* where vm_throw goes             */

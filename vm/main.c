@@ -103,15 +103,19 @@ static int run_forth(vm_t *vm)
 
 int main(int argc, char **argv)
 {
-    int seed_only = 0;
-    for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--seed")) seed_only = 1;
+    int seed_only = 0, batch = !isatty(0) || !isatty(1);
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--seed")) seed_only = batch = 1;
+        if (!strcmp(argv[i], "--batch")) batch = 1;
+    }
 
-    host_t *host = host_batch_new();
+    host_t *host = batch ? host_batch_new() : host_tty_new();
     vm_t *vm = vm_new(32u << 20, host);
     if (!vm) { perror("fpc"); return 2; }
     the_vm = vm;
     seed_init(vm);
     screen_init(vm);
+    if (!batch) host_tty_attach(host, vm);
     const char *env = getenv("FPC_PATH");
     if (env) {
         char *p = strdup(env), *s, *save = NULL;

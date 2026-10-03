@@ -86,7 +86,7 @@ void screen_init(vm_t *vm)
 }
 
 /* called by hosts (from a signal handler: just set a flag) */
-void screen_note_resize(vm_t *vm) { scr(vm)->pending_resize = 1; }
+void screen_note_resize(vm_t *vm) { scr(vm)->pending_resize = 1; vm->attention |= 4; }
 
 /* apply a pending resize; run RESIZED. Returns 1 if the size changed. */
 int screen_check_resize(vm_t *vm)
@@ -94,6 +94,7 @@ int screen_check_resize(vm_t *vm)
     screen_t *s = scr(vm);
     if (!s->pending_resize) return 0;
     s->pending_resize = 0;
+    vm->attention &= ~4;
     int c = s->cols, r = s->rows;
     if (vm->host->size) vm->host->size(vm->host, &c, &r);
     if (c == s->cols && r == s->rows) return 0;
