@@ -1,4 +1,4 @@
-\ MAKEDEF.SEQ   Make a : (colon) definition into a DEFERed word
+\ MAKEDEF.SEQ   Make a : (colon) definition into a DEFERed word   F-PC native port
 
 \ **********************************************************************
 \ Converts "name", a normal ':' definition into a defered word, and
@@ -10,37 +10,30 @@
 \ **********************************************************************
 
 : :def?         ( a1 -- )       \ verify that a1=cfa is a colon definition
-                @rel>abs                \ -- a2
-                ['] hex @rel>abs <>     \ -- f1
+                @ CT-NEST <>            \ -- f1
                 abort" MUST be a colon definition!" ;
+
+\ F-PC native port: the original patched CALL/JMP machine code into the
+\ code fields. Now a colon definition is the CT-NEST token plus one body
+\ cell (its token list) and a DEFER is CT-DODEFER plus one cell (the xt),
+\ so the conversion just swaps tokens and body cells.
 
 : makedefer     ( | name name2 -- )     \ make name into a defered word
                                         \ make name2 the function that used
                                         \ to be name
                 ' dup :def?             \ -- a1
-                dup >body @ >r          \ -- a1         r: rseg
-                here defer              \ -- a1 a2      r: rseg
-                2dup @rel>abs over >body - swap 1+ !
-                swap 2dup >body !       \ -- a2 a1      r: rseg
-                $E8 swap c!
-                $E9 over c!
-                ['] hex @rel>abs over >body - over 1+ !
-                r> swap >body !         \ --
-                ;
+                defer last @ name>      \ -- a1 a2     name2, for now a DEFER
+                CT-NEST over !CT        \ make name2 a colon definition
+                over >body @ over >body !       \ with the body of name
+                CT-DODEFER rot tuck !CT \ -- a2 a1     make name a DEFER
+                >body ! ;               \ that executes name2
 
 \ **********************************************************************
 \ Switch the bodies of the two ':' definitions following SWITCH
 \ **********************************************************************
 
-code xchange    ( a1 a2 -- )    \ exchange the contents of a1 & a2
-                pop bx
-                pop di
-                mov ax, 0 [bx]
-                mov cx, 0 [di]
-                mov 0 [bx], cx
-                mov 0 [di], ax
-                next
-                end-code
+: xchange       ( a1 a2 -- )    \ exchange the contents of a1 & a2
+                dup @ >r over @ swap ! r> swap ! ;
 
 : switch_bodies ( a1 a2 -- )    \ switch bodies of two colon definitions
                                 \ a1 & a2 are code field addresses

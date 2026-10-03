@@ -1,4 +1,4 @@
-\ FL.SEQ        File selection.                         by Tom Zimmer
+\ FL.SEQ        File selection.                         by Tom Zimmer   F-PC native port
 
 ONLY FORTH DEFINITIONS ALSO
 
@@ -6,4 +6,3 @@ ONLY FORTH DEFINITIONS ALSO
 ' FILE    ALIAS FL      ( --- )
 
 
-

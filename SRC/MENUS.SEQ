@@ -1,4 +1,4 @@
-\ SEDMENU.SEQ   Visual menu selection tool for SED      by Tom Zimmer
+\ SEDMENU.SEQ   Visual menu selection tool for SED      by Tom Zimmer   F-PC native port
 
 only forth also definitions hidden also
 
@@ -18,8 +18,8 @@ defer mbutton ' noop is mbutton         \ menu button function
                                         \ a1 = address to be filled by ENDMENU
                                         \ n2 = running total of menu length
 : newmenu       ( name --- a1 n2 ) \ creates "name" the menu name
-                create
-                xhere paragraph + dup xdpseg ! xseg @ - , xdp off
+                create                  \ F-PC native port: the body holds
+                xhere ,                 \ the LIST address of the functions
                 here 0 c, 0 ;    \ build start of menu string list
 
                                         \ a1 = address to be filled by ENDMENU
@@ -41,8 +41,7 @@ defer mbutton ' noop is mbutton         \ menu button function
                                         \ compile a new menu line
 : menuline"     ( a1 n1 | string" function --- n1+1 )
                 +,"                     \ lay in string
-                ' xhere !L              \ lay function in LIST space
-                2 xdp +! ;              \ bump LIST space
+                ' x, ;                  \ lay function in LIST space
 
 defer makefile  ' noop is makefile
 defer editfile  ' noop is editfile
@@ -80,11 +79,11 @@ I: do-dos       ( --- )
                 savescr                 \ save the screen
                 dark
                 cr >attrib1 ."  Type EXIT to return to F-PC. " >norm cr
-                here dup off $sys dup 2 =
-                if      ."  Couldn't find COMMAND.COM     Press a key"
+                here dup off $sys dup 127 =     \ (the host shell's codes)
+                if      ."  Couldn't find the shell       Press a key"
                         key drop
-                then    8 =
-                if      ." Not enough memory to run DOS   Press a key"
+                then    126 =
+                if      ." Can't run the shell            Press a key"
                         key drop
                 then
                 restscr ;
@@ -135,7 +134,7 @@ default-bar   value menubar
 default-list  value menulist
 
 I: dofunc       ( col row --- )         \ perform function for menu item
-                1- 0MAX 2* >r 2* menulist + @ @ +XSEG r> @L
+                1- 0MAX cells >r cells menulist + @ @ r> + @
                 nosetcur off
                 cursor-on
                 execute
@@ -182,7 +181,7 @@ I: .menubar     ( --- )
 
 I: .menu        ( --- )
                 ?doingmac ?exit
-                menulist mcol  2* + @ 2+ .vertical ;
+                menulist mcol  cells + @ cell+ .vertical ;
 
 : showmenus     ( --- )
                 mrow 0>
@@ -200,7 +199,7 @@ I: ucscan       ( a1 --- c1 )   \ a1 is a counted string, c1 = char or NULL
                 loop    ;
 
 I: 1st-rowchar  ( --- c1 )              \ return first char of row message
-                mcol  2* menulist + @ 2+ \ addr of menu list
+                mcol  cells menulist + @ cell+ \ addr of menu list
                 count mrow 1- min 0MAX 0
                 ?do     count +         \ step to next item
                 loop    1+ c@ ;
@@ -227,8 +226,8 @@ I: ?menukey     ( c1 f1 --- c1 f2 )     \ sets mcol  or mrow
                                 loop    2drop
                         then
                 else                    \ search for name in current menu
-                        mcol  2* menulist + @         \ addr of menu list
-                        2+ 1 swap count 0
+                        mcol  cells menulist + @      \ addr of menu list
+                        cell+ 1 swap count 0
                         ?do     dup ucscan bl or menukey bl or =
                                 menukey bl <> and
                                 if      drop =: mrow
@@ -251,7 +250,7 @@ I: ?domkey      ( c1 --- c1 | 0 )
                         then                                    then
                 dup 207 =               \ END
                 if      0=
-                        mcol  2* menulist + @ 2+ c@ !> mrow     then
+                        mcol  cells menulist + @ cell+ c@ !> mrow  then
                 dup 205 =               \ RIGHT
                 over bl = or
                 if      0=
@@ -279,7 +278,7 @@ I: ?domkey      ( c1 --- c1 | 0 )
                 dup 208 =               \ DOWN
                 if      0=
                         mrow 1+
-                        mcol  2* menulist + @ 2+ c@ dup>r min !> mrow
+                        mcol  cells menulist + @ cell+ c@ dup>r min !> mrow
                         begin   1st-rowchar 196 = \ skip over horizontal line
                                 mrow r@ < and
                         while   mrow 1+ r@ min !> mrow
@@ -298,10 +297,20 @@ I: ?domkey      ( c1 --- c1 | 0 )
                 restore> mcol
                 savescr                 \ save it again
                 begin   showmenus
-                        key dup 27 <>           \ while not ESC
+                        key dup k-resize =      \ screen resized: the
+                        if      drop 0          \ saved screens are
+                                restscr restscr \ re-saved at the new
+                                savescr         \ size and the menu
+                                save> mcol      \ redrawn
+                                on> mcol .menubar
+                                restore> mcol
+                                savescr
+                        else
+                        dup 27 <>               \ while not ESC
                            over 13 <> and       \ and not carraige return
                         ?menukey                \ or menu key
                         if      ?domkey
+                        then
                         then    ?dup
                 until
                 restscr restscr         \ Recover original screen
@@ -321,22 +330,22 @@ I: ?domkey      ( c1 --- c1 | 0 )
 \ problems if not balanced.
 
 : savemenu      ( --- )         \ save current menu setup
-                2r>
+                r>                      \ (one return stack cell per level)
                 save> doother
                 save> menubar
                 save> menulist
                 save> mline
                 save> mcolumn
-                2>r ;
+                >r ;
 
 : restmenu      ( --- )         \ restore to previous menu setup
-                2r>
+                r>
                 restore> mcolumn
                 restore> mline
                 restore> menulist
                 restore> menubar
                 restore> doother
-                2>r ;
+                >r ;
 
 : defmenu       ( --- )
                 defsave =: mcol

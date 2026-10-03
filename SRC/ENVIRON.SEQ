@@ -1,54 +1,57 @@
-\ ENVIRON.SEQ   Environment manipulation words          by Tom Zimmer
+\ ENVIRON.SEQ   Environment manipulation words          by Tom Zimmer   F-PC native port
 
-: evseg         ( --- n1 )      \ Return the segment of environment $.
-                44 @ ;
+\ F-PC native port: there is no PSP and no DOS environment segment (the word
+\ at PSP offset 44). The host process environment is read through two VM
+\ built-ins instead. Their results are in a VM buffer that the next call
+\ may overwrite, so copy them out.
 
-: envsize       ( --- n1 )      \ Calculate the environment $ size.
-                ?cs: evseg - 2047 min 16 * ;
+BUILTIN GETENV          ( a1 n1 --- a2 n2 f1 )
+\ The value a2,n2 of the environment variable named a1,n1 (no '='). f1 is
+\ true if it is set; otherwise a2 n2 are 0 0.
+BUILTIN ENVSTRING       ( n1 --- a2 n2 f1 )
+\ The n1th (from 0) "NAME=value" string of the environment. f1 is false,
+\ and a2 n2 are 0 0, when n1 is past the last one.
 
-: "envfind      ( a1 n1 --- n2 bool )   \ n2 is offset into environment
-                false save!> caps       \  where string a1,n1 was found.
-                evseg save!> SSEG       \ Set the search segment
-                0 envsize search
-                restore> SSEG           \ Restore the search segment
-                restore> caps ;
+: "envfind      ( a1 n1 --- a2 n2 bool )   \ a2,n2 is the value of the
+                                        \ variable a1,n1 if bool is true.
+\ F-PC native port: was ( a1 n1 --- offset bool ) into the environment
+\ segment. A trailing '=' on the name (as in " COMSPEC=") is ignored.
+                2dup + 1- c@ '=' = if 1- then 0MAX
+                getenv ;
 
-: .env          ( --- )         \ print the environment string
-                0 envsize bounds    cr
-               ?do      evseg i c@l 0=
-                        if      cr
-                        else    evseg i c@l emit
-                        then    evseg i @l 0= ?leave
-                loop    ;
+: .env          ( --- )         \ print the environment strings
+                cr 0
+                begin   dup envstring
+                while   type cr 1+
+                repeat  2drop drop ;
+
+: env>hcb       ( a1 n1 hcb --- )       \ put string a1,n1 in a handle
+                dup clr-hcb >r
+                B/FILENAME 2- min dup r@ c!     \ leave room for a NUL
+                r> >nam swap cmove ;
 
 handle comspec$
 
 : comspec@      ( --- )         \ extract the command spec
+                                \ (the host's shell: COMSPEC, else SHELL)
                 " COMSPEC=" "envfind 0=
-                if      ." Couldn't find Command Spec."
-                        drop comspec$ off
-                else    8 + envsize swap
-                        comspec$ dup clr-hcb >nam -rot
-                        do      evseg i c@l 0= ?leave
-                                evseg i c@l over c! 1+
-                                comspec$ c@ 1+ comspec$ c!
-                        loop    drop
+                if      2drop " SHELL" "envfind 0=
+                then
+                if      comspec$ env>hcb
+                else    ." Couldn't find Command Spec."
+                        2drop comspec$ clr-hcb
                 then    ;
 
 : .comspec      ( --- ) comspec@ comspec$ count type ;
 
-create path$ 81 allot
+create path$ 256 allot          \ (was 81: host paths are longer)
 
 : path@         ( --- )         \ extract the command spec
                 " PATH=" "envfind 0=
                 if      ." Couldn't find PATH."
-                        drop path$ off
-                else    5 + envsize swap
-                        path$ dup clr-hcb >nam -rot
-                        do      evseg i c@l 0= ?leave
-                                evseg i c@l over c! 1+
-                                1 path$ c+!
-                        loop    drop
+                        2drop path$ off
+                else    255 min dup path$ c!
+                        path$ 1+ swap cmove
                 then    ;
 
 : .path         ( --- ) path@ path$ count type ;
@@ -57,33 +60,25 @@ handle me$
 
 : me@           ( --- ) \ extract my own execution name string
                         \ returns a null ME$ if it fails
-                me$ off dosver 3 >=     \ need DOS version 3 or greater
-                if      me$ 2 "envfind
-                        if      4 + envsize swap
-                                me$ dup clr-hcb >nam -rot
-                                do      evseg i c@l 0= ?leave
-                                        evseg i c@l over c! 1+
-                                        me$ c@ 1+ me$ c!
-                                loop    drop
-                        else    drop
-                        then
-                then            ;
+\ F-PC native port: DOS put the program's path after the environment.
+\ The nearest host equivalent is "_", which shells such as bash set to
+\ the path of the program they run.
+                me$ clr-hcb
+                " _" "envfind
+                if      me$ env>hcb
+                else    2drop
+                then    ;
 
 : .me           ( --- ) me@ me$ count type ;
 
 comment:
 
-envsize       ( --- n1 )
-        Return the maximum size the environment can be in bytes.
-
 .env          ( --- )
         Print the environment string used by the system.
 
-"envfind      ( a1 n1 --- n2 bool )
-        Find the string a1 n1 in the environment, returning
-        bool true if found, and n2 the offset into env$ where it
-        was found. N2 is the offset to the BEGINNING of the
-        string searched for.
+"envfind      ( a1 n1 --- a2 n2 bool )
+        Find the variable a1 n1 in the environment, returning
+        bool true if found, and a2 n2 its value.
 
 comspec$
         Storage space for the command spec string.

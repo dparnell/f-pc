@@ -338,6 +338,11 @@ DEFER LOADER    ' <LOAD> IS LOADER
                         while   2swap 2drop
                                 1 /string
                         repeat  2drop
+                        begin   2dup                \ host paths use /
+                                ASCII / scan dup
+                        while   2swap 2drop
+                                1 /string
+                        repeat  2drop
                 then
                 #tib !                  \ set #tib
                 'tib !                  \ set tib to seqhandle

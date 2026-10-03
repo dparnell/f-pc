@@ -1,4 +1,4 @@
-\ LEDIT.SEQ     Line Editor Utility                     by Tom Zimmer
+\ LEDIT.SEQ     Line Editor Utility                     by Tom Zimmer   F-PC native port
 
 comment:
 
@@ -85,6 +85,8 @@ headerless
     0    value lenlimit                 \ line edit length limit
 
 defer ledbutton ' noop     is ledbutton
+defer ledresize ' noop     is ledresize \ redraw around the edit line after
+                                        \ the screen was resized
 
 132 constant maxedit
     variable editbuf maxedit 2+ allot           \ our edit buffer,
@@ -224,7 +226,7 @@ defer doldel    ' <doldel> is doldel
                         ecursor 0<> and
                 while   dofdel
                 repeat  editbuf c@ r> min 0MAX =: ecursor
-                editbuf @               \ get count and first char
+                editbuf w@              \ get count and first char
                 $2001 =                 \ count=1 & char=blank
                 if      0 editbuf c!    \ then reset buffer to empty
                 then    ;
@@ -258,11 +260,12 @@ defer doldel    ' <doldel> is doldel
 
 : funcarray     ( n1 | <name> --- )     \ create an X array initialized to
                                         \ NOOP functions
+                                        \ F-PC native port: the table is
+                                        \ in the body (was in LIST space)
                 >r create
-                xhere paragraph + dup xdpseg ! xseg @ - , xdp off
                 r> 0
-                ?do     ['] noop x,
-                loop    does> @ +XSEG swap 2* @L execute ;
+                ?do     ['] noop ,
+                loop    does> swap cells + perform ;
 
 128 funcarray keyfuncs1
 128 funcarray keyfuncs2
@@ -280,13 +283,13 @@ defer doldel    ' <doldel> is doldel
                                         \ leuvalue n1 of the KEYFUNCS array
                 128 - dup 0< over 127 > or
                 abort" keys must be in the range 128 to 255"
-                2* keysfuncptr >body @ +XSEG swap !L ;
+                cells keysfuncptr >body + ! ;
 
 : lkey@         ( n1 --- a1 )           \ fetch the function CFA a1 of
                                         \ keyvalue n1 from the KEYFUNCS array
                 128 - dup 0< over 127 > or
                 abort" keys must be in the range 128 to 255"
-                2* keysfuncptr >body @ +XSEG swap @L ;
+                cells keysfuncptr >body + @ ;
 
 : ?func        ( --- )                         \ handle function keys
                 lchar   127 >
@@ -297,6 +300,9 @@ defer doldel    ' <doldel> is doldel
                                                 \ c1 = keyboard character
                                                 \ f1 = true for done editing
 : dokey        ( c1 --- )                      \ process a key
+                dup k-resize =                  \ the screen was resized:
+                if      drop ledresize exit     \ the loop redraws the line
+                then
                 =: lchar
                 ?char                           \ handle normal ascii
                 ?func                           \ function characters

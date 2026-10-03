@@ -626,3 +626,37 @@ void p_RESIZE(vm_t *vm)                     /* ( addr n -- addr' ior ) */
 
 void p_SETCURSOR(vm_t *vm) { sv_set(vm, SV_CURSOR, pop(vm)); }
 void p_GETCURSOR(vm_t *vm) { push(vm, sv(vm, SV_CURSOR)); }
+
+/* ---- host environment (ENVIRON.SEQ) ----------------------------------------- */
+extern char **environ;
+
+static void push_env_string(vm_t *vm, const char *v)   /* copy into a VM buffer */
+{
+    size_t n = strlen(v);
+    if (n > 1023) n = 1023;
+    static ucell envbuf;
+    if (!envbuf) envbuf = heap_alloc_block(vm, 1024);
+    if (!envbuf) { push(vm, 0); push(vm, 0); push(vm, 0); return; }
+    memcpy(vm->mem + envbuf, v, n);
+    push(vm, envbuf); push(vm, (ucell)n); push(vm, TRUE_F);
+}
+
+void p_GETENV(vm_t *vm)                     /* ( a1 n1 -- a2 n2 f ) */
+{
+    ucell n = pop(vm), a = pop(vm);
+    char name[256];
+    if (n >= sizeof name) n = sizeof name - 1;
+    memcpy(name, vm_ptr(vm, a, n), n);
+    name[n] = 0;
+    const char *v = getenv(name);
+    if (!v) { push(vm, 0); push(vm, 0); push(vm, 0); return; }
+    push_env_string(vm, v);
+}
+
+void p_ENVSTRING(vm_t *vm)                  /* ( n -- a n f ) n-th NAME=value */
+{
+    ucell i = pop(vm), k = 0;
+    for (char **e = environ; *e; e++, k++)
+        if (k == i) { push_env_string(vm, *e); return; }
+    push(vm, 0); push(vm, 0); push(vm, 0);
+}

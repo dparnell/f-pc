@@ -1,4 +1,4 @@
-\ BOXTEXT.SEQ   Some simple boxes around text.          by Tom Zimmer
+\ BOXTEXT.SEQ   Some simple boxes around text.          by Tom Zimmer   F-PC native port
 
 comment:
 
@@ -98,8 +98,8 @@ forth definitions
                 >box true <box> ;
 
 : (.box)        ( x y --- )
-                >box X>"BUF
-                >r over r@ c@ + 3 + over 2+ box
+                >box r> dup count + aligned >r  \ the in-line string
+                >r over r@ c@ + 3 + over 2+ box  \ (was X>"BUF, copied it)
                 space r> count type space
                 bx by 1+ at ;
 

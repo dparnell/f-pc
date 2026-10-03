@@ -1,4 +1,4 @@
-\ WFL.SEQ       Window file selection.                  by Tom Zimmer
+\ WFL.SEQ       Window file selection.                  by Tom Zimmer   F-PC native port
 
 ONLY FORTH ALSO HIDDEN DEFINITIONS ALSO
 
@@ -73,47 +73,50 @@ variable flitem
                 item# @ 1- 0MAX dup item# !
                 itemstk + dup c@ swap off ;
 
-   4 constant forgx
+\ F-PC native port: the window was placed for an 80x25 screen. FORGX
+\ (centred) and DLEN (to the bottom) are now VALUEs set from COLS and ROWS
+\ by WFLGEOMETRY, when the window opens and when the terminal is resized.
+\ The window needs at least 78x24 to show everything.
+
+   4 value    forgx
    3 constant forgy             \ top of file window display
-  18 constant dlen              \ directory window length
+  18 value    dlen              \ directory window length
+
+: wflgeometry   ( --- )
+                cols 75 - 2/ 0MAX 2+ =: forgx
+                rows forgy - 4 - 1 MAX =: dlen ;
 
   16 constant dirattrib         \ directory file attribute
      variable aletter
 
-code foff+      ( n1 --- n2 )
-                pop ax
-                add ax, ' foff >body
-                1push
-                end-code
+: foff+         ( n1 --- n2 )
+                foff + ;
 
 headers
 
-code >fadr      ( name# -- seg name_offset )
-                pop ax
-                mov bx, # b/fnam
-                mul bx                  \ b/fnam *
-                add ax, # 1             \ 1+
-                mov dx, ' dirseg >body  \ dirseg
-                2push
-                end-code
+\ Each directory entry in DIRSEG is B/FNAM bytes: the attribute byte, then
+\ the name as a counted string. (Was seg:offset; flat addresses now.)
 
-: dir>pad       ( seg off --- a1 n1 )
-                countl wpad1 placel wpad1 count ;
+: >fadr         ( name# -- name_addr )
+                b/fnam * 1+ dirseg + ;
+
+: dir>pad       ( a1 --- a2 n1 )
+                count wpad1 place wpad1 count ;
 \                2dup c@l >r ?cs: wpad1 r@ 1+ cmovel wpad1 1+ r> ;
 
 : .nam          ( n1 --- )
                 >fadr dup>r dir>pad dup>r type
                 12 r> - spaces
-                dirseg r> 1- c@l dirattrib and
+                r> 1- c@ dirattrib and
                 if      #out @ 1- #line @ at
                         ." ì"
                 then    ;
 
 : name>buf      ( --- )         \ move name from dta to buffer
-                #fls >fadr nip >r
+                #fls >fadr >r
                 wpad1 30 + 12 2dup 0 scan nip -
-                dup dirseg r@ c!l >r ?cs: swap dirseg r> r@ 1+ swap cmovel
-                wpad1 21 + c@ dirseg r> 1- c!l ;
+                dup r@ c! r@ 1+ swap cmove
+                wpad1 21 + c@ r> 1- c! ;
 
 : $getdir+      ( a1 n1 -- )            \ get more files of spec a1, type n1
                 >r
@@ -124,11 +127,11 @@ code >fadr      ( name# -- seg name_offset )
                 begin   255 and 0= #fls maxdir > 0= and
                 while   name>buf
                         dirsonly                \ directories ONLY
-                        if      #fls >fadr 1- c@l dirattrib and
+                        if      #fls >fadr 1- c@ dirattrib and
                                                 \ and a directory
                                 if      incr> #fls
                                 then
-                        else    #fls >fadr 1- c@l dirattrib and 0=
+                        else    #fls >fadr 1- c@ dirattrib and 0=
                                 if      incr> #fls
                                 then
                         then
@@ -152,12 +155,12 @@ code >fadr      ( name# -- seg name_offset )
         #fls 1 > if
                #fls 1-  first_dirfile over min ?do
                #fls i 1+ ?do
-                 i >fadr 1- ?cs: sortn1 b/fnam cmovel
-                 j >fadr 1- ?cs: sortn2 b/fnam cmovel
+                 i >fadr 1- sortn1 b/fnam cmove
+                 j >fadr 1- sortn2 b/fnam cmove
                  sortn1 2+ sortn2 2+ b/fnam 2- comp 0<
                  if
-                    ?cs: sortn1 j >fadr 1- b/fnam cmovel
-                    ?cs: sortn2 i >fadr 1- b/fnam cmovel
+                    sortn1 j >fadr 1- b/fnam cmove
+                    sortn2 i >fadr 1- b/fnam cmove
                  then
                loop
             loop
@@ -187,7 +190,7 @@ headerless
 
 : (at.")        ( x1 y1 | text --- x1 y1+1 )
                 2dup at
-                2r@ 2dup c@l >r 1+ r@ typeL r> 1+ xeven r> + >r
+                r> count 2dup + aligned >r type
                 1+ ;
 
 : at."          ( x1 y1 | text --- x1 y1+1 )
@@ -250,7 +253,7 @@ headerless
                 then    ;
 
 : ?lmatch       ( --- f1 )
-                curfl >fadr 1+ c@l aletter c@ = ;
+                curfl >fadr 1+ c@ aletter c@ = ;
 
 : gotofl        ( --- )
                 flitem @ 0MAX
@@ -292,14 +295,14 @@ variable curflsave
                 begin nfl curfl #fls 1- 0MAX = until ;
 
 : delfl         ( --- )                   \ delete the current file
-        curfl >fadr dup>r 1- c@l dirattrib and
+        curfl >fadr dup>r 1- c@ dirattrib and
         forgx forgy 19 11 d+ 2dup at 50 spaces at
         if      ." Can't delete directory !\b\:10"
-        else    ." Delete \`" dirseg r@ dir>pad type ." \` <- Y/N [N] "
+        else    ." Delete \`" r@ dir>pad type ." \` <- Y/N [N] "
                 cursor-on key cursor-off bl or 'y' =
                 if      dirspec$ >pathend dirspec$ 1+ - dup dirhndl c!
                         dirspec$ 1+ dirhndl 1+ rot cmove
-                        dirseg r@ dir>pad >r dirhndl count + r@ cmove
+                        r@ dir>pad >r dirhndl count + r@ cmove
                         r> dirhndl c+!
                         dirhndl count + off
                         dirhndl hdelete 5 =
@@ -328,9 +331,27 @@ variable curflsave
                 dirspec$ pathset drop
                 cursor-off getdir showpath 0fl ;
 
+: wflframe      ( --- )         \ draw the window, all but the files
+            forgx 2- forgy 2- over 74 + rows 3 - box&fill
+            forgx forgy 36 1 d+ at                 \ then my message
+            ." \r Tom's Window File Selection Tool "
+            showkeys showpath         \ show the keys and dir path
+            forgx forgy 17 16 d+ at               \ and som help information
+            ." Use  to pick a file, or press the first letter of"
+            forgx forgy 17 17 d+ at
+            ." the file you want, then press Return to select it." ;
+
+: wflresized    ( --- )         \ the terminal was resized: redraw
+                recoverscr              \ the screen we started from
+                wflgeometry wflframe
+                curfl foff - dlen 1- >  \ keep the current file visible
+                if      curfl dlen 1- - 0MAX !> foff
+                then    ;
+
 : keytests      ( n1 --- )
                 case
               false of  ( do nothing )          endof
+( resize )      k-resize of wflresized          endof
 ( up arrow )    200 of  pfl                     endof
 ( down arrow )  208 of  nfl                     endof
 ( PgUp )        201 of  dlen 2/ 0 ?do pfl loop  endof
@@ -347,12 +368,12 @@ variable curflsave
                 endcase ;
 
 : ?setdir       ( c1 --- c2 f1 ) \ return bool false if new dir
-            curfl >fadr 1- c@l dirattrib and            \ are we on a DIR
+            curfl >fadr 1- c@ dirattrib and             \ are we on a DIR
             #fls 0> and                                 \ and have anything
             if    drop
                   curfl >fadr dir>pad + off
                                                 \ move DIR to PAD, nul term
-                  wpad1 1+ @ rootdir @ =        \ is DIR the ROOT?
+                  wpad1 1+ w@ rootdir w@ =      \ is DIR the ROOT?
                   if    dirspec$ 2+ c@ ':' =    \ include drive?
                         if      '\' dirspec$ 3 + c! 3 dirspec$ c!
                                 defdirspec$ count dirspec$ +place
@@ -361,7 +382,7 @@ variable curflsave
                         begin   item# @ 1 >           \ Clear DIR stack
                         while   istk> drop
                         repeat  istk> setfl           \ set to ROOT
-                  else  wpad1 1+ @ " .." drop @ =     \ pop one level?
+                  else  wpad1 1+ w@ " .." drop w@ =   \ pop one level?
                         if      \ Now we need to remove a Dir from DIRSPEC$.
                                 \ first, preserve the filespec & extention
                                 dirspec$ >pathend" 2>r
@@ -396,22 +417,16 @@ headers
 FORTH DEFINITIONS
 
 : <getfile> ( --- <a1> f1 )   \ return a1 filename addr and boolean
-            rows forgy - 4 - =: dlen
+            wflgeometry                 \ (was rows forgy - 4 - =: dlen)
             dirseg 0= if false exit then  \ if it didn't work, then leave
             ['] wflbutton save!> dobutton \ init mouse support
             savecursor
             savescr    \ save cursor and screen
             forgx 2- forgy 2- over 74 + rows 3 - box&fill
-            forgx forgy 36 1 d+ at                 \ then my message
-            ." \r Tom's Window File Selection Tool "
             forgx forgy 20 7 d+ at
             ." \2 Reading Directory Files... "
             cursor-off getdir        \ clear screen, and get dir
-            0fl showkeys showpath         \ show the keys and dir path
-            forgx forgy 17 16 d+ at               \ and som help information
-            ." Use  to pick a file, or press the first letter of"
-            forgx forgy 17 17 d+ at
-            ." the file you want, then press Return to select it."
+            0fl wflframe             \ show the window, keys and dir path
             begin   showdir 0 0 at        \ show the directory
                   key dup 13 = dup        \ wait for a key, if Enter
                   if      drop ?setdir ( c1 --- c2 f1 )     \ try to set dir
@@ -424,7 +439,7 @@ FORTH DEFINITIONS
                                     \ the DIR spec.
             if    dirspec$ >pathend dirspec$ 1+ - >r
                   dirspec$ 1+ r> wpad1 place
-                  curfl >fadr countl wpad1 +placel
+                  curfl >fadr count wpad1 +place
                   wpad1 handle>ext c@ '.' <>      \ append '.' if no extension
                   if    '.' wpad1 count + c!
                         1 wpad1 c+!

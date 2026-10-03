@@ -145,7 +145,7 @@ struct vm {
     ucell sysvar;                      /* address of sysvar block         */
     ucell tib;                         /* TIB address                     */
     ucell tramp;                       /* trampoline area                 */
-    ucell dosbuf;                      /* default DTA (128) + DOS-LINE (128) */
+    ucell dosbuf;                      /* DTA (128), DOS-LINE (128), FPC-HOME (256) */
     int   depth;                       /* nesting of vm_execute           */
 
     ucell code_base, code_end;         /* regions                         */

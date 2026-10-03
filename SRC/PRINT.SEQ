@@ -1,4 +1,6 @@
-\ PRINT.SEQ     A simple utility to allow printing to a disk file.
+\ PRINT.SEQ     A simple utility to allow printing to a disk file.   F-PC native port
+
+\ No changes were needed: PRN. is the VM's printer device (a file or stdout).
 
 comment:
 

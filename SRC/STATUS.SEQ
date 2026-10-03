@@ -1,4 +1,4 @@
-\ STATUS.SEQ    Display a status line at screen top.    by Tom Zimmer
+\ STATUS.SEQ    Display a status line at screen top.    by Tom Zimmer   F-PC native port
 
 0 value vocv    \ show vocabulary stack value flag
 
@@ -7,8 +7,10 @@
                 savecursor
                 base @ >r decimal
                 0 0 at >attrib1
-                ."  C - " sp@ here - 0 1000 um/mod nip (u.) type ." k : - "
-                #listsegs xhere drop xseg @ - - 16 *d
+                                        \ free CODE and LIST space; the
+                                        \ regions end at LIMIT and LIST-LIMIT
+                ."  C - " limit here - 0 1000 um/mod nip (u.) type ." k : - "
+                list-limit xhere - 0
                 1000 um/mod nip (u.) type ." k"
                 2 spaces depth
                 if      >attrib4 ."  Depth " depth (u.) dup>r type
@@ -25,7 +27,7 @@
                         #vocs 1- context over 0
                         do      dup @ ?dup 0= if nip i swap leave then
                                 cols 11 - i 2+ at
-                                body> >name space %.id eeol 2+
+                                body> >name space %.id eeol cell+
                         loop    drop
                         cols 11 - over 2+ at space
                         ['] root >name %.id eeol >norm
@@ -48,6 +50,14 @@
 
 ' .STATUS IS STATUS             \ Status printed for command lines.
 ' <.STAT> IS LOADSTAT           \ Status printed while loading.
+
+: STATRESIZED   ( -- )          \ redraw the status line for the new
+                defers resized  \ screen width after a terminal resize
+                statv @
+                if      <.stat>
+                then    ;
+
+' STATRESIZED IS RESIZED
 
 : STATON        ( --- )
                 STATV ON ;

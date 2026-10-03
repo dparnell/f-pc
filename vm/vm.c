@@ -79,7 +79,7 @@ vm_t *vm_new(ucell memsize, host_t *host)
     for (int i = 0; i < SV_COUNT; i++)          /* each slot is a VARIABLE or VALUE */
         wr32(vm, vm->sysvar + (ucell)i * 8, SV_IS_VALUE(i) ? T_DOVALUE : T_DOVAR);
     vm->tib = a;               a += TIB_SIZE;
-    vm->dosbuf = a;            a += 256;
+    vm->dosbuf = a;            a += 512;   /* DTA, DOS-LINE, FPC-HOME */
     ucell up = a;              a += USER_CELLS * CELL;
     vm->tramp = a;             a += NTRAMP * 8 + 8;     /* + the HALT code field */
     wr32(vm, vm->tramp + NTRAMP * 8, T_HALT);

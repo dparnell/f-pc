@@ -1,56 +1,73 @@
-\ SAVESCR.SEQ   Routine to save and restore screen.     by Tom Zimmer
+\ SAVESCR.SEQ   Routine to save and restore screen.     by Tom Zimmer   F-PC native port
 
 decimal
 
-0.0 pointer svseg               \ screen save segment
+\ F-PC native port: the original kept up to SVMAX screen images of a fixed
+\ size (ROWS*COLS*2) in one paragraph buffer, SVSEG. The screen size can
+\ change at any time now (terminal resize), so each saved screen is its own
+\ ALLOCATEd block that records the size it was saved at:
+\       +0 columns   +4 rows   +8 the (char,attr) cells, row stride cols*2
+\ SVSTACK holds the saved screens, most recent first. Restoring copies the
+\ area common to the saved and the current screen.
+
+16 constant svlimit             \ most screens SVSTACK can hold
     4 value svmax               \ maximum number of screens to save
- 4000 value svsize              \ size of each screen
-    0 value svtotal             \ total of saved screens
+ 4000 value svsize              \ size of the screen at the last save
+create svstack svlimit cells allot      \ the saved screens
+       svstack svlimit cells erase
 
 : svinit        ( --- )         \ screen save initialization
                 defers initstuff
                 rows cols 2* * =: svsize        \ set save size per screen
-                65535. svsize um/mod nip        \ maximum number of screens
-                1- svmax min =: svmax           \ limit svsize to < 64k
-                svsize svmax * =: svtotal       \ adjust total arraysize
-                svmax 1+ svsize *D sizeof!> svseg
-                svseg 0=
-                if      cr
-                        ." Could not allocate memory for Screen save routine."
-                then    ;
+                svmax svlimit min =: svmax
+                svstack svlimit cells erase ;   \ nothing saved yet
 
 ' svinit is initstuff
+
+: svline        ( a1 n1 --- )   \ copy line n1 of saved screen a1 to the
+                                \ screen, if both have that line
+                dup 0< if 2drop exit then
+                over cell+ @ over > 0= if 2drop exit then
+                dup rows < 0= if 2drop exit then
+                >r
+                dup 2 cells + over @ 2* r@ * +          \ source line
+                video-buf cols 2* r> * +                \ destination line
+                rot @ cols min 2* cmove ;
+
+: svshow        ( a1 --- )      \ show saved screen a1
+                blank.color
+                rows 0 ?do dup i svline loop drop
+                show.color ;
 
 \ nestable save and restore up to SVMAX times.
 
 : savescr       ( --- )
-                svseg 0= ?exit
-                svseg 0 2dup svsize + svtotal cmovel>   \ Make a hole in buf
+                rows cols 2* * dup =: svsize
+                2 cells + allocate if drop exit then    \ no memory
+                cols over ! rows over cell+ !
                 blank.color
-                video-seg @ 0 svseg 0 svsize cmovel       \ & save screen in it.
-                show.color ;
+                video-buf over 2 cells + svsize cmove   \ & save screen in it.
+                show.color
+                svstack svmax 1- cells + @ ?dup         \ oldest falls off
+                if      free drop
+                then
+                svstack dup cell+ svmax 1- cells cmove> \ Make a hole
+                svstack ! ;
 
 : restscr       ( --- )
-                svseg 0= ?exit
-                blank.color
-                svseg 0 video-seg @ 0 svsize cmovel     \ Restore screen &
-                show.color
-                svseg svsize over 0 svtotal cmovel ;    \ compress buffer.
+                svstack @ ?dup 0= ?exit
+                dup svshow free drop                    \ Restore screen &
+                svstack cell+ svstack svlimit 1- cells cmove \ compress
+                0 svstack svlimit 1- cells + ! ;
 
 : recoverscr    ( --- )                                 \ get a copy of the
-                svseg 0= ?exit                          \ last saved screen
-                blank.color
-                svseg 0 video-seg @ 0 svsize cmovel     \ Restore screen
-                show.color ;
+                svstack @ ?dup                          \ last saved screen
+                if      svshow
+                then    ;
 
 : recoverline   ( n1 --- )                          \ get a copy of line n1
-                svseg 0= if drop exit then          \ from last saved screen
-                dup 0 rows 1- between
-                if      cols 2* * >r
-                        blank.color
-                                                        \ Restore line n1
-                        svseg r@ video-seg @ r> cols 2* cmovel
-                        show.color
+                svstack @ ?dup                      \ from last saved screen
+                if      swap svline
                 else    drop
                 then    ;
 
@@ -62,7 +79,7 @@ comment:
 
 2variable entry-curpos
 
-0 24 entry-curpos 2!                    \ initialize to bottom of screen
+0 rows 1- entry-curpos 2!               \ initialize to bottom of screen
 
 : entry-save    ( --- )                 \ save screen on entering F-PC
                 defers initstuff

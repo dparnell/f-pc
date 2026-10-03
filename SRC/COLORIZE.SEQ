@@ -1,4 +1,4 @@
-\ COLORIZE.SEQ      Color Words                 by Leon Dent
+\ COLORIZE.SEQ      Color Words                 by Leon Dent   F-PC native port
 
 comment:
 
@@ -28,11 +28,13 @@ BLUE      VALUE USERBGCOLOR       \  BACKGROUND FOR USER WORDS
 : CLR-UVARIABLE  VARIABLECOLOR  >FG USERBGCOLOR >BG ;
 : CLR-DEFER      DEFERCOLOR     >FG >NORMBG  ;
 : CLR-UDEFER     DEFERCOLOR     >FG USERBGCOLOR >BG ;
-: CLR-OTHER      DUP C@ 232 <>
-                 IF   CODECOLOR >FG >NORMBG
-                 ELSE DUP DOES? NIP      \ DROP SECOND ELEM ON STK
-                      IF  DOESCOLOR >FG >NORMBG
-                      ELSE >NORM  THEN
+: CLR-OTHER      ( cfa -- cfa )
+\ F-PC native port: the original tested the code field for a CALL (232).
+\ Code fields are tokens now and there are no ;CODE words: a word is either
+\ a DOES> word or a built-in (CODE) primitive.
+                 DUP DOES? NIP           \ DROP SECOND ELEM ON STK
+                 IF   DOESCOLOR >FG >NORMBG
+                 ELSE CODECOLOR >FG >NORMBG
                  THEN ;
 
 \ end of color mods
@@ -81,7 +83,8 @@ FALSE VALUE ?COLORIZE
 ' COLOR-INFO IS PREWORDS
 
 : COLORIZE  ( CFA -- )
-            DUP  @REL>ABS  DEFINITION-CLASS COLOR-CLASS DROP  ;
+            DUP  @  DEFINITION-CLASS COLOR-CLASS DROP  ;
+\ F-PC native port: DEFINITION-CLASS (DECOM.SEQ) is given the code token.
 
                                         \ Boot time initialization of
 : COLORIZE-INIT ( --- )                 \ COLORIZER by video mode

@@ -1,4 +1,4 @@
-\ PERTYPE         Backslash Type, Imbedded Attribute Switches
+\ PERTYPE         Backslash Type, Imbedded Attribute Switches   F-PC native port
 
 comment:                                        by Tom Zimmer
 
@@ -32,17 +32,17 @@ comment;
                 $3030 - split swap 10 * + ;
 
 : \%spaces      ( a1 n1 --- a2 n2 )     \ display a number of spaces
-                over @> sseg swap @L packed_asc># spaces
+                over w@ packed_asc># spaces
                 2 /string ;
 
 : \%tenths      ( a1 n1 --- a2 n2 )     \ delay a number of tenths of second
-                over @> sseg swap @L packed_asc># tenths
+                over w@ packed_asc># tenths
                 2 /string ;
 
 : \%at          ( a1 n1 --- a2 n2 )     \ move cursor to new location
-                over @> sseg swap
-                2dup @L packed_asc># >r
-                  2+ @L packed_asc># r> swap at
+                over
+                dup w@ packed_asc># >r
+                  2+ w@ packed_asc># r> swap at
                 4 /string ;
 
 0 value \x                              \ a place to save cursor x & y
@@ -64,34 +64,28 @@ create \chars   ," R0TSN12345678BD@\`|<>:"
 
 : do\char       ( a1 n1 c1 -- a2 n2 )   \ handle one escape sequence
                 upc                     \ convert char case
-                ?cs: save!> sseg
                 \chars count rot scan drop \chars - 1- 22 min
-                restore> sseg
                 exec:   >rev      >norm     tab       \%spaces  cr
                         >attrib1  >attrib2  >attrib3  >attrib4  >attrib5
                         >attrib6  >attrib7  >attrib8  beep      dark
                         \%at      \emit     "emit     lfemit
                         \at-save  \at-rest  \%tenths  >norm ;
 
-: \typeL        ( seg a1 n1 -- )        \ type an interpreted string in SEG
+\ F-PC native port: memory is flat, so the segment versions (\typeL with
+\ SSEG) are gone; \type works on any address.
+
+: \type         ( a1 n1 -- )    \ type an interpreted string
                 save> attrib
-                rot save!> sseg
                 begin   2dup '\' scan nip ?dup
-                while   over >r - dup>r over >r @> SSEG -ROT typeL
+                while   over >r - dup>r over >r type
                         r> r> r> swap 2+ /string
                                         \ 2+ removes 2 extra chars
-                        over @> sseg swap 1- c@L
+                        over 1- c@
                         do\char
-                repeat  @> SSEG -ROT typeL
-                restore> sseg
+                repeat  type
                 restore> attrib ;
 
-: \type         ( a1 n1 -- )    \ type an interpreted string in CODE space
-                ?cs: -rot \typeL ;
-
 : (\.")         ( -- )
-
-                2r@ 2dup c@l >r 1+ r@ \typeL r> 1+ xeven r> + >r ;
+                r> count 2dup + aligned >r \type ;
 
 ' (\.") is (.")         \ link new (\.") into (.")
-

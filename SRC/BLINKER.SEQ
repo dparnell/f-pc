@@ -1,4 +1,4 @@
-\ BLINKER.SEQ           Set blinkable state             Tom Zimmer
+\ BLINKER.SEQ           Set blinkable state             Tom Zimmer   F-PC native port
 comment:
 Normally colors 0 through 7 can be used interchangably in either forground
 or background, and colors 8 to 15 can be used in forground, but will cause
@@ -10,12 +10,14 @@ and words to get and set the border color.
 
 comment;
 
-code blink!     ( n1 -- )       \ set the background color blink state
+\ F-PC native port: there is no video hardware to program. The virtual
+\ screen never blinks: attribute bit 7 always selects a bright background
+\ (as after BLINKOFF), so these words do nothing. Palette and border colour
+\ are not supported either.
+
+: blink!        ( n1 -- )       \ set the background color blink state
                                 \ n1=0=noblink, n1=<>0=blinkable background
-                pop bx
-                mov ax, # $1003
-                int $10
-                next    end-code
+                drop ;
 
 : blinkoff      ( -- )          \ disable blinking background color 8 - 15
                 0 blink! ;
@@ -23,30 +25,17 @@ code blink!     ( n1 -- )       \ set the background color blink state
 : blinkon       ( -- )          \ enable blinking background colors 8 - 15
                 1 blink! ;
 
-code pal!       ( color pallete -- )    \ set the color palette primitive
+: pal!          ( color pallete -- )    \ set the color palette primitive
                                         \ See DOS technical manuals for
                                         \ more information.
-                pop bx
-                pop cx
-                mov bh, cl
-                mov ax, # $1000
-                int $10
-                next    end-code
+                2drop ;
 
-code border!    ( n1 -- )               \ set border color to n1=0-15
-                pop bx
-                mov bh, bl
-                mov ax, # $1001
-                int $10
-                next    end-code
+: border!       ( n1 -- )               \ set border color to n1=0-15
+                drop ;
 
-code border@    ( -- n1 )               \ get the current border color
+: border@       ( -- n1 )               \ get the current border color
                                         \ VALID ON VGA ONLY
-                mov ax, # $1008
-                int $10
-                sub ax, ax
-                mov al, bh
-                1push   end-code
+                0 ;
 
 \S *************************************************************************
 

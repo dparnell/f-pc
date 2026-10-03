@@ -1,4 +1,4 @@
-\ F-PC.SEQ       Extend file for KERNEL.COM
+\ F-PC.SEQ       Extend file for KERNEL.COM          F-PC native port
 
 CFGHNDL !HCB F-PC.CFG           \ Change the configuration file name
 
@@ -175,9 +175,8 @@ yhere fence !           \ Set fence to prevent FORGETing beyond YHERE
 
 .compstat
 
-7400 =: #listsegs               \ give me a BIGGER dictionary
-   0 =: #ovbytes                \ no overlays for now
-   0 =: #ovsegs                 \ no overlays for now "again"
+\ The original enlarged #LISTSEGS and cleared the overlay sizes here; the
+\ VM's regions are fixed and there are no overlays.
 
 cr .used
 

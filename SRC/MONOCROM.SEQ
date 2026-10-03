@@ -1,4 +1,4 @@
-\ MONOCROM.SEQ  Monochrome support words                by Tom Zimmer
+\ MONOCROM.SEQ  Monochrome support words                by Tom Zimmer   F-PC native port
 
 DECIMAL
 
@@ -45,15 +45,16 @@ $78 VALUE REVERSEVAL
 \ Reverse video support.
 
 : invert-screen         ( --- )
+\ F-PC native port: swaps the attribute bytes in VIDEO-BUF.
                         blank.color
-                        video-seg @ rows cols 2* * 1
-                        do      dup i c@l dup NORMVAL =
-                                if      drop REVVAL over i c!l
+                        video-buf rows cols 2* * bounds 1+
+                        ?do     i c@ dup NORMVAL =
+                                if      drop REVVAL i c!
                                 else    REVVAL =
-                                        if      NORMVAL over i c!l
+                                        if      NORMVAL i c!
                                         then
                                 then
-                     2 +loop    drop show.color ;
+                     2 +loop    show.color ;
 
 : white-on-black        ( --- )
                         NORMVAL NORMALVAL <>

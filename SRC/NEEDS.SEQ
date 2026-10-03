@@ -1,4 +1,6 @@
-\ NEEDS.SEQ     Conditionally load a file               by Tom Zimmer
+\ NEEDS.SEQ     Conditionally load a file               by Tom Zimmer   F-PC native port
+
+\ No changes were needed.
 
 only forth also definitions hidden also
 

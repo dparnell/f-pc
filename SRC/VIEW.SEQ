@@ -1,10 +1,10 @@
-\ VIEW.SEQ       Modified to work with nested load files  by Robert Patten
+\ VIEW.SEQ       Modified to work with nested load files  by Robert Patten   F-PC native port
 \                From  Viewing code for ZF.               by Tom Zimmer
 
 only forth also definitions  \  hidden also
 
 : NAME>PAD      ( A1 --- PAD )
-                >r r@ ys: ?cs: pad r> yc@ 31 and 1+ cmovel  \ move name
+                pad over c@ 31 and 1+ cmove                 \ move name
                 pad c@ 31 and pad c!                        \ clip count
                 pad count + 1- dup c@ 127 and swap c!       \ mask last ch
                 PAD     ;
@@ -21,12 +21,12 @@ FORTH DEFINITIONS
 \ Locate words source file and retuen file name at pad and it's cfa.
 \ if cfa is a veriable in files vocabulary then cfa will return it's
 \ load file.
-        \ setup defalt file string. This file should be first file loaded.
-        DUP  ['] FILES U<= IF
-        [ also files ' kernel1.seq >name previous ] literal name>pad drop
-        ELSE 0 PAD !  THEN    0  swap
+        \ setup defalt file string.
+        \ F-PC native port: the kernel is loaded by the VM's seed, which makes
+        \ no FILES variables, so kernel words have no file (empty string).
+        0 PAD !    0  swap
                 \ scan vocabulary threads via index
-                ['] files >body dup #threads 2* + swap do
+                ['] files >body dup #threads cells + swap do
                 I @  swap ( cfa ) >r         \  thread-head
                 begin  2dup u<               \ knot in thread
                 while dup l>name             \ nfa of files variable
@@ -35,8 +35,8 @@ FORTH DEFINITIONS
                            r@ u> swap r@  u< and  \
                        \ true: word within file's load area
                        if  nip dup           \ true better choice File
-                       then  y@              \ next knot in thread
-                repeat drop r> ( cfa ) 2 +loop drop
+                       then  @               \ next knot in thread
+                repeat drop r> ( cfa ) cell +loop drop
            dup if l>name dup name>   swap name>pad else pad  then swap ;
 
 \ : ctrl          ( -- f ) 0  $417 c@l 4 and ;
@@ -51,7 +51,7 @@ FORTH DEFINITIONS
                 r>drop >r drop r@ viewfile      \ find where word was loaded
         then    r@ =
         if      0
-        else    r@ >view y@
+        else    r@ >view @
         then    swap r>drop ;
 
 : LOAD          ( n1 --- )      \ n1 is the line number to load from
@@ -65,40 +65,8 @@ FORTH DEFINITIONS
 ' fload alias include           \ make an alias that does the same thing as
                                 \ FLOAD.
 
-\u f-pc.seq     ' f-pc.seq  constant 'f-pc.seq  \ first file loded on kernel
-\u f-pch.seq    ' f-pch.seq constant 'f-pc.seq  \ 05/28/90 21:36:03.89 tjz
-
-\- 'f-pc.seq    \S      \ Don't load more if 'F-PC.SEQ is not defined by now!
-
-\ Change files variables loaded by meta86.seq
-\ not needed after first execution
-: files_set     ( --- )
-                ['] files >body HERE 1000 + #THREADS 2* CMOVE ;
-
-: 1file         ( --- false | nfa )
-                HERE 1000 + #THREADS LARGEST DUP
-                if      DUP L>NAME >r Y@ SWAP ! r>
-                else    nip
-                then    ;
-
-files
-
-: ChangeFilesVariables  ( -- )
-\ Change files variables in the kernel to support VIEWFILE.
-        [ files ] kernel1.seq @ ?exit  \ alredy changed
-        files_set
-        \ ignore files variables above kernel
-        begin 1file [ 'f-pc.seq >name ] literal u<= until
-        'f-pc.seq                       \ limit of kernel
-        600  654        \  line# in meta86.seq of last fload \ 05/25/90 tjz
-        do 1file dup if       \ valid kernel files variable
-                cr I .s drop  dup .id \ display limit cfa loadline
-                name> tuck  >body !   \ mark limts of load area
-                i over >view y!       \ mark source file
-                else drop leave then  -1 +loop drop ;
-
-ChangeFilesVariables
-\u meta86.seq  files  'f-pc.seq meta86.seq !
-forget files_set  \ They have done their job.
-forth
-
+\ F-PC native port: the original went on to patch the FILES variables that
+\ META86.SEQ made for the kernel files (CHANGEFILESVARIABLES), so VIEW
+\ could find kernel words. The native kernel is loaded by the VM's seed
+\ (KERNEL.SEQ) and has no FILES variables, so that part is gone.
+\ TODO-PORT: VIEW of kernel words (needs the seed to record kernel files).

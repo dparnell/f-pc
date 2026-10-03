@@ -1,4 +1,6 @@
-\ COLOR.SEQ     Color board support for F-PC            by Tom Zimmer
+\ COLOR.SEQ     Color board support for F-PC            by Tom Zimmer   F-PC native port
+
+\ No changes were needed: ?VMODE always reports colour text mode 3.
 
 \ For Color boards, the following values may be used for background
 \ or forground.

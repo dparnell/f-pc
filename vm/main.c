@@ -30,21 +30,30 @@ static void usage(void)
     exit(2);
 }
 
-/* directory of the F-PC sources: $FPC_HOME/SRC, else <exe>/../SRC */
-static void default_kernel(char *out, size_t sz)
+/* the installation: $FPC_HOME, else the directory above the executable */
+static void fpc_home(char *out, size_t sz)
 {
     const char *home = getenv("FPC_HOME");
-    if (home) { snprintf(out, sz, "%s/SRC/KERNEL.SEQ", home); return; }
+    if (home) { snprintf(out, sz, "%s", home); return; }
     char exe[PATH_MAX];
     ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
     if (n > 0) {
         exe[n] = 0;
         char *sl = strrchr(exe, '/');
         if (sl) *sl = 0;
-        snprintf(out, sz, "%s/../SRC/KERNEL.SEQ", exe);
+        sl = strrchr(exe, '/');
+        if (sl && sl != exe) *sl = 0;           /* up from vm/ (or bin/) */
+        snprintf(out, sz, "%s", exe);
         return;
     }
-    snprintf(out, sz, "SRC/KERNEL.SEQ");
+    snprintf(out, sz, ".");
+}
+
+static void default_kernel(char *out, size_t sz)
+{
+    char home[PATH_MAX];
+    fpc_home(home, sizeof home);
+    snprintf(out, sz, "%s/SRC/KERNEL.SEQ", home);
 }
 
 static int run_seed(vm_t *vm, int argc, char **argv)
@@ -162,6 +171,12 @@ int main(int argc, char **argv)
     }
     vm->mem[vm->dosbuf + 128] = (uint8_t)len;       /* DOS-LINE */
     memcpy(vm->mem + vm->dosbuf + 129, line, len);
+    char home[PATH_MAX];
+    fpc_home(home, sizeof home);
+    size_t hl = strlen(home);
+    if (hl > 200) hl = 200;
+    vm->mem[vm->dosbuf + 256] = (uint8_t)hl;        /* (FPC-HOME) */
+    memcpy(vm->mem + vm->dosbuf + 257, home, hl);
     if (!batch) host_tty_attach(host, vm);
     return run_forth(vm);
 }

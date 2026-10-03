@@ -1,4 +1,6 @@
-\ FILSTAT       Display file status, and loaded files.  by Tom Zimmer
+\ FILSTAT       Display file status, and loaded files.  by Tom Zimmer   F-PC native port
+
+\ No changes were needed.
 
 decimal
 

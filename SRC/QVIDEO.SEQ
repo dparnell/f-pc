@@ -1,4 +1,4 @@
-\ QVIDEO.SEQ    Fast video routine LINKAGE.             by Tom Zimmer
+\ QVIDEO.SEQ    Fast video routine LINKAGE.             by Tom Zimmer   F-PC native port
 
 comment:
 
@@ -12,18 +12,24 @@ comment;
 
 DECIMAL
 
-: QTYPEL        ( SEG A1 N1 --- )
-                @> PRINTING
-                IF      (TYPEL)
-                ELSE    VIDEO-TYPEL
+\ F-PC native port: TYPEL ( seg a n ) is gone; TYPE itself is switched.
+\ VIDEO-TYPE writes into the virtual screen at #OUT,#LINE (clipped at the
+\ right edge) and moves the cursor after the text. EMIT and CR still go
+\ through DOS handle 1 (BIOS teletype at the same cursor), so #OUT/#LINE and
+\ the screen cursor stay in step.
+
+: QTYPE         ( A1 N1 --- )
+                PRINTING @
+                IF      (TYPE)
+                ELSE    VIDEO-TYPE
                 THEN    ;
 
 : FAST          ( --- )
-                ['] QTYPEL     IS TYPEL
+                ['] QTYPE      IS TYPE
                 FALSE =: ?DOSIO ;
 
 : SLOW          ( --- )
-                ['] (TYPEL)    IS TYPEL
+                ['] (TYPE)     IS TYPE
                 TRUE =: ?DOSIO ;
 
 FAST

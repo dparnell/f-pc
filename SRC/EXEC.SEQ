@@ -1,108 +1,39 @@
-\ EXEC.SEQ      A utility for calling DOS from Forth.   by Tom Zimmer
+\ EXEC.SEQ      A utility for calling DOS from Forth.   by Tom Zimmer   F-PC native port
 
 only forth also hidden also definitions
 
-: emm-initstuff ( -- )
-                defers initstuff
-                emm-init ;
-
-' emm-initstuff is initstuff
-
-: fpc>emm       ( --- )      \ move FPC to expanded memory
-                emm-status @ ?exit              \ leave if no EMM available
-                0 cur_emm_hndl !                        \ reset current hndl
-                ?cs: emmpars @ + emmparst !             \ set start of saved
-                #pars @ emmpars @ - u2/ $200 / 1+       \ calc pages needed
-                #fpcpages !                             \ set pages needed
-                emm-avail-pages emm-status @ ?exit      \ get available EMM
-                #fpcpages @ <                           \ if not enough memory
-                if      emm-status on exit
-                then
-                #fpcpages @ emm-alloc-pages emmhndl !   \ allocate pages
-                emmhndl @ cur_emm_hndl !                \ make current
-                emm-status @ ?exit                      \ leave if error
-                #fpcpages @ 0                           \ move FPC to EMM
-                ?do     i 0 emmhndl @ emm-map-pages     \ get page
-                        emm-status @ ?leave             \ leave on error
-                        emmparst @ I $400 * + 0         \ source of move
-                        ?emm: 0 16384 cmovel            \ move the page to EMM
-                loop    ;
-
-\ the handle EXTHNDL is located in the file EMMEXEC.SEQ
-
-: fpc>disk      ( --- )      \ move FPC to a disk file
-                true dsk-status !                       \ init to failed
-                ['] 0= save!> pathset                   \ disable pathset
-                exthndl hcreate                         \ make the file
-                restore> pathset                        \ restore it
-                ?exit                                   \ leave if error
-                ?cs: emmpars @ + emmparst !             \ set start of saved
-                #pars @ emmpars @ - u2/ $200 / 1+       \ calc pages needed
-                #fpcpages !                             \ set pages needed
-                dsk-status off                          \ reset error status
-                #fpcpages @ 0                           \ move FPC to EMM
-                ?do     dsk-status @ ?leave             \ leave on error
-                        0 16384                         \ source addr & len
-                        exthndl                         \ file handle
-                        emmparst @ I $400 * +           \ source seg of move
-                        exhwrite                        \ move page to file
-                        16384 - dsk-status !            \ set status
-                loop    dsk-status @                    \ if error occured
-                if      exthndl hdelete drop            \ then delete file
-                then    ;
-
-: fpc>out       ( -- )          \ try to flush F-PC out of memory
-                emm-present? use-emm @ and      \ use EMM?
-                if      fpc>emm                 \ then try to use it
-                else    emm-status on           \ else disable it
-                then
-                emm-status @ use-disk @ and     \ emm bad & disk turned on?
-                if      fpc>disk                \ then try to use it
-                else    dsk-status on           \ else disable it
-                then    ;
-
 : initcmdpath   ( --- )         \ Initialize the Command path
                 defers initstuff
-                comspec@ comspec$ cmdpath $>handle ;
+                comspec@ comspec$ count 70 min cmdpath place
+                0 cmdpath count + c! ;
 
 ' initcmdpath is initstuff      \ Put into initialization chain.
 
+\ F-PC native port: the original wrote F-PC out to EMS or disk, restored
+\ the interrupt vectors and EXECed COMMAND.COM /C with the command line.
+\ Natively <EXTEXEC> (EMMEXEC.SEQ) runs EXEC$ through the host shell
+\ (SYSTEM); an empty EXEC$ starts an interactive shell. F-PC stays in
+\ memory, so there is nothing to swap out or restore.
+
 : $sys          ( countedstring --- f1 ) \ spawn a shell
-                emmsysend paragraph emmpars !  \ set needed paragraphs
                 exec$      $100 erase
-                exec.param $10  erase
-                dup c@
-        if      count tuck exec$ 4 + swap cmove
-                " /c " exec$ 1+ swap cmove
-                3 + exec$ c! exec$ count + off
-        else    drop exec$ off
-        then    44 @    exec.param      !       \ environment segmnt
-                ?cs:    exec.param  4 + !       \ command line seg
-                exec$   exec.param  2 + !       \ and offset
-                $0D exec$ count + c!            \ append a carraige return
-                FPC>OUT                         \ copy FPC to expanded mem
-                RESTORE_VECTORS                 \ restore interrupt vectors
+                count $FE min exec$ place       \ the command line
                 <extexec>                       \ actually do the system call
-                SET_VECTORS                     \ recapture interrupt vectors
-                SETCRITICAL                     \ reset critical interrupt
                 cursor_pos_init                 \ restore cursor position
 \u blinkoff     blinkoff                        \ disable background blink
                 ;
 
-: ?syserror     ( n1 --- )      \ handle ONLY error codes 2 and 8 from $sys
-                dup  2 = abort" Can't find COMMAND.COM"
-                dup  8 = abort" Not enough memory"
+: ?syserror     ( n1 --- )      \ handle ONLY the "can't run" codes
+\ F-PC native port: the result is the shell's exit status. 127 and 126 are
+\ the shell's "not found" / "can't execute"; other codes are the command's.
+                dup  127 = abort" Command not found"
+                dup  126 = abort" Can't execute command"
                 drop ;
 
 defer clearmem  ' noop is clearmem
 
 : nd$sys        ( countedstring -- f1 )         \ shell with no disksave
-                save> use-disk diskoff                  \ don't save to disk
-                $sys
-                restore> use-disk                       \ restore state of
-                use-disk @                              \ disk save flag
-                if      diskon                          \ and select mode
-                then    ;
+                $sys ;
 
 forth definitions
 
@@ -110,8 +41,8 @@ forth definitions
                 dup 0=
                 if      2drop
                         " FPCIMAGE.$$$"                 \ set to default name
-                then    exthndl ">handle                \ set drive & file
-                diskon ;                                \ enable disk save
+                then    2drop                           \ F-PC native port:
+                diskon ;                \ nothing is swapped out (no EXTHNDL)
 
 : swapfile      ( | name -- )
                 bl word count "swapfile ;
@@ -123,6 +54,9 @@ contain the name and path to COMMAND.COM. For SYS to work, this string
 must specify the actual location of COMMAND.COM on your hard disk,
 or floppy. The drive may be omitted, which will cause SYS to look on
 the current drive.
+
+F-PC native port: SYS passes the line to the host shell (/bin/sh -c);
+CMDPATH is only informational.
 
 comment;
 
@@ -138,14 +72,17 @@ comment;
 
 hidden definitions
 
-: cmdbuf        rp0 @ 100 - ;           \ Down from return stack,
-                                        \ yet above TIB.
+create cmdbuf 256 allot                 \ F-PC native port: was
+                                        \ RP0 @ 100 -, which is inside
+                                        \ the return stack now.
 
 : "syscommand   ( a1 n1 c1 --- )        \ pass string a1,n1 to dos with line
                                         \ following appended to it.
                 clearmem
                 >r ">$ cmdbuf over c@ 1+ cmove
                 r> word count
+                2dup bounds ?do i c@ '\' = if '/' i c! then loop
+                                        \ DOS path separators for the host
                 dup>r cmdbuf count + swap cmove
                 r> cmdbuf c@ + cmdbuf c!
                 cmdbuf count + off
@@ -153,7 +90,7 @@ hidden definitions
 
 : dir.name      ( --- )
                 16 save!> tabsize
-                #OUT @ 64 > IF CR THEN
+                #OUT @ COLS 16 - > IF CR THEN
                 #out @ >r pad 30 + 12 bounds
                 do      i c@ ?dup
                         if emit else leave then
@@ -167,22 +104,37 @@ hidden definitions
                 here pathset drop
                 ."  For directory " here count type
                 here count + off here 1+
-                CR  PAD SET-DTA $23 find-first  \ $23=find any files
+                CR  PAD SET-DTA $33 find-first  \ $33=files & directories
                 BEGIN   255 and 0=
                 WHILE   dir.name find-next REPEAT  ;
 
 forth definitions
 
+\ F-PC native port: the DOS commands are mapped to the host. DIR lists with
+\ FIND-FIRST/FIND-NEXT (DOS wildcards, names matched without regard to
+\ case, 8.3 names only); CHDIR changes F-PC's own directory (a shell's cd
+\ would not); DEL COPY REN run rm cp mv through the shell, with \ turned
+\ into / in the arguments.
+
 : dir           ( <filespec> --- )      \ directory of <filespec>.
-                " dir " 0 "syscommand ;
+                bl word dup c@ 0=
+                if      drop " *.*" ">$
+                then    $dir cr ;
 
 : del           ( <filespec> --- )      \ delete files
-                " del " bl "syscommand ;
+                " rm " bl "syscommand ;
 
 \ ' del alias delete
 
 : chdir         ( <filespec> --- )      \ change directory
-                " chdir " bl "syscommand seqhandle >hndle @ 0<
+                bl word dup c@ 0=
+                if      drop pad 0 pdos drop    \ no argument: show it
+                        cr ." \" pad 64 2dup 0 scan nip - type
+                        exit
+                then    count pad place 0 pad count + c!
+                0 pad 1+ $3B00 hdos1 nip        \ DOS chdir (function 3B)
+                abort" Can't change to that directory"
+                seqhandle >hndle @ 0<
                 IF      seqhandle dup clr-hcb pathset drop
                         -2 seqhandle >hndle !
                 THEN    ;
@@ -190,10 +142,10 @@ forth definitions
 ' chdir alias cd        \ Watch OUT, this is also a HEX number.
 
 : copy          ( <filespec> --- )      \ copy files
-                " copy " 0 "syscommand ;
+                " cp " 0 "syscommand ;
 
 : ren           ( <filespec> --- )      \ rename files
-                " ren " 0 "syscommand ;
+                " mv " 0 "syscommand ;
 
 ' ren  alias rename
 ' dark alias cls

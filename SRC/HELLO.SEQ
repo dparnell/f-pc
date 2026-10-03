@@ -1,23 +1,29 @@
-\ HELLO.SEQ     Contains the sign on word for Forth.
+\ HELLO.SEQ     Contains the sign on word for Forth.   F-PC native port
 
 only forth also definitions hidden also
 
+\ F-PC native port: the sign-on box was placed for an 80 column screen
+\ with tabs; it is now centred on the current screen width.
+
+: .hindent      ( --- )         \ indent to the left edge of the box
+                cols 64 - 2/ 0MAX spaces ;
+
 : <.HELLO>      ( --- )
                 blinkoff
-." \d\n\n\n\s34\r  F-PC  \n"
-." \n\tÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÜ"
-." \n\t³ 80x8x Forth ÄÄÄ Version:" >attrib3 .fpcver# >norm
+." \d\n\n\n" .hindent 26 spaces ." \r  F-PC  \n"
+cr .hindent ." ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÜ"
+cr .hindent ." ³ 80x8x Forth ÄÄÄ Version:" >attrib3 .fpcver# >norm
                                                 ." \0 Date:"
         decimal     cdate 2@ form-date  count type
         ."   Time:" ctime 2@ drop dtbuf off   build-hm
                                   dtbuf count type decimal    ."   Û"
-." \n\tÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÛ"
-." \n\t³ Based on F83 by           ÄÄ Henry Laxen, Michael Perry,  Û"
-." \n\t³ ** F-PC FINAL RELEASE **  ÄÄ Tom Zimmer & Robert L. Smith Û"
-." \n\tÀÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÛ\n"
-." \n\n\s13" >ATTRIB1 .FREE >NORM
-." \n\n\s18\1 Bewildered?   Press: \r F1 \1 for assistance "
-." \n\n\t\t\1 Press \r ESC \1 to toggle the menubar on or off. "
+cr .hindent ." ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÛ"
+cr .hindent ." ³ Based on F83 by           ÄÄ Henry Laxen, Michael Perry,  Û"
+cr .hindent ." ³ ** F-PC FINAL RELEASE **  ÄÄ Tom Zimmer & Robert L. Smith Û"
+cr .hindent ." ÀÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÛ\n"
+cr cr .hindent 5 spaces >ATTRIB1 .FREE >NORM
+cr cr .hindent 10 spaces ." \1 Bewildered?   Press: \r F1 \1 for assistance "
+cr cr .hindent 8 spaces ." \1 Press \r ESC \1 to toggle the menubar on or off. "
         CR      ;
 
 : .FILE         ( --- )
@@ -33,7 +39,7 @@ DEFER .HELLO    ' <.HELLO>      IS .HELLO
 DEFER .CURFILE  ' <.CURFILE>    IS .CURFILE
 
 : HELLO         ( --- )
-                SP0 @  'TIB !
+                TIB0   'TIB !          \ (was SP0 @: TIB is its own buffer)
                 >IN     OFF
                 SPAN    OFF
                 #TIB    OFF
@@ -50,11 +56,9 @@ DEFER .CURFILE  ' <.CURFILE>    IS .CURFILE
 ' HELLO IS BOOT
 
 : MARK          ( -- )
-                CREATE YHERE ,
-                XHERE PARAGRAPH +       \ absolute paragraph of new def
-                DUP XDPSEG !            \ set new XHERE segment
-                xseg @ - ,
-                DOES> DUP 2+ dup @ +XSEG xdpseg ! xdp off
-                2+ SWAP @
+\ F-PC native port: list space is flat; the mark remembers XHERE itself
+\ instead of starting a new list segment.
+                CREATE YHERE , XHERE ,
+                DOES> DUP CELL+ @ XDP !         \ reset list space
+                DUP 2 CELLS + SWAP @
                 (FRGET)  FORTH DEFINITIONS  ;
-

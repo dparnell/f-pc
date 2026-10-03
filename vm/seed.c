@@ -48,16 +48,25 @@ typedef struct seed {
 
 /* ---- dictionary space ----------------------------------------------------- */
 static ucell here(vm_t *vm) { return uv(vm, U_DP); }
+/* ALLOT zero-fills: WORD leaves its string at HERE, and F-PC's source
+ * assumes buffers made with CREATE ... ALLOT start out clear (the
+ * metacompiler built the original kernel in zeroed memory). */
 static void allot(vm_t *vm, cell n)
 {
-    ucell h = here(vm) + (ucell)n;
+    ucell old = here(vm), h = old + (ucell)n;
     if (h < vm->code_base || h > vm->code_end) vm_throw(vm, E_DSTACK_OVER, "Dictionary full");
+    if (n > 0) memset(vm->mem + old, 0, (size_t)n);
     uv_set(vm, U_DP, h);
 }
 static void comma(vm_t *vm, ucell v) { ucell h = here(vm); allot(vm, 4); wr32(vm, h, v); }
 static void ccomma(vm_t *vm, ucell v) { ucell h = here(vm); allot(vm, 1); wr8(vm, h, v); }
 /* advance HERE to a cell boundary without writing: WORD's buffer is at HERE */
-static void align(vm_t *vm) { allot(vm, (cell)(aligned(here(vm)) - here(vm))); }
+static void align(vm_t *vm)
+{
+    ucell h = aligned(here(vm));
+    if (h > vm->code_end) vm_throw(vm, E_DSTACK_OVER, "Dictionary full");
+    uv_set(vm, U_DP, h);
+}
 
 static ucell xhere(vm_t *vm) { return sv(vm, SV_XDP); }
 static void xcomma(vm_t *vm, ucell v)
@@ -1280,6 +1289,7 @@ void seed_init(vm_t *vm)
     def_const(vm, "SP-LIMIT", vm->sp0 - DSTACK_CELLS * CELL);
     def_const(vm, "TIB0", vm->tib);
     def_const(vm, "DOS-LINE", vm->dosbuf + 128);
+    def_const(vm, "(FPC-HOME)", vm->dosbuf + 256);
     def_const(vm, "USER-SIZE", U_END * CELL);
     def_const(vm, "USER-MAX", USER_CELLS * CELL);
     def_const(vm, "LIST-LIMIT", vm->list_end);

@@ -4,6 +4,16 @@
 \ the command line arguments it did not use itself.
 
 BUILTIN DOS-LINE        ( -- a1 )
+BUILTIN (FPC-HOME)      ( -- a1 )       \ counted: the installation directory
+: FPC-HOME      ( -- a n )      (FPC-HOME) COUNT ;
+
+: HOME-PATH+    ( a n -- )      \ add FPC-HOME\a n to the file search path
+                >R >R  FPC-HOME PAD PLACE  " \" PAD +PLACE
+                R> R> PAD +PLACE  PAD COUNT "FPATH+ ;
+
+: DEFAULT-FPATH ( -- )          \ search the installation's directories
+                FPATH$ OFF  FPC-HOME "FPATH+
+                " SRC" HOME-PATH+  " HLP" HOME-PATH+  " TOOLS" HOME-PATH+ ;
 
 CREATE CFGHNDL ," KERNEL.CFG" B/HCB ALLOT
 
@@ -11,6 +21,7 @@ CREATE CFGHNDL ," KERNEL.CFG" B/HCB ALLOT
                 dos-line count dup #tib ! tib swap cmove >in off ;
 
 : HDEFAULT      ( -- )
+                fpath$ c@ 0= if  default-fpath  then
                 %off> ?loaded,          \ disable LOADED, this time ONLY
                 cfghndl $fload drop     \ we don't care if it exists
                 seqhandle clr-hcb dos-line c@ 0<>
