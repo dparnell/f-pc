@@ -1,0 +1,25 @@
+\ COMPILE.SEQ  Defining words, DOES>, VALUE manipulation, vocabularies, FOR.
+DECIMAL
+: MKARR CREATE CELLS ALLOT DOES> SWAP CELLS + ;
+CR .( does: ) 4 MKARR AR  11 0 AR !  22 3 AR !  0 AR @ . 3 AR @ .
+CR .( 2const: ) 123456. 2CONSTANT BIG BIG D.
+5 VALUE V
+: VT 10 !> V V . 3 +!> V V . INCR> V V . DECR> V V . OFF> V V . ON> V V . ;
+CR .( values: ) VT
+VARIABLE SV 7 SV !
+: ST 99 SAVE!> SV SV @ . RESTORE> SV SV @ . ;
+CR .( save/restore: ) ST
+VOCABULARY TESTVOC
+TESTVOC DEFINITIONS : HIDDENW 77 ; FORTH DEFINITIONS
+CR .( vocab: ) TESTVOC HIDDENW . FORTH
+: F1 3 FOR R@ . NEXT ;
+CR .( for-next: ) F1
+CR .( defined: ) DEFINED NOSUCHWORD . DROP DEFINED DUP NIP .
+DEFER DF : DFA ." a " ; ' DFA IS DF
+CR .( defer: ) DF
+: ZERO ." zero " ;  : ONE ." one " ;
+: T-EXEC: EXEC: ZERO ONE ;
+CR .( exec: ) 1 T-EXEC: 0 T-EXEC:
+CR .( #: ) 255 0 <# # # # #> TYPE
+CR .( .S: ) 1 2 3 .S DROP DROP DROP
+CR

@@ -1,0 +1,14 @@
+\ FILES.SEQ  Handles, file I/O and nested FLOAD through F-PC's own words.
+DECIMAL
+HANDLE H1
+CREATE BUF 64 ALLOT
+CR .( create: ) H1 !HCB FTEST.TMP  H1 HCREATE .
+: W1 " Hello, file" H1 HWRITE . ;
+CR .( write: ) W1  H1 HCLOSE .
+CR .( open: ) H1 HOPEN .  H1 ENDFILE D.
+CR .( read: ) 0. H1 MOVEPOINTER BUF 64 H1 HREAD DUP . BUF SWAP TYPE
+CR .( close: ) H1 HCLOSE .  H1 HDELETE .
+CR .( missing: ) H1 !HCB NOSUCH.TMP H1 HOPEN 0= .
+CR .( nested: ) FLOAD SUB/INNER.SEQ
+CR .( after nested, line: ) LOADLINE @ .
+CR

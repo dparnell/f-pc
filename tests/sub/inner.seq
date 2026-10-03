@@ -1,0 +1,4 @@
+\ INNER.SEQ  loaded by FILES.SEQ
+.( inner ) LOADLINE @ .
+: INNERWORD 42 ;
+INNERWORD .

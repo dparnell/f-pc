@@ -1,0 +1,13 @@
+
+does: 11 22 
+2const: 123456 
+values: 10 13 14 13 0 -1 
+save/restore: 99 7 
+vocab: 77 
+for-next: 3 2 1 0 
+defined: 0 -1 
+defer: a 
+exec: one zero 
+#: 255
+.S:  [3]      1       2       3 
+ Leaving..
