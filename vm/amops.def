@@ -1,0 +1,39 @@
+/* amops.def -- abstract machine opcodes: AMOP(name, has-immediate).
+ * The order is the encoding; append only. */
+AMOP(NEXT,   0)   /* return to the Forth inner interpreter            */
+AMOP(LI,     1)   /* a = imm                                          */
+AMOP(MOV,    0)   /* a = b                                            */
+AMOP(ADD,    0)   /* a = b + c                                        */
+AMOP(SUB,    0)   /* a = b - c                                        */
+AMOP(AND,    0)
+AMOP(OR,     0)
+AMOP(XOR,    0)
+AMOP(MUL,    0)   /* a = b * c (low cell)                             */
+AMOP(SHL,    0)   /* a = b << c                                       */
+AMOP(SHR,    0)   /* a = b >> c, logical                              */
+AMOP(SAR,    0)   /* a = b >> c, arithmetic                           */
+AMOP(ADDI,   1)   /* a = b + imm                                      */
+AMOP(NOT,    0)   /* a = ~b                                           */
+AMOP(NEG,    0)   /* a = -b                                           */
+AMOP(LD,     1)   /* a = cell [b + imm]                               */
+AMOP(LDB,    1)   /* a = byte [b + imm]                               */
+AMOP(LDW,    1)   /* a = 16 bits [b + imm]                            */
+AMOP(ST,     1)   /* cell [b + imm] = a                               */
+AMOP(STB,    1)
+AMOP(STW,    1)
+AMOP(PUSH,   0)   /* push a on the data stack                         */
+AMOP(POP,    0)   /* a = pop the data stack                           */
+AMOP(RPUSH,  0)
+AMOP(RPOP,   0)
+AMOP(BR,     1)   /* goto imm (absolute)                              */
+AMOP(BZ,     1)   /* if a == 0 goto imm                               */
+AMOP(BNZ,    1)
+AMOP(BEQ,    1)   /* if a == b goto imm                               */
+AMOP(BNE,    1)
+AMOP(BLT,    1)   /* signed a < b                                     */
+AMOP(BGE,    1)
+AMOP(BLTU,   1)   /* unsigned a < b                                   */
+AMOP(BGEU,   1)
+AMOP(DIVMOD, 0)   /* a = b / c, b = b mod c, floored                  */
+AMOP(UMULH,  0)   /* a = high cell of unsigned b * c                  */
+AMOP(CMOVE,  0)   /* move c bytes from a to b, ascending              */

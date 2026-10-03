@@ -1,0 +1,4 @@
+ AMASM.SEQ
+file = amasm.seq at Line 1 
+ AMASM.SEQ  The abstract-machine assembler and interpreter (CODE words). 
+-^--  <- What?  

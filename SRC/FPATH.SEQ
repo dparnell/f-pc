@@ -89,7 +89,7 @@ CREATE PATHHNDL B/HCB ALLOT     \ A temporary handle
 : ?OPEN.ERROR   ( f1 --- )
                 abort" Open Error!" ;
 
-CREATE $FILE_BUF 64 ALLOT
+CREATE $FILE_BUF 512 ALLOT     \ was 64: room for a host path and a prefix
 
 : <$FILE>         ( a1 --- f1 )         \ f1 = true if failed to open
                 dup>r count $file_buf place

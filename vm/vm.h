@@ -255,6 +255,9 @@ int   image_save(vm_t *vm, const char *path);
 int   image_load(vm_t *vm, const char *path, char *err, size_t errsz);
 void  heap_free_block(vm_t *vm, ucell a);
 
+/* am.c */
+void  am_bind(vm_t *vm, vm_handler *h);
+
 /* screen.c */
 void  screen_init(vm_t *vm);
 void  screen_tty(vm_t *vm, int c);

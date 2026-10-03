@@ -116,8 +116,8 @@ int image_load(vm_t *vm, const char *path, char *err, size_t errsz)
         int kind = fgetc(f);
         uint32_t data;
         if (kind == EOF || get32(f, &data)) { snprintf(err, errsz, "%s: truncated", path); fclose(f); return -1; }
-        vm_add_handler(vm, kind, NULL, data, NULL);
-        /* HK_AMCODE handlers are re-assembled from their op stream (M6) */
+        ucell ct = vm_add_handler(vm, kind, NULL, data, NULL);
+        if (kind == HK_AMCODE) am_bind(vm, &vm->handlers[ct]);   /* ops are in the image */
     }
     fclose(f);
     vm->sp = vm->sp0;

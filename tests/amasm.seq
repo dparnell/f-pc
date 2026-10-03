@@ -1,0 +1,17 @@
+ AMASM.SEQ  The abstract-machine assembler and interpreter (CODE words).
+WARNING OFF FLOAD ../SRC/AMASM.SEQ WARNING ON
+CODE 3+  ( n -- n+3 )  R0 POP,   R0 R0 3 ADDI,   R0 PUSH,   NEXT,  END-CODE
+CR .( 3+: ) 4 3+ .
+CODE SUM  ( n -- 0+1+..+n-1 )
+        R0 POP,  R1 0 LI,  R2 0 LI,
+    1 L:  R2 R0 2 BGE,  R1 R1 R2 ADD,  R2 R2 1 ADDI,  1 BR,
+    2 L:  R1 PUSH,  NEXT,  END-CODE
+CR .( sum: ) 10 SUM . 100000 SUM .
+CODE FDIV ( n d -- q r ) R2 POP, R1 POP, R0 R1 R2 DIVMOD, R0 PUSH, R1 PUSH, NEXT, END-CODE
+CR .( divmod: ) -7 2 FDIV . . 7 2 FDIV . .
+: KONST CREATE , ;CODE  R0 W 4 LD,  R0 PUSH,  NEXT, END-CODE
+42 KONST K42
+CR .( ;code: ) K42 .
+\ Must stay last: an undefined local label aborts the load.
+CODE BADLAB 3 BR, NEXT, END-CODE
+CR

@@ -1,0 +1,126 @@
+\ AMASM.SEQ     Abstract-machine assembler for CODE words  F-PC native port
+
+\ Replaces PASM.SEQ, the 8086 assembler. CODE words are written for a small
+\ register machine (docs/kernel-design.md 5, vm/amops.def); the VM runs the
+\ op stream directly or compiles it to host code. Images keep the ops, never
+\ machine code.
+\
+\ Registers:    R0 .. R7        general purpose, 32 bits
+\               SP RP           data and return stack pointers (cell addresses)
+\               IP W UP         Forth IP, the running word's CFA, user area
+\
+\ Instructions (destination first, then sources):
+\       rd imm LI,              rd = imm
+\       rd rs MOV,              rd = rs
+\       rd ra rb ADD,           also SUB, AND, OR, XOR, MUL, SHL, SHR, SAR
+\       rd ra imm ADDI,         rd = ra + imm
+\       rd rs NOT,   rd rs NEG,
+\       rd ra off LD,           rd = cell at ra+off   (LDB, LDW: byte, 16 bits)
+\       rs ra off ST,           cell at ra+off = rs   (STB, STW)
+\       r PUSH,  r POP,  r RPUSH,  r RPOP,             data / return stack
+\       n BR,                   branch to local label n (0-15)
+\       r n BZ,  r n BNZ,       branch if r = 0 / r <> 0
+\       ra rb n BEQ,  BNE, BLT, BGE (signed), BLTU, BGEU (unsigned)
+\       rq rn rd DIVMOD,        rq = rn / rd, rn = rn mod rd (floored)
+\       rd ra rb UMULH,         high cell of unsigned ra * rb
+\       rsrc rdst rcount CMOVE,
+\       NEXT,                   return to Forth
+\       n L:                    define local label n here
+\
+\ Example:      CODE 3+  ( n -- n+3 )
+\                       R0 POP,   R0 R0 3 ADDI,   R0 PUSH,   NEXT,
+\               END-CODE
+
+ASSEMBLER DEFINITIONS
+
+ 0 CONSTANT R0   1 CONSTANT R1   2 CONSTANT R2   3 CONSTANT R3
+ 4 CONSTANT R4   5 CONSTANT R5   6 CONSTANT R6   7 CONSTANT R7
+ 8 CONSTANT SP   9 CONSTANT RP  10 CONSTANT IP  11 CONSTANT W
+12 CONSTANT UP
+
+: OP,           ( c b a op -- )         \ lay down one instruction cell
+                SWAP 8 LSHIFT OR  SWAP 16 LSHIFT OR  SWAP 24 LSHIFT OR  , ;
+
+: 3REG          ( op -- )   CREATE , DOES> @ >R  SWAP ROT R> OP, ;
+: 2REG          ( op -- )   CREATE , DOES> @ >R  0 -ROT SWAP R> OP, ;
+: 1REG          ( op -- )   CREATE , DOES> @ >R  0 0 ROT R> OP, ;
+: 2REG-IMM      ( op -- )   CREATE , DOES> @ >R  >R 0 -ROT SWAP R> R> SWAP >R OP, R> , ;
+
+ 0 CONSTANT (NEXT)
+: NEXT,         ( -- )                  0 0 0 (NEXT) OP, ;
+
+: LI,           ( rd imm -- )           >R 0 0 ROT 1 OP, R> , ;
+ 2 2REG MOV,
+ 3 3REG ADD,     4 3REG SUB,     5 3REG AND,     6 3REG OR,
+ 7 3REG XOR,     8 3REG MUL,     9 3REG SHL,    10 3REG SHR,
+11 3REG SAR,
+12 2REG-IMM ADDI,
+13 2REG NOT,    14 2REG NEG,
+15 2REG-IMM LD,    16 2REG-IMM LDB,    17 2REG-IMM LDW,
+18 2REG-IMM ST,    19 2REG-IMM STB,    20 2REG-IMM STW,
+21 1REG PUSH,   22 1REG POP,    23 1REG RPUSH,  24 1REG RPOP,
+34 3REG DIVMOD,
+35 3REG UMULH,
+36 3REG CMOVE,
+
+\ ---- local labels -----------------------------------------------------------
+16 CONSTANT #LABELS
+CREATE LABELS   #LABELS CELLS ALLOT
+64 CONSTANT #FIXUPS
+CREATE FIXUPS   #FIXUPS 2* CELLS ALLOT  \ ( addr-of-target-cell label# ) pairs
+VARIABLE #FIX
+
+: LABELS-INIT   ( -- )   LABELS #LABELS CELLS ERASE  #FIX OFF ;
+
+: ?LABEL        ( n -- n )
+                DUP 0 #LABELS WITHIN 0= ABORT" Local label out of range (0-15)" ;
+
+: L:            ( n -- )                \ define local label n here
+                ?LABEL CELLS LABELS +  DUP @ ABORT" Local label defined twice"
+                HERE SWAP ! ;
+
+: >LABEL        ( n -- )                \ lay a branch target cell for label n
+                ?LABEL  #FIX @ #FIXUPS = ABORT" Too many branches in one CODE word"
+                HERE  #FIX @ 2* CELLS FIXUPS +  2!  #FIX INCR
+                0 , ;
+
+: RESOLVE-LABELS ( -- )
+                #FIX @ 0
+                ?DO     I 2* CELLS FIXUPS + 2@ SWAP     ( addr label# )
+                        CELLS LABELS + @ DUP 0= ABORT" Undefined local label"
+                        SWAP !
+                LOOP    #FIX OFF ;
+
+: BR,           ( n -- )                0 0 0 25 OP, >LABEL ;
+: BZ,           ( r n -- )              >R 0 0 ROT 26 OP, R> >LABEL ;
+: BNZ,          ( r n -- )              >R 0 0 ROT 27 OP, R> >LABEL ;
+: 2BRANCH       ( op -- )   CREATE , DOES> @ >R  >R 0 -ROT SWAP R> R> SWAP >R OP, R> >LABEL ;
+28 2BRANCH BEQ,   29 2BRANCH BNE,   30 2BRANCH BLT,   31 2BRANCH BGE,
+32 2BRANCH BLTU,  33 2BRANCH BGEU,
+
+FORTH DEFINITIONS
+
+: END-CODE      ( -- )
+\ Finish a CODE word or ;CODE runtime.
+                [ ASSEMBLER ] RESOLVE-LABELS [ FORTH ]
+                PREVIOUS ?CSP ;
+
+: C;            ( -- )          END-CODE ;
+
+: CODE          ( | name -- )
+\ Define a word whose action is the abstract-machine code that follows.
+                HEADER 0 NEW-AMCODE ,
+                [ ASSEMBLER ] LABELS-INIT [ FORTH ]
+                ALSO ASSEMBLER !CSP ;
+
+: ;CODE         ( -- )
+\ End a defining word: words it defines run the abstract-machine code that
+\ follows, with W holding their CFA (so W 4 + is the body).
+                ?CSP COMPILE (DOES>) HERE NEW-AMCODE X,
+                REVEAL [COMPILE] [
+                [ ASSEMBLER ] LABELS-INIT [ FORTH ]
+                ALSO ASSEMBLER !CSP ; IMMEDIATE
+
+: LABEL         ( | name -- )
+\ A constant holding HERE, for data in code space.
+                HERE CONSTANT ;

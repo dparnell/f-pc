@@ -59,3 +59,7 @@ New tests written for the port, with no 16-bit oracle. `files` exercises
 HANDLE/HCREATE/HWRITE/HREAD/MOVEPOINTER/ENDFILE/HDELETE and nested FLOAD;
 `compile` exercises DOES>, 2CONSTANT, VALUE operators, SAVE!>/RESTORE>,
 vocabularies, FOR/NEXT, DEFINED, DEFER/IS, EXEC:, pictured output and .S.
+
+## amasm
+New test for the port (no oracle): CODE words on the abstract machine, local labels,
+;CODE, and the error for an undefined label.

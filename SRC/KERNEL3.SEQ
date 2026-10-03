@@ -201,8 +201,8 @@ DEFER ?ERROR
 
 : (ABORT")      ( f -- )
 \ If f is true, report the in-line message through ?ERROR.
-                R> COUNT 2DUP + ALIGNED >R  ROT
-                IF  ?ERROR  ELSE  2DROP  THEN ;
+                R> COUNT 2DUP + ALIGNED >R  ROT ( a n f )
+                DUP IF  ?ERROR  ELSE  3DROP  THEN ;
 
 : ABORT"        ( -- )
                 COMPILE (ABORT") X," ;   IMMEDIATE
