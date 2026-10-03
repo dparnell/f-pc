@@ -546,9 +546,33 @@ static int next_key(vm_t *vm, int wait)
     }
 }
 
+/* Programs wait for keys by polling KEY? (so PAUSE and background work
+ * run). Once no key has come for 50 ms, an empty poll naps for 10 ms
+ * so that waiting does not spin the CPU. */
+static double idle_since;
+
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static void idle_nap(vm_t *vm, int got)
+{
+    if (got || vm->host->stream) { idle_since = 0; return; }   /* batch waits itself */
+    double t = now_s();
+    if (!idle_since) { idle_since = t; return; }
+    if (t - idle_since < 0.05) return;
+    if (vm->interrupt || (vm->attention & 4)) return;
+    struct timespec ts = { 0, 10 * 1000000L };
+    nanosleep(&ts, NULL);
+}
+
 void p_BIOSKEYQ(vm_t *vm)
 {
     int q = scr_unget_peek(vm) ? 2 : next_key(vm, 0);
+    idle_nap(vm, q);
     if (q > 1 && !scr_unget_peek(vm)) screen_unget_key(vm, q);  /* a resize: report it as a key */
     sv_set(vm, SV_BIOSCHAR, (ucell)q);
     push(vm, q ? TRUE_F : 0);
