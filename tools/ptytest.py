@@ -63,7 +63,7 @@ def main():
     for step in script.split(";;"):
         step = step.strip()
         if step.startswith("keys:"):
-            text = step[5:].encode().decode("unicode_escape").encode("latin-1")
+            text = step[5:].replace("\\e", "\\x1b").encode().decode("unicode_escape").encode("latin-1")
             for b in text:
                 os.write(fd, bytes([b]))
                 pump(0.02)
