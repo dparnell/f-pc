@@ -101,7 +101,7 @@ Screen:
 - **`VIDEO-BUF ( -- addr )`** is the screen: `COLS*ROWS` cells of (char, attribute) bytes, row stride `COLS 2*`, the same layout as `$B800`.
 - **Fetch `VIDEO-BUF` every time.** It moves when the terminal is resized, and so do `COLS` and `ROWS` (VALUEs).
 - Direct video writes become plain `C!`/`CMOVE`/`FILL` into it. The host redraws changed cells when the program waits for a key (or calls `REFRESH`).
-- **Never assume 80x25.** Use `COLS` and `ROWS`. Code that lays out the screen should recompute on resize: add to the `RESIZED` deferred chain and/or handle the key `K-RESIZE` (255) in key loops.
+- **Never assume 80x25.** Use `COLS` and `ROWS`. Code that lays out the screen should recompute on resize: add to the `RESIZED` deferred chain and/or handle the key `K-RESIZE` (130) in key loops.
 - `BIOS-VIDEO ( ax bx cx dx -- ax bx cx dx )` emulates INT 10h AH = 00 01 02 03 06 07 08 09 0A 0E 0F. That's enough to translate `INT $10` sequences directly.
 - Also: `AT-XY ( x y -- )`, `GET-XY ( -- x y )`, `SET-CURSOR`/`GET-CURSOR` (shape), `VIDEO-TYPE ( a n -- )` (at `#OUT`/`#LINE` with `ATTRIB`), `?VMODE` (3), `ATTRIB`.
 

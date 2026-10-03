@@ -117,14 +117,22 @@ static void am_run(vm_t *vm, ucell pc)
     }
 }
 
-/* the handler for every CODE word: its ops follow the code field */
-static void am_code(vm_t *vm) { am_run(vm, vm->w + 4); }
+/* the handler for every CODE word: its ops follow the code field. The
+ * first run tries the JIT; if that works, the handler's fn is replaced. */
+static void am_code(vm_t *vm)
+{
+    vm_handler *h = vm->cur_handler;
+    if (h && !h->jit_state && jit_try(vm, h, vm->w + 4)) { h->fn(vm); return; }
+    am_run(vm, vm->w + 4);
+}
 
 /* the handler for ;CODE runtimes: ops are at the handler's data */
 static void am_does(vm_t *vm)
 {
     ucell ct = rd32(vm, vm->w);
-    am_run(vm, vm->handlers[ct].data);
+    vm_handler *h = &vm->handlers[ct];
+    if (!h->jit_state && jit_try(vm, h, h->data)) { h->fn(vm); return; }
+    am_run(vm, h->data);
 }
 
 void am_bind(vm_t *vm, vm_handler *h)      /* after an image load */

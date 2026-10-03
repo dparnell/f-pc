@@ -39,9 +39,11 @@ enum { HK_PRIM = 0,   /* inline primitive in the dispatch loop (label)   */
 
 typedef struct {
     uint8_t     kind;
+    uint8_t     jit_state;  /* HK_AMCODE: 0 = not tried, 1 = tried         */
     vm_cfn      fn;       /* HK_CPRIM / HK_AMCODE                          */
     ucell       data;     /* HK_DOES: list address; HK_AMCODE: op stream   */
     const char *name;
+    void       *jit;      /* HK_AMCODE: compiled code, or NULL             */
 } vm_handler;
 
 /* ---- primitive token numbers ------------------------------------------ */
@@ -171,6 +173,7 @@ struct vm {
     void    *screen;                   /* virtual screen (screen.c)        */
     ucell    resized_xt;               /* RESIZED, run after a resize      */
     ucell    dbg_last;                 /* trace hook: IP just reported     */
+    vm_handler *cur_handler;           /* the HK_AMCODE handler running     */
 };
 
 /* ---- memory access -------------------------------------------------------- */
@@ -255,8 +258,9 @@ int   image_save(vm_t *vm, const char *path);
 int   image_load(vm_t *vm, const char *path, char *err, size_t errsz);
 void  heap_free_block(vm_t *vm, ucell a);
 
-/* am.c */
+/* am.c, jit.c */
 void  am_bind(vm_t *vm, vm_handler *h);
+int   jit_try(vm_t *vm, vm_handler *h, ucell start);
 
 /* screen.c */
 void  screen_init(vm_t *vm);

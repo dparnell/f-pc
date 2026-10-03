@@ -8,7 +8,7 @@
  *
  * The screen follows the terminal size: on a resize the buffer is
  * reallocated (VIDEO-BUF may move), COLS/ROWS change, RESIZED runs and the
- * next key read returns K-RESIZE.
+ * next key read returns K-RESIZE (BIOS $0200, F-PC key 130).
  */
 #include "vm.h"
 
@@ -18,7 +18,8 @@
 ucell heap_alloc_block(vm_t *vm, ucell n);     /* dos.c */
 void  heap_free_block(vm_t *vm, ucell a);
 
-#define K_RESIZE 0xFF00             /* BIOS-style key value for a resize */
+#define K_RESIZE 0x0200             /* BIOS-style key value for a resize:
+                                       scan 2 never comes from a real key */
 
 typedef struct {
     int cols, rows;

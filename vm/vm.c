@@ -11,8 +11,8 @@
 #endif
 
 static vm_handler builtin_handlers[T_NBUILTIN] = {
-#define PRIM(id, name, flags)  { HK_PRIM, NULL, 0, name },
-#define CPRIM(id, name, flags) { HK_CPRIM, p_##id, 0, name },
+#define PRIM(id, nm, flags)  { .kind = HK_PRIM, .name = nm },
+#define CPRIM(id, nm, flags) { .kind = HK_CPRIM, .fn = p_##id, .name = nm },
 #include "prims.def"
 #undef PRIM
 #undef CPRIM
@@ -54,6 +54,7 @@ ucell vm_add_handler(vm_t *vm, int kind, vm_cfn fn, ucell data, const char *name
     }
     vm_handler *h = &vm->handlers[vm->nhandlers];
     h->kind = (uint8_t)kind; h->fn = fn; h->data = data; h->name = name;
+    h->jit_state = 0; h->jit = NULL;
     return vm->nhandlers++;
 }
 
@@ -63,7 +64,7 @@ vm_t *vm_new(ucell memsize, host_t *host)
     vm_t *vm = calloc(1, sizeof *vm);
     if (!vm) return NULL;
     vm->memsize = memsize;
-    vm->mem = calloc(1, memsize);
+    vm->mem = calloc(1, memsize + 16);          /* + slack for masked JIT access */
     if (!vm->mem) { free(vm); return NULL; }
     vm->host = host;
 
@@ -259,7 +260,7 @@ exec:
     case HK_DOES:
         PUSH(w + 4); RPUSH(ip); ip = h->data; NEXT;
     case HK_CPRIM: case HK_AMCODE:
-        SYNC(); h->fn(vm); RELOAD(); NEXT;
+        SYNC(); vm->cur_handler = h; h->fn(vm); RELOAD(); NEXT;
     default:
         SYNC(); vm_throw(vm, E_BADADDR, "Invalid code field at $%X", w);
     }

@@ -41,4 +41,4 @@ BUILTIN SHIFT-STATE     ( -- flags )    \ keyboard shift flags (INT 16h AH=2)
 DEFER RESIZED   ' NOOP IS RESIZED
 \ Run after the terminal (and so COLS ROWS VIDEO-BUF) changed size. Add to
 \ it to re-layout and redraw; KEY then returns K-RESIZE.
-255 CONSTANT K-RESIZE
+130 CONSTANT K-RESIZE   \ BIOS value $0200: scan 2 never comes from a real key
