@@ -17,13 +17,13 @@ only forth also definitions  \  hidden also
 
 FORTH DEFINITIONS
 
-: viewfile   ( cfa | cfa+1 = a1 maxCFA ) \ maxcfa is zero if not found
+: (viewfile) ( cfa | cfa+1 = a1 maxCFA ) \ maxcfa is zero if not found
 \ Locate words source file and retuen file name at pad and it's cfa.
 \ if cfa is a veriable in files vocabulary then cfa will return it's
 \ load file.
         \ setup defalt file string.
         \ F-PC native port: the kernel is loaded by the VM's seed, which makes
-        \ no FILES variables, so kernel words have no file (empty string).
+        \ no FILES variables; KERNEL-FILES records its files instead.
         0 PAD !    0  swap
                 \ scan vocabulary threads via index
                 ['] files >body dup #threads cells + swap do
@@ -38,6 +38,21 @@ FORTH DEFINITIONS
                        then  @               \ next knot in thread
                 repeat drop r> ( cfa ) cell +loop drop
            dup if l>name dup name>   swap name>pad else pad  then swap ;
+
+: kernel-file   ( cfa -- pad start | pad 0 )
+\ The kernel file (loaded by the seed, see KERNEL.SEQ) whose code holds cfa.
+\ Files are listed innermost first, so the first match is the one.
+        KERNEL-FILES DUP CELL+ SWAP @ 0
+        ?DO     ( cfa entry )
+                2DUP 2@ SWAP WITHIN             \ start <= cfa < end
+                IF      NIP DUP 2 CELLS + DUP C@ 1+ PAD SWAP CMOVE
+                        PAD SWAP @ UNDO EXIT
+                THEN    2 CELLS + COUNT + ALIGNED
+        LOOP    2DROP 0 PAD ! PAD 0 ;
+
+: viewfile   ( cfa | cfa+1 = a1 maxCFA )
+\ As (viewfile), falling back to the kernel's files.
+        DUP (viewfile) DUP IF  ROT DROP EXIT  THEN  2DROP kernel-file ;
 
 \ : ctrl          ( -- f ) 0  $417 c@l 4 and ;
 
@@ -69,4 +84,4 @@ FORTH DEFINITIONS
 \ META86.SEQ made for the kernel files (CHANGEFILESVARIABLES), so VIEW
 \ could find kernel words. The native kernel is loaded by the VM's seed
 \ (KERNEL.SEQ) and has no FILES variables, so that part is gone.
-\ TODO-PORT: VIEW of kernel words (needs the seed to record kernel files).
+\ Kernel words are found through KERNEL-FILES instead (see >KERNEL-FILE).

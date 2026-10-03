@@ -1,0 +1,3 @@
+# VIEW opens a word's source in the editor: a kernel word and an extension word.
+size 80x25
+script wait:1;;keys:VIEW QUIT\r;;wait:1;;expect:KERNEL3.SEQ;;expect:DEFER QUIT;;keys:\e[21~;;wait:1;;keys:VIEW SEE\r;;wait:1;;expect:DECOM.SEQ

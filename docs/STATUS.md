@@ -41,14 +41,14 @@ Running `fpc`:
 - **SED.** Opening a file (`FILE X` then `1 EDIT`), cursor keys, typing, F10 save with a `.BAK` backup, and the editor window resizing.
 - **Debugger.** `DEBUG word`: stepping, Nest, Unnest and Continue, with the source shown in the top pane.
 - **Menus and help.** The ESC menu bar with the File drop-down, and F1 hypertext help.
+- **VIEW.** Opens the source of kernel and extension words in the editor.
 - **Batch mode** (checked by hand): `SEE`, `WORDS` and `DUMP`.
 
 ## Known gaps / next steps
 
 - **TOOLS/** (66 optional add-ons, including the float packages) is not ported yet.
-- **Mouse.** `MOUSE-PRESENT?` returns false. xterm mouse reporting can come next.
+- **Mouse.** Works in xterm-compatible terminals (SGR reporting); the batch host has none.
 - **Popups that assume 80x25.** WFL, the sign-on box and some SED popups clip on smaller terminals rather than reflowing.
-- **Kernel words can't be VIEWed:** the seed records no FILES variables for `KERNEL*.SEQ`.
 - **`GETDISKFREE`** reports a large disk.
 - **PRN.** The VM discards printer output unless `PFILE` redirects it.
 - **Performance.** Primitives are C built-ins, with no top-of-stack caching yet; the JIT covers only CODE words.

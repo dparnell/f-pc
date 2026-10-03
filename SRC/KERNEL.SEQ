@@ -29,4 +29,7 @@ INCLUDE KERNEL4.SEQ
 
 ' (?SERROR) IS ?ERROR           \ F-PC's own error handling from now on
 
+SEED-FILES CONSTANT KERNEL-FILES        \ where each kernel file's words are,
+                                        \ for VIEW (VIEW.SEQ)
+
 WARNING ON

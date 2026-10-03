@@ -513,9 +513,15 @@ static FILE *open_source(vm_t *vm, const char *name, char *found, size_t foundsz
     return NULL;
 }
 
+/* the code-space range each file loaded by the seed defined, for VIEW */
+#define MAXKFILES 64
+static struct { char name[64]; ucell start, end; } kfiles[MAXKFILES];
+static int nkfiles;
+
 void seed_include(vm_t *vm, const char *name)
 {
     seed_t *sd = SEED(vm);
+    ucell kstart = here(vm);
     infile_t *in = calloc(1, sizeof *in);
     in->f = open_source(vm, name, in->path, sizeof in->path);
     if (!in->f) { free(in); vm_throw(vm, E_FILE, "%s: file not found", name); }
@@ -530,6 +536,13 @@ void seed_include(vm_t *vm, const char *name)
 
     while (refill(vm)) interpret(vm);
 
+    if (nkfiles < MAXKFILES) {
+        const char *b = strrchr(in->path, '/');
+        snprintf(kfiles[nkfiles].name, sizeof kfiles[0].name, "%s", b ? b + 1 : in->path);
+        kfiles[nkfiles].start = kstart;
+        kfiles[nkfiles].end = here(vm);
+        nkfiles++;
+    }
     sd->in = in->prev;
     fclose(in->f);
     free(in);
@@ -910,7 +923,26 @@ void p_SEEDERROR(vm_t *vm)      /* ( a n f -- ) ?ERROR while bootstrapping */
     if (n > 150) n = 150;
     vm_throw(vm, E_ABORTQ, "%.*s", (int)n, (const char *)vm_ptr(vm, a, n));
 }
-void p_INCLUDE(vm_t *vm) { p_FLOAD(vm); }   /* the seed's FLOAD, never shadowed */
+void p_INCLUDE(vm_t *vm) { p_FLOAD(vm); }
+
+/* SEED-FILES ( -- addr ) lay down a table of the files the seed loaded:
+ * count, then per file: start, end (code-space range), counted name */
+void p_SEEDFILES(vm_t *vm)
+{
+    align(vm);
+    ucell t = here(vm);
+    comma(vm, (ucell)nkfiles);
+    for (int i = 0; i < nkfiles; i++) {
+        comma(vm, kfiles[i].start);
+        comma(vm, kfiles[i].end);
+        ucell n = (ucell)strlen(kfiles[i].name);
+        ccomma(vm, n);
+        for (ucell k = 0; k < n; k++) ccomma(vm, (uint8_t)toupper((unsigned char)kfiles[i].name[k]));
+        align(vm);
+    }
+    nkfiles = 0;
+    push(vm, t);
+}   /* the seed's FLOAD, never shadowed */
 void p_WORDS(vm_t *vm)
 {
     ucell voc = rd32(vm, SEED(vm)->context);
