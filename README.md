@@ -5,6 +5,7 @@ This is Tom Zimmer's F-PC 3.6 Forth, ported from 16-bit DOS to a portable C virt
 ```bash
 make -C vm                 # build vm/fpc (C11, GNU computed goto; SDL2 optional)
 make -C vm image           # build the full system image F-PC.IMG from SRC/F-PC.SEQ
+./f-pc                     # run it (checks the VM and image are built; same as vm/fpc -i F-PC.IMG)
 vm/fpc -i F-PC.IMG         # run it in the terminal (adapts to the terminal size)
 vm/fpc --sdl -i F-PC.IMG   # ... or in an SDL window
 vm/fpc - FLOAD MY.SEQ BYE  # scripted: the rest of the line is F-PC's command line

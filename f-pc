@@ -1,0 +1,74 @@
+#!/bin/sh
+# f-pc -- start F-PC: the native VM (vm/fpc) with the full system image
+# (F-PC.IMG). Any arguments are passed on to fpc, for example:
+#     ./f-pc                          interactive, in this terminal
+#     ./f-pc --sdl                    in an SDL window
+#     ./f-pc - FLOAD MY.SEQ BYE       F-PC's own command line
+# It checks that the VM and the image are built (and match) first.
+
+# the directory this script is in, following symlinks
+self=$0
+while [ -h "$self" ]; do
+    link=$(readlink "$self")
+    case $link in /*) self=$link ;; *) self=$(dirname "$self")/$link ;; esac
+done
+root=$(cd "$(dirname "$self")" && pwd)
+fpc=$root/vm/fpc
+image=$root/F-PC.IMG
+
+fail() {
+    printf 'f-pc: %s\n' "$1" >&2
+    shift
+    for line in "$@"; do printf '      %s\n' "$line" >&2; done
+    exit 1
+}
+
+# 1. the VM
+if [ ! -e "$fpc" ]; then
+    fail "the F-PC virtual machine ($fpc) has not been built." \
+         "Build it with:" \
+         "    make -C \"$root/vm\"" \
+         "(needs a C compiler with GNU extensions, e.g. gcc or clang, and make;" \
+         " SDL2 is optional, for the --sdl window)"
+fi
+if [ ! -x "$fpc" ]; then
+    fail "$fpc exists but is not executable." \
+         "Rebuild it with:" \
+         "    make -C \"$root/vm\" clean fpc"
+fi
+
+# 2. the image
+if [ ! -f "$image" ]; then
+    fail "the F-PC system image ($image) has not been built." \
+         "Build it (this also builds the VM if needed) with:" \
+         "    make -C \"$root/vm\" image"
+fi
+
+# 3. the image must have been saved by this fpc (images record a checksum
+#    of the VM's built-in words); a quick test load tells
+check=$("$fpc" --batch -i "$image" - BYE </dev/null 2>&1)
+status=$?
+if [ $status -ne 0 ]; then
+    case $check in
+    *"different fpc"*)
+        fail "F-PC.IMG was built by a different version of the VM (vm/fpc was rebuilt since)." \
+             "Rebuild the image with:" \
+             "    make -C \"$root/vm\" image" ;;
+    *)
+        fail "the VM could not load F-PC.IMG (exit status $status):" \
+             "$(printf '%s' "$check" | tail -n 3)" \
+             "Try rebuilding both with:" \
+             "    make -C \"$root/vm\" clean image" ;;
+    esac
+fi
+
+# 4. warnings only: sources changed since the last build
+if [ -n "$(find "$root/vm" -maxdepth 1 \( -name '*.c' -o -name '*.h' -o -name '*.def' \) -newer "$fpc" 2>/dev/null | head -n 1)" ]; then
+    printf 'f-pc: note: the VM sources have changed since vm/fpc was built;\n' >&2
+    printf '      run  make -C "%s" image  to rebuild the VM and the image.\n' "$root/vm" >&2
+elif [ -n "$(find "$root/SRC" -maxdepth 1 -iname '*.seq' -newer "$image" 2>/dev/null | head -n 1)" ]; then
+    printf 'f-pc: note: SRC/ has changed since F-PC.IMG was built;\n' >&2
+    printf '      run  make -C "%s" image  to include the changes.\n' "$root/vm" >&2
+fi
+
+exec "$fpc" -i "$image" "$@"

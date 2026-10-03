@@ -7,6 +7,7 @@ Last updated 2026-10-04 (overnight session). Design: [kernel-design.md](kernel-d
 ```bash
 make -C vm          # build vm/fpc (C11 + GNU computed goto; vendored sljit)
 make -C vm image    # load SRC/F-PC.SEQ and save F-PC.IMG (as EXTEND.BAT made F-PC.EXE)
+./f-pc              # the same, after checking the VM and image are built and match
 vm/fpc -i F-PC.IMG  # full F-PC: sign-on, status line, SED editor, debugger...
 vm/fpc --sdl -i F-PC.IMG   # the same in an SDL window (PSF console font, resizable)
 vm/fpc              # bare kernel, loaded from SRC/KERNEL.SEQ (~6 ms)
