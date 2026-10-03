@@ -69,7 +69,7 @@ BUILTIN TIB0            ( -- a1 )       \ the terminal input buffer
 \ The main loop in Forth. Gets input from the terminal and Interprets it.
 \ Responds with OK if healthy and repeats the process.
                 TIB0 'TIB !    [COMPILE] [
-                BEGIN   BEGIN RP0 @ RP! STATUS QUERY  RUN
+                BEGIN   BEGIN RP0 @ RP! POPUP-OFF STATUS QUERY  RUN
                               STATE @ NOT UNTIL ."  ok" AGAIN  ;
 ' %QUIT IS QUIT
 

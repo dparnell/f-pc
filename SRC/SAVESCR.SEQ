@@ -7,6 +7,8 @@ decimal
 \ change at any time now (terminal resize), so each saved screen is its own
 \ ALLOCATEd block that records the size it was saved at:
 \       +0 columns   +4 rows   +8 the (char,attr) cells, row stride cols*2
+\ and after the cells, the pop-up state (POPUP@, 6 cells): a pop-up drawn
+\ after SAVESCR starts afresh, and RESTSCR puts back the one before.
 \ SVSTACK holds the saved screens, most recent first. Restoring copies the
 \ area common to the saved and the current screen.
 
@@ -41,13 +43,24 @@ create svstack svlimit cells allot      \ the saved screens
 
 \ nestable save and restore up to SVMAX times.
 
+: svpop         ( a1 --- a2 )   \ the pop-up state in saved screen a1
+                dup 2@ * 2* + 2 cells + ;
+
+: svpop!        ( ox oy l t r b a1 --- )        \ kept as b r t l oy ox
+                svpop 6 0 do tuck i cells + ! loop drop ;
+
+: svpop@        ( a1 --- ox oy l t r b )
+                svpop 6 0 do dup 5 i - cells + @ swap loop drop ;
+
 : savescr       ( --- )
                 rows cols 2* * dup =: svsize
-                2 cells + allocate if drop exit then    \ no memory
+                8 cells + allocate if drop exit then    \ no memory
                 cols over ! rows over cell+ !
                 blank.color
                 video-buf over 2 cells + svsize cmove   \ & save screen in it.
                 show.color
+                popup@ 6 pick svpop!    \ this level's pop-up state
+                popup-off
                 svstack svmax 1- cells + @ ?dup         \ oldest falls off
                 if      free drop
                 then
@@ -56,6 +69,7 @@ create svstack svlimit cells allot      \ the saved screens
 
 : restscr       ( --- )
                 svstack @ ?dup 0= ?exit
+                dup svpop@ popup!
                 dup svshow free drop                    \ Restore screen &
                 svstack cell+ svstack svlimit 1- cells cmove \ compress
                 0 svstack svlimit 1- cells + ! ;

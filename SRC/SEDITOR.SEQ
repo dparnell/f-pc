@@ -242,7 +242,7 @@ create  end-spcs 80 allot
 
 : ?softerror   ( bool a1 n1 --- )      \ bool = false if OK, else type msg
                 rot
-                if      >r cols 2/ 4 - r@ 2/ - 0max     \ port: centred
+                if      >r 36 r@ 2/ - 0max      \ centred on 80 columns
                         6 over r@ + 2 + 9 box&fill
                         space r> \type
                         bcr ."   \1 Press - \2 ESC "

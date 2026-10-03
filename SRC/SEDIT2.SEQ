@@ -223,6 +223,8 @@ kerr    kerr    kerr    kerr    kerr    kerr    kerr    ecmdtgl ;
                 doborder
                 off> ?eddone
                 begin   on> vstaton
+                        popup-off               \ port: pop-ups end with
+                                                \ their command
                         sresized                \ port: screen resized?
                         if      sresize
                         then

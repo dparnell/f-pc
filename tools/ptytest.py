@@ -10,6 +10,7 @@ SCRIPT is a sequence of steps separated by ';;':
     screen        print the emulated screen
     attrs:ROW     print the attributes (fg/bg) of a screen row
     expect:TEXT   fail (exit 1) unless TEXT is somewhere on the screen
+    expectat:X,Y:TEXT  fail unless TEXT is on row Y starting at column X
     reject:TEXT   fail if TEXT is on the screen
 
 Needs the pyte terminal emulator (pip install pyte).
@@ -84,6 +85,14 @@ def main():
             for line in screen.display:
                 print(f"|{line}|")
             print(f"+{'-' * cols}+")
+        elif step.startswith("expectat:"):
+            where, text = step[9:].split(":", 1)
+            x, y = (int(v) for v in where.split(","))
+            if screen.display[y][x:x + len(text)] != text:
+                failures.append(step)
+                print(f"FAILED {step}")
+                for line in screen.display:
+                    print(f"|{line}|")
         elif step.startswith("expect:") or step.startswith("reject:"):
             text = step[7:]
             found = any(text in line for line in screen.display)

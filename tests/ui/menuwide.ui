@@ -1,0 +1,3 @@
+# On a wide screen a pull-down menu stays under its title on the menu bar.
+size 120x30
+script wait:1;;keys:\e;;wait:0.5;;keys:\e[B;;wait:0.5;;expectat:0,2:│ Help me learn F-PC

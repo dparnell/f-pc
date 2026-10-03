@@ -48,6 +48,7 @@ Running `fpc`:
 - **VIEW.** Opens the source of kernel and extension words in the editor.
 - **LF files in SED.** Unix line endings are shown whole and written back unchanged.
 - **Small screens.** Below 64x20 a compact sign-on replaces the box.
+- **Pop-ups.** SED's boxes (F6 search, Alt-W, Goto line, ...) and the WFL file list are centred at 120x30 and fit at 60x16; pull-down menus stay under the menu bar.
 - **Batch mode** (checked by hand): `SEE`, `WORDS` and `DUMP`.
 
 ## Known gaps / next steps
@@ -55,7 +56,7 @@ Running `fpc`:
 - **TOOLS stubs.** RS232IB (serial), XMS, EXPANDED and EMMEXMPL keep their names but do nothing useful; a serial port would need host built-ins.
 - **Float exceptions.** FFLOAT reports invalid/zero-divide/overflow only after `FTRAPS ON` (`?STACK` runs after every word).
 - **Mouse.** Works in xterm-compatible terminals (SGR reporting); the batch host has none.
-- **Popups that assume 80x25.** WFL, NEW-WFL's dialogs, SELECT/COLPLAY boxes and some SED popups clip on smaller terminals rather than reflowing.
+- **Pop-ups on small screens.** SED's pop-ups and WFL are centred on wide screens and moved to fit narrow ones, but a box wider or taller than the screen is clipped. NEW-WFL's dialogs and the SELECT/COLPLAY boxes (TOOLS) don't use the mapping. A pop-up open during a terminal resize keeps its old placement until it closes.
 - **PRN.** Printer output goes to `$FPC_PRN` (a file, or `|command` such as `|lpr`); without it, it is discarded unless `PFILE` redirects it.
 - **Performance.** Hot primitives are inline in the computed-goto loop, but there is no top-of-stack caching yet; the JIT covers only CODE words. Rough figures: recursive `32 FIB` 0.29 s, 10^8 `DO I + LOOP` iterations 2.0 s, 1000 byte sieves 1.3 s.
 

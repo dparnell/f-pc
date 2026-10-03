@@ -47,11 +47,16 @@ only forth also hidden also definitions
 0 value fbx
 0 value boxchars
 0 value bline                   \ box line where text will go next
+true value boxpop               \ port: map this box with POPUP? Pop-up
+                                \ boxes (>BOX) are; menus (>MENU) hang off
+                                \ the menu or status line and are not
 
 : <box>         ( left top right bottom filled --- )
                 =: fbx
-                rows 1- min =: by
-                cols 1- min =: bx
+                boxpop
+                if      popup           \ port: placed for the screen size
+                else    rows 1- min swap cols 1- min swap
+                then    =: by =: bx
                 =: ty =: tx
                 tx ty at boxchars 1 TYPE        \ top left corner
                 boxchars 1+ c@ bl <>
@@ -82,10 +87,10 @@ only forth also hidden also definitions
 forth definitions
 
 : >box          ( --- )
-                " ÚÄÜ³ÛÀÜÛ" drop !> boxchars ;
+                " ÚÄÜ³ÛÀÜÛ" drop !> boxchars on> boxpop ;
 
 : >menu         ( --- )
-                " ³ Û³ÛÀÜÛ" drop !> boxchars ;
+                " ³ Û³ÛÀÜÛ" drop !> boxchars off> boxpop ;
 
 : bcr           ( --- )         \ box carraige return, to start of next line
                 incr> bline

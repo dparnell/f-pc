@@ -82,8 +82,8 @@ variable flitem
    3 constant forgy             \ top of file window display
   18 value    dlen              \ directory window length
 
-: wflgeometry   ( --- )
-                cols 75 - 2/ 0MAX 2+ =: forgx
+: wflgeometry   ( --- )        \ laid out for 80 columns: the pop-up
+                4 =: forgx              \ mapping (POPUP) centres or fits it
                 rows forgy - 4 - 1 MAX =: dlen ;
 
   16 constant dirattrib         \ directory file attribute
@@ -217,7 +217,7 @@ headerless
 : showpath      ( --- )
                 pathbox forgx forgy 26 11 d+ at
                 dirspec$ dup pathset 0=
-                if      count type
+                if      count dup 42 > if dup 42 - /string then type \ the end
                 else    ." Can't read path" drop
                 then    ;
 
@@ -336,9 +336,10 @@ variable curflsave
             forgx forgy 36 1 d+ at                 \ then my message
             ." \r Tom's Window File Selection Tool "
             showkeys showpath         \ show the keys and dir path
-            forgx forgy 17 16 d+ at               \ and som help information
+            rows 22 < ?exit         \ port: no room under the path box
+            forgx 17 + rows 6 - at                \ and som help information
             ." Use  to pick a file, or press the first letter of"
-            forgx forgy 17 17 d+ at
+            forgx 17 + rows 5 - at
             ." the file you want, then press Return to select it." ;
 
 : wflresized    ( --- )         \ the terminal was resized: redraw

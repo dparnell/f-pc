@@ -1,0 +1,5 @@
+# Pop-up boxes are laid out for 80x25: on a wide screen they are centred,
+# on a narrow one moved to fit.
+size 120x30
+setup printf 'alpha\nbeta\ngamma\n' > P.TXT
+script wait:1;;keys:FILE P.TXT\r;;keys:1 EDIT\r;;wait:1;;keys:\e[17~;;wait:0.5;;expectat:35,7:│  Text to look for:;;keys:\e;;wait:0.3;;reject:Text to look for;;resize:60x16;;wait:1;;keys:\e[17~;;wait:0.5;;expectat:5,6:┌──;;expect:<Enter>=accept ESC=cancel█;;keys:\e;;wait:0.3;;expect:gamma

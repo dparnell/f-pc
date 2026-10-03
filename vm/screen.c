@@ -28,11 +28,15 @@ typedef struct {
     int pending_resize;
     int resize_key;                 /* deliver K_RESIZE on next key read */
     int unget;                      /* a key value pushed back by KEY? */
+    /* pop-up mapping (POPUP): F-PC's boxes are laid out for 80x25; output
+       and cursor positions inside the box's designed rectangle pl..pr x
+       pt..pb are shown moved by (pox, poy). pr < pl: no mapping. */
+    int pl, pt, pr, pb, pox, poy;
 } screen_t;
 
 static screen_t *scr(vm_t *vm)
 {
-    if (!vm->screen) vm->screen = calloc(1, sizeof(screen_t));
+    if (!vm->screen) { vm->screen = calloc(1, sizeof(screen_t)); ((screen_t *)vm->screen)->pr = -1; }
     return vm->screen;
 }
 
@@ -124,6 +128,18 @@ int  screen_cols(vm_t *vm) { return scr(vm)->cols; }
 int  screen_rows(vm_t *vm) { return scr(vm)->rows; }
 ucell screen_buf(vm_t *vm) { return scr(vm)->buf; }
 
+/* designed (x,y) -> where it is shown */
+static int pop_in(screen_t *s, int x, int y) { return x >= s->pl && x <= s->pr && y >= s->pt && y <= s->pb; }
+static void pop_map(screen_t *s, int *x, int *y)
+{
+    if (pop_in(s, *x, *y)) { *x += s->pox; *y += s->poy; }
+}
+/* a shown position -> the designed one */
+static void pop_unmap(screen_t *s, int *x, int *y)
+{
+    if (pop_in(s, *x - s->pox, *y - s->poy)) { *x -= s->pox; *y -= s->poy; }
+}
+
 static void gotoxy(vm_t *vm, int x, int y)
 {
     screen_t *s = scr(vm);
@@ -199,14 +215,16 @@ void p_VIDEOTYPE(vm_t *vm)                  /* ( a n -- ) at #OUT,#LINE */
     if (n <= 0) return;
     screen_t *s = scr(vm);
     cell x = (cell)sv(vm, SV_OUT), y = (cell)sv(vm, SV_LINE);
-    if (y >= s->rows) y = s->rows - 1;
-    if (y < 0) y = 0;
+    int px = (int)x, py = (int)y;               /* where it is shown */
+    pop_map(s, &px, &py);
+    if (py >= s->rows) { y -= py - (s->rows - 1); py = s->rows - 1; }
+    if (py < 0) { y -= py; py = 0; }
     sv_set(vm, SV_LINE, (ucell)y);
-    cell nx = x + n;
-    if (nx >= s->cols) nx = s->cols - 1;
+    cell nx = x + n;                            /* #OUT stays designed */
+    if (px + n >= s->cols) nx = x + (s->cols - 1 - px);
     sv_set(vm, SV_OUT, (ucell)nx);
-    screen_put(vm, x, y, vm_ptr(vm, a, (ucell)n), n, (int)sv(vm, SV_ATTRIB));
-    gotoxy(vm, nx, y);
+    screen_put(vm, px, py, vm_ptr(vm, a, (ucell)n), n, (int)sv(vm, SV_ATTRIB));
+    gotoxy(vm, px + (int)(nx - x), py);
 }
 
 void p_QVMODE(vm_t *vm)                     /* ( -- mode ) */
@@ -228,12 +246,17 @@ void p_BIOSVIDEO(vm_t *vm)
     case 0x01: sv_set(vm, SV_CURSOR, cx & 0xFFFF);          /* cursor shape */
                if (vm->host->cursor_shape) vm->host->cursor_shape(vm->host, (int)(cx & 0xFFFF));
                break;
-    case 0x02: gotoxy(vm, (int)(dx & 0xFF), (int)((dx >> 8) & 0xFF)); break;
-    case 0x03: dx = (ucell)(s->y << 8 | s->x); cx = sv(vm, SV_CURSOR); break;
-    case 0x06: case 0x07:                                   /* scroll up / down */
-        scroll(vm, al, (int)((bx >> 8) & 0xFF), (int)(cx & 0xFF), (int)((cx >> 8) & 0xFF),
-               (int)(dx & 0xFF), (int)((dx >> 8) & 0xFF), ah == 0x07);
-        break;
+    case 0x02: { int x = (int)(dx & 0xFF), y = (int)((dx >> 8) & 0xFF);
+        pop_map(s, &x, &y); gotoxy(vm, x, y); break; }
+    case 0x03: { int x = s->x, y = s->y;
+        pop_unmap(s, &x, &y);
+        dx = (ucell)(y << 8 | x); cx = sv(vm, SV_CURSOR); break; }
+    case 0x06: case 0x07: {                                 /* scroll up / down */
+        int x1 = (int)(cx & 0xFF), y1 = (int)((cx >> 8) & 0xFF);
+        int x2 = (int)(dx & 0xFF), y2 = (int)((dx >> 8) & 0xFF);
+        pop_map(s, &x1, &y1); pop_map(s, &x2, &y2);
+        scroll(vm, al, (int)((bx >> 8) & 0xFF), x1, y1, x2, y2, ah == 0x07);
+        break; }
     case 0x08: {                                            /* read char+attr */
         uint8_t *p = cellp(vm, s->x, s->y);
         ax = (ucell)(p[1] << 8 | p[0]);
@@ -258,13 +281,55 @@ void p_BIOSVIDEO(vm_t *vm)
 void p_ATXY(vm_t *vm)                       /* ( x y -- ) move the cursor */
 {
     int y = (int)pop(vm), x = (int)pop(vm);
+    pop_map(scr(vm), &x, &y);
     gotoxy(vm, x, y);
 }
 
 void p_GETXY(vm_t *vm)                      /* ( -- x y ) */
 {
-    push(vm, (ucell)scr(vm)->x);
-    push(vm, (ucell)scr(vm)->y);
+    int x = scr(vm)->x, y = scr(vm)->y;
+    pop_unmap(scr(vm), &x, &y);
+    push(vm, (ucell)x);
+    push(vm, (ucell)y);
+}
+
+/* POPUP ( l t r b -- l t r' b' ) a box laid out for 80x25 is being drawn.
+ * The first box after POPUP-OFF picks the offset: centred as an 80 column
+ * screen would be, moved to fit the screen when it is smaller; later boxes
+ * share it and widen the mapped area. r' b' are clipped to the screen. */
+static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+void p_POPUP(vm_t *vm)
+{
+    screen_t *s = scr(vm);
+    int b = (int)pop(vm), r = (int)pop(vm), t = (int)pop(vm), l = (int)pop(vm);
+    if (s->pr < s->pl) {
+        int lo = -l, hi = s->cols - 1 - r;
+        s->pox = lo > hi ? lo : clampi((s->cols - 80) / 2, lo, hi);
+        lo = -t; hi = s->rows - 1 - b;
+        s->poy = lo > hi ? lo : clampi(0, lo, hi);
+        s->pl = l; s->pt = t; s->pr = r; s->pb = b;
+    } else {
+        if (l < s->pl) s->pl = l;
+        if (t < s->pt) s->pt = t;
+        if (r > s->pr) s->pr = r;
+        if (b > s->pb) s->pb = b;
+    }
+    if (r + s->pox > s->cols - 1) r = s->cols - 1 - s->pox;
+    if (b + s->poy > s->rows - 1) b = s->rows - 1 - s->poy;
+    push(vm, (ucell)l); push(vm, (ucell)t); push(vm, (ucell)r); push(vm, (ucell)b);
+}
+void p_POPUPOFF(vm_t *vm) { screen_t *s = scr(vm); s->pl = 0; s->pr = -1; s->pox = s->poy = 0; }
+void p_POPUPFETCH(vm_t *vm)                 /* ( -- ox oy l t r b ) */
+{
+    screen_t *s = scr(vm);
+    push(vm, (ucell)s->pox); push(vm, (ucell)s->poy);
+    push(vm, (ucell)s->pl); push(vm, (ucell)s->pt); push(vm, (ucell)s->pr); push(vm, (ucell)s->pb);
+}
+void p_POPUPSTORE(vm_t *vm)                 /* ( ox oy l t r b -- ) */
+{
+    screen_t *s = scr(vm);
+    s->pb = (int)pop(vm); s->pr = (int)pop(vm); s->pt = (int)pop(vm); s->pl = (int)pop(vm);
+    s->poy = (int)pop(vm); s->pox = (int)pop(vm);
 }
 
 void p_REFRESH(vm_t *vm)                    /* ( -- ) show the screen now */
@@ -289,7 +354,9 @@ void p_MOUSEFETCH(vm_t *vm)
     screen_t *s = scr(vm);
     if (mouse_x >= s->cols) mouse_x = s->cols - 1;
     if (mouse_y >= s->rows) mouse_y = s->rows - 1;
-    push(vm, (ucell)mouse_x); push(vm, (ucell)mouse_y); push(vm, (ucell)b);
+    int x = mouse_x, y = mouse_y;
+    pop_unmap(s, &x, &y);                   /* inside a pop-up: its coordinates */
+    push(vm, (ucell)x); push(vm, (ucell)y); push(vm, (ucell)b);
 }
 void p_MOUSESTORE(vm_t *vm)
 {

@@ -35,6 +35,16 @@ BUILTIN VIDEO-BUF       ( -- addr )     \ the screen: COLS*ROWS (char,attr) pair
 BUILTIN BIOS-VIDEO      ( ax bx cx dx -- ax bx cx dx )  \ INT 10h emulation
 BUILTIN AT-XY           ( x y -- )      \ move the cursor
 BUILTIN GET-XY          ( -- x y )      \ where the cursor is
+
+\ Pop-up boxes are laid out for an 80x25 screen. BOX (BOXTEXT.SEQ) calls
+\ POPUP with its corners; until POPUP-OFF, output and cursor positions
+\ inside the box are shown moved (centred, or shifted to fit), while #OUT
+\ #LINE AT and GET-XY keep the 80x25 coordinates. SAVESCR / RESTSCR save
+\ and restore this state with the screen.
+BUILTIN POPUP           ( l t r b -- l t r' b' )        \ r' b' clipped
+BUILTIN POPUP-OFF       ( -- )
+BUILTIN POPUP@          ( -- ox oy l t r b )
+BUILTIN POPUP!          ( ox oy l t r b -- )
 BUILTIN REFRESH         ( -- )          \ show screen changes now
 BUILTIN SHIFT-STATE     ( -- flags )    \ keyboard shift flags (INT 16h AH=2)
 
