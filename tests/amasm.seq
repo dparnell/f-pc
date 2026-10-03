@@ -1,4 +1,4 @@
- AMASM.SEQ  The abstract-machine assembler and interpreter (CODE words).
+\ AMASM.SEQ  The abstract-machine assembler and interpreter (CODE words).
 WARNING OFF FLOAD ../SRC/AMASM.SEQ WARNING ON
 CODE 3+  ( n -- n+3 )  R0 POP,   R0 R0 3 ADDI,   R0 PUSH,   NEXT,  END-CODE
 CR .( 3+: ) 4 3+ .

@@ -1,4 +1,8 @@
- AMASM.SEQ
-file = amasm.seq at Line 1 
- AMASM.SEQ  The abstract-machine assembler and interpreter (CODE words). 
--^--  <- What?  
+
+3+: 7 
+sum: 45 704982704 
+divmod: 1 -4 1 3 
+;code: 42 
+file = amasm.seq at Line 16 
+CODE BADLAB 3 BR, NEXT, END-CODE 
+------------------------^-- Undefined local label 
