@@ -37,7 +37,7 @@ create helpbuf 32 allot
                 off> wordfnd
                 bl helpbuf count + c!   \ follow string with a blank
                 20000 1
-                do      lineread c@ 0= ?leave
+                do      lineread >crlf c@ 0= ?leave
                         bl outbuf count + 2- c!
                                 \ have at least 1 blank at end of line.
                         helpbuf count outbuf 1+ swap 1+ caps-comp 0=
@@ -98,7 +98,7 @@ create helpbuf 32 allot
                         loadline off
                         off> wordfnd
                         0 20000 1
-                        do      lineread c@ 0= ?leave
+                        do      lineread >crlf c@ 0= ?leave
                                 outbuf 1+ c@ 249 ( ù ) =
                             if          outbuf count 1 /string 2-
                                         hndlsave ">handle

@@ -271,26 +271,8 @@ create  end-spcs 80 allot
 \ of LF-only (Unix) files get the CR added when read, and the file is
 \ written back with LF only; a last line without a terminator gets one.
 
-: crlf-end?     ( a1 -- f1 )            \ counted line a1 ends with CR LF?
-                dup c@ 2 < if drop false exit then
-                count + 2- w@ crlfval = ;
-
-: crlf-fix      ( a1 -- a1 )            \ give line a1 a CR LF ending
-                dup c@ 0= ?exit                 \ end of file
-                dup crlf-end? ?exit
-                dup count + 1- c@ $0A =
-                if      dup c@ 254 <            \ LF only: insert the CR
-                        if      dup count + 1- crlfval swap w!
-                                dup c@ 1+ over c!
-                        then
-                else    dup c@ 253 <            \ no terminator: add CR LF
-                        if      dup count + crlfval swap w!
-                                dup c@ 2+ over c!
-                        then
-                then    ;
-
 : readline      ( -- a1 )               \ LINEREAD for the editor
-                lineread dup crlf-end? if off> lf-file? then crlf-fix ;
+                lineread dup crlf-end? if off> lf-file? then >crlf ;
 
 : ?0fix        ( a1 -- a1 )            \ fix files of zero length
                 dup c@ 0=               \ if line is of length zero

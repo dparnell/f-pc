@@ -23,7 +23,7 @@ create crlf$ $0D c, $0A c,
                 off> fstime
                 ." ." ?cr
                 20000 1
-                do      lineread c@ 0= ?leave
+                do      lineread >crlf c@ 0= ?leave
                         searchsetup search nip
                         if      index.fname
                                 $2020 outbuf count + 2- ! \ terminate bl's

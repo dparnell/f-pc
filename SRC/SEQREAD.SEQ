@@ -112,6 +112,27 @@ BUILTIN CURPOINTER      ( handle --- double-current )
 
 DEFER LINEREAD  ' %LINEREAD IS LINEREAD
 
+\ F-PC native port: code that uses LINEREAD's lines often assumes a CR LF
+\ terminator (two bytes). >CRLF gives a LF-only line, or a last line with
+\ no terminator, a CR LF ending (if it fits in OUTBUF).
+: CRLF-END?     ( a1 -- f1 )            \ counted line a1 ends with CR LF?
+                DUP C@ 2 < IF DROP FALSE EXIT THEN
+                COUNT + 2- W@ $0A0D = ;
+
+: >CRLF         ( a1 -- a1 )            \ give line a1 a CR LF ending
+                DUP C@ 0= ?EXIT                 \ end of file
+                DUP CRLF-END? ?EXIT
+                DUP COUNT + 1- C@ $0A =
+                IF      DUP C@ OBLEN 1- <       \ LF only: insert the CR
+                        IF      DUP COUNT + 1- $0A0D SWAP W!
+                                DUP C@ 1+ OVER C!
+                        THEN
+                ELSE    DUP C@ OBLEN 2- <       \ no terminator: add CR LF
+                        IF      DUP COUNT + $0A0D SWAP W!
+                                DUP C@ 2+ OVER C!
+                        THEN
+                THEN    ;
+
 : (DOERROR)     ( a1 n1 --- )
                 2>r
                 cr ." file = " .seqhandle

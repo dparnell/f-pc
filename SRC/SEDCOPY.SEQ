@@ -130,7 +130,7 @@ cut/copy_file count expbuf place        \ init export filename
                         cursor-off
                         ?doingmac 0=
                         if      5 tenths then
-                        begin   lineread crlf-fix  dup c@ 0<> ?full 0= and
+                        begin   lineread >crlf  dup c@ 0<> ?full 0= and
                                 key? if key 27 <> and then
                         while   loadline @ 7 and 0=
                                 if      30 11 at >rev
