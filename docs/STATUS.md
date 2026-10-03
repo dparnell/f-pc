@@ -46,6 +46,8 @@ Running `fpc`:
 - **Debugger.** `DEBUG word`: stepping, Nest, Unnest and Continue, with the source shown in the top pane.
 - **Menus and help.** The ESC menu bar with the File drop-down, and F1 hypertext help.
 - **VIEW.** Opens the source of kernel and extension words in the editor.
+- **LF files in SED.** Unix line endings are shown whole and written back unchanged.
+- **Small screens.** Below 64x20 a compact sign-on replaces the box.
 - **Batch mode** (checked by hand): `SEE`, `WORDS` and `DUMP`.
 
 ## Known gaps / next steps
@@ -55,7 +57,7 @@ Running `fpc`:
 - **Mouse.** Works in xterm-compatible terminals (SGR reporting); the batch host has none.
 - **Popups that assume 80x25.** WFL, NEW-WFL's dialogs, SELECT/COLPLAY boxes and some SED popups clip on smaller terminals rather than reflowing.
 - **PRN.** Printer output goes to `$FPC_PRN` (a file, or `|command` such as `|lpr`); without it, it is discarded unless `PFILE` redirects it.
-- **Performance.** Primitives are C built-ins, with no top-of-stack caching yet; the JIT covers only CODE words.
+- **Performance.** Hot primitives are inline in the computed-goto loop, but there is no top-of-stack caching yet; the JIT covers only CODE words. Rough figures: recursive `32 FIB` 0.29 s, 10^8 `DO I + LOOP` iterations 2.0 s, 1000 byte sieves 1.3 s.
 
 ## Differences from the original worth knowing
 
@@ -70,3 +72,5 @@ Running `fpc`:
 | Images | `.IMG` files tied to the `fpc` build that wrote them (a checksum of built-in names) |
 | DOS commands | Mapped to the host: `DIR`, `CD`, `DEL`, `COPY`, `REN`, shell escapes via `$SHELL` |
 | `F-PC.SES` | New, self-checking 32-bit format |
+| Line endings | `.SEQ` sources are LF; the reader and SED accept LF or CR LF, and SED saves a file with the endings it had |
+| Idle | Key waits nap on the host after 50 ms without input; `MS`, `TENTHS` and `SECONDS` sleep instead of spinning |
