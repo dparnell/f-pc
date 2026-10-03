@@ -1,0 +1,5 @@
+# SED shows LF-only (Unix) files whole and writes them back with LF.
+size 80x25
+setup printf 'first line\nsecond line\nlast\n' > LF.TXT; cp LF.TXT LF.ORIG
+script wait:1;;keys:FILE LF.TXT\r;;keys:1 EDIT\r;;wait:1;;expect:second line;;expect:last;;keys:x\x08;;keys:\e[21~;;wait:1
+check cmp LF.TXT LF.ORIG && test -f LF.BAK

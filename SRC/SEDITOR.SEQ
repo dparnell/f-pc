@@ -37,6 +37,7 @@ editor definitions
                187 value helpkey        \ default value is F1 key
                  0 value torig          \ origin of text in text segment
            2573 constant crlfval        \ value of line terminator CRLF.
+           true value lf-file?          \ port: the file uses LF line ends
            8224 constant blbl           \ value of two blanks.
             255 constant linebuf.len
 
@@ -235,6 +236,7 @@ create  end-spcs 80 allot
                 off> lastline                   \ and total lines
                 tsegb lineptr tl:!              \ first segment setup
                 nfil tsegb 3 cmove              \ move in a counted CRLF $
+                on> lf-file?                    \ written with LF line ends
                 incr> lastline                  \ inrement total lines
                 5 tenths ;
 
@@ -265,6 +267,31 @@ create  end-spcs 80 allot
                 lineptr tl:!            \ save addr in line pointer table.
                 incr> lastline ;        \ add a line to total lines
 
+\ F-PC native port: SED keeps every line with a CR LF terminator. Lines
+\ of LF-only (Unix) files get the CR added when read, and the file is
+\ written back with LF only; a last line without a terminator gets one.
+
+: crlf-end?     ( a1 -- f1 )            \ counted line a1 ends with CR LF?
+                dup c@ 2 < if drop false exit then
+                count + 2- w@ crlfval = ;
+
+: crlf-fix      ( a1 -- a1 )            \ give line a1 a CR LF ending
+                dup c@ 0= ?exit                 \ end of file
+                dup crlf-end? ?exit
+                dup count + 1- c@ $0A =
+                if      dup c@ 254 <            \ LF only: insert the CR
+                        if      dup count + 1- crlfval swap w!
+                                dup c@ 1+ over c!
+                        then
+                else    dup c@ 253 <            \ no terminator: add CR LF
+                        if      dup count + crlfval swap w!
+                                dup c@ 2+ over c!
+                        then
+                then    ;
+
+: readline      ( -- a1 )               \ LINEREAD for the editor
+                lineread dup crlf-end? if off> lf-file? then crlf-fix ;
+
 : ?0fix        ( a1 -- a1 )            \ fix files of zero length
                 dup c@ 0=               \ if line is of length zero
                 if      2573 over 1+ w! \ fill in a CRLF
@@ -289,8 +316,9 @@ create  end-spcs 80 allot
                 off> rmmax
                 tsegb lineptr tl:!      \ first segment setup
                 tsegb #edsegs + $1000 - =: tend \ port: bytes ($100 paras)
-                lineread ?0fix placeline
-                begin   lineread rmsave endtst? and
+                on> lf-file?            \ unless a CR LF line is found
+                readline ?0fix placeline
+                begin   readline rmsave endtst? and
                 while   placeline
                 repeat  drop
                 restore> seqhandle
@@ -372,7 +400,13 @@ create  end-spcs 80 allot
                 >lineptr tl:@ count     \ source address & length
                 dup>r wseg wblen + swap \ dest   address
                 cmove                   \ move it
-                r> +!> wblen            \ bump length
+                r> lf-file?             \ port: CR LF back to LF
+                if      dup 2 < 0=
+                        if      wseg wblen + over + 2- w@ crlfval =
+                                if      $0A wseg wblen + 2 pick + 2- c! 1-
+                                then
+                        then
+                then    +!> wblen       \ bump length
                 wblen writelim >
                 if      wseg wblen ed2hndl hwrite wblen = dup
                         if      off> wblen
