@@ -8,8 +8,14 @@ only forth also definitions hidden also
 : .hindent      ( --- )         \ indent to the left edge of the box
                 cols 64 - 2/ 0MAX spaces ;
 
+: <.SMALLHELLO> ( --- )       \ a screen too small for the box
+                cr ." \r F-PC" .fpcver# ." \0 native   based on F83" cr
+                ." Free: " LIMIT HERE - 1024 / (U.) TYPE ." k code" cr
+                ." F1 = help, ESC = menu bar" cr ;
+
 : <.HELLO>      ( --- )
                 blinkoff
+                cols 64 < rows 20 < or if <.smallhello> exit then
 ." \d\n\n\n" .hindent 26 spaces ." \r  F-PC  \n"
 cr .hindent ." ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÜ"
 cr .hindent ." ³ 80x8x Forth ÄÄÄ Version:" >attrib3 .fpcver# >norm

@@ -51,7 +51,7 @@ static dos_t *dos(vm_t *vm)
 /* ---- DOS path -> host path ----------------------------------------------------- */
 /* Resolve each component case-insensitively. If the last component does not
  * exist and create is set, keep it as given. Returns 0 on success. */
-static int resolve(const char *in, char *out, size_t outsz, int create)
+int dos_resolve(const char *in, char *out, size_t outsz, int create)
 {
     char p[1024];
     size_t i, j = 0;
@@ -188,7 +188,7 @@ static int find_first(vm_t *vm, ucell name, int attr)
     else { strcpy(dirpart, "."); snprintf(d->pattern, sizeof d->pattern, "%s", s); }
     if (!*d->pattern) strcpy(d->pattern, "*.*");
     if (d->dir) { closedir(d->dir); d->dir = NULL; }
-    if (resolve(dirpart, d->dirpath, sizeof d->dirpath, 0) != 0) return 3;
+    if (dos_resolve(dirpart, d->dirpath, sizeof d->dirpath, 0) != 0) return 3;
     d->dir = opendir(d->dirpath);
     if (!d->dir) return 3;
     d->attr = attr;
@@ -264,13 +264,13 @@ static void int21(vm_t *vm, regs_t *r)
 
     case 0x39: case 0x3A: case 0x3B:        /* mkdir rmdir chdir */
         vm_asciiz(vm, r->dx, name, sizeof name);
-        if (resolve(name, path, sizeof path, ah == 0x39) != 0) FAIL(r, 3);
+        if (dos_resolve(name, path, sizeof path, ah == 0x39) != 0) FAIL(r, 3);
         if ((ah == 0x39 ? mkdir(path, 0777) : ah == 0x3A ? rmdir(path) : chdir(path)) != 0)
             FAIL(r, dos_errno());
         break;
     case 0x3C: {                            /* create */
         vm_asciiz(vm, r->dx, name, sizeof name);
-        if (resolve(name, path, sizeof path, 1) != 0) FAIL(r, 3);
+        if (dos_resolve(name, path, sizeof path, 1) != 0) FAIL(r, 3);
         int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);
         if (fd < 0) FAIL(r, dos_errno());
         int h = new_handle(vm, fd);
@@ -282,7 +282,7 @@ static void int21(vm_t *vm, regs_t *r)
         vm_asciiz(vm, r->dx, name, sizeof name);
         if (!strcasecmp(name, "CON") || !strcasecmp(name, "CON.")) { r->ax = 1; break; }
         if (!strcasecmp(name, "PRN") || !strcasecmp(name, "PRN.")) { r->ax = 4; break; }
-        if (resolve(name, path, sizeof path, 0) != 0) FAIL(r, 2);
+        if (dos_resolve(name, path, sizeof path, 0) != 0) FAIL(r, 2);
         struct stat st;
         if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) FAIL(r, 5);
         int fd = open(path, modes[AL(r) & 3 ? (AL(r) & 3) % 3 : 0]);
@@ -348,7 +348,7 @@ static void int21(vm_t *vm, regs_t *r)
         break; }
     case 0x41:                              /* delete */
         vm_asciiz(vm, r->dx, name, sizeof name);
-        if (resolve(name, path, sizeof path, 0) != 0) FAIL(r, 2);
+        if (dos_resolve(name, path, sizeof path, 0) != 0) FAIL(r, 2);
         if (unlink(path) != 0) FAIL(r, dos_errno());
         break;
     case 0x42: {                            /* lseek CX:DX, AL = whence */
@@ -364,7 +364,7 @@ static void int21(vm_t *vm, regs_t *r)
     case 0x43: {                            /* get/set attributes */
         vm_asciiz(vm, r->dx, name, sizeof name);
         struct stat st;
-        if (resolve(name, path, sizeof path, 0) != 0 || stat(path, &st) != 0) FAIL(r, 2);
+        if (dos_resolve(name, path, sizeof path, 0) != 0 || stat(path, &st) != 0) FAIL(r, 2);
         r->cx = S_ISDIR(st.st_mode) ? 0x10 : (st.st_mode & S_IWUSR) ? 0x20 : 0x21;
         break; }
     case 0x47: {                            /* get cwd into DS:SI, no drive or leading \ */
@@ -388,8 +388,8 @@ static void int21(vm_t *vm, regs_t *r)
         char name2[512], path2[1100];
         vm_asciiz(vm, r->dx, name, sizeof name);
         vm_asciiz(vm, r->di, name2, sizeof name2);
-        if (resolve(name, path, sizeof path, 0) != 0) FAIL(r, 2);
-        if (resolve(name2, path2, sizeof path2, 1) != 0) FAIL(r, 3);
+        if (dos_resolve(name, path, sizeof path, 0) != 0) FAIL(r, 2);
+        if (dos_resolve(name2, path2, sizeof path2, 1) != 0) FAIL(r, 3);
         if (rename(path, path2) != 0) FAIL(r, dos_errno());
         break; }
     case 0x57: {                            /* file date/time (get only) */
@@ -559,6 +559,11 @@ void p_BIOSKEY(vm_t *vm)
 void p_KEYEOFQ(vm_t *vm)                   /* ( -- f ) no more input, ever */
 {
     push(vm, vm->host->eof && vm->host->eof(vm->host) ? TRUE_F : 0);
+}
+
+void p_BATCHQ(vm_t *vm)                     /* ( -- f ) the plain stdin/stdout host */
+{
+    push(vm, vm->host->eof ? TRUE_F : 0);
 }
 
 void p_SHIFTSTATE(vm_t *vm)                 /* ( -- flags ) as INT 16h AH=2 */

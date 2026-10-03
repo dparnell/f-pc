@@ -4,6 +4,7 @@
 
 : <.STAT>       ( --- )
                 printing @ ?exit        \ NO status if printing
+                batch? ?exit            \ nor in a plain stdin/stdout stream
                 savecursor
                 base @ >r decimal
                 0 0 at >attrib1

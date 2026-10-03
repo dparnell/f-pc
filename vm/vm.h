@@ -262,6 +262,7 @@ enum { E_ABORT = -1, E_ABORTQ = -2, E_DSTACK_OVER = -3, E_DSTACK_UNDER = -4,
 
 /* image.c */
 int   image_save(vm_t *vm, const char *path);
+int   dos_resolve(const char *in, char *out, size_t outsz, int create);  /* DOS name -> host path, case-insensitively */
 int   image_load(vm_t *vm, const char *path, char *err, size_t errsz);
 void  heap_free_block(vm_t *vm, ucell a);
 

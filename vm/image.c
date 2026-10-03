@@ -138,6 +138,7 @@ void p_SAVEIMAGE(vm_t *vm)
     if (n >= sizeof path) n = sizeof path - 1;
     memcpy(path, vm_ptr(vm, a, n), n);
     path[n] = 0;
-    for (char *p = path; *p; p++) if (*p == '\\') *p = '/';
-    push(vm, image_save(vm, path) ? (ucell)-37 : 0);
+    char host[1024];
+    if (dos_resolve(path, host, sizeof host, 1)) { push(vm, (ucell)-37); return; }
+    push(vm, image_save(vm, host) ? (ucell)-37 : 0);
 }

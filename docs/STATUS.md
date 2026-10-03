@@ -49,7 +49,7 @@ Running `fpc`:
 
 - **TOOLS/** (66 optional add-ons, including the float packages) is not ported yet.
 - **Mouse.** Works in xterm-compatible terminals (SGR reporting); the batch host has none.
-- **Popups that assume 80x25.** WFL, the sign-on box and some SED popups clip on smaller terminals rather than reflowing.
+- **Popups that assume 80x25.** WFL and some SED popups clip on smaller terminals rather than reflowing.
 - **PRN.** Printer output goes to `$FPC_PRN` (a file, or `|command` such as `|lpr`); without it, it is discarded unless `PFILE` redirects it.
 - **Performance.** Primitives are C built-ins, with no top-of-stack caching yet; the JIT covers only CODE words.
 
