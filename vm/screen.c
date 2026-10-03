@@ -1,0 +1,270 @@
+/* screen.c -- the virtual text screen and BIOS video/keyboard emulation.
+ *
+ * The screen is COLS x ROWS cells of (char, attribute) bytes in VM memory,
+ * laid out like PC text-mode video memory (row stride COLS*2), at VIDEO-BUF.
+ * F-PC code that wrote to $B800 writes there instead. The host renders it:
+ * a streaming host (batch) is also told about each write as it happens; a
+ * full-screen host diffs the buffer on refresh (kernel-design.md 6).
+ *
+ * The screen follows the terminal size: on a resize the buffer is
+ * reallocated (VIDEO-BUF may move), COLS/ROWS change, RESIZED runs and the
+ * next key read returns K-RESIZE.
+ */
+#include "vm.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+ucell heap_alloc_block(vm_t *vm, ucell n);     /* dos.c */
+void  heap_free_block(vm_t *vm, ucell a);
+
+#define K_RESIZE 0xFF00             /* BIOS-style key value for a resize */
+
+typedef struct {
+    int cols, rows;
+    int x, y;                       /* cursor */
+    ucell buf;                      /* VM address */
+    int pending_resize;
+    int resize_key;                 /* deliver K_RESIZE on next key read */
+    int unget;                      /* a key value pushed back by KEY? */
+} screen_t;
+
+static screen_t *scr(vm_t *vm)
+{
+    if (!vm->screen) vm->screen = calloc(1, sizeof(screen_t));
+    return vm->screen;
+}
+
+static uint8_t *cellp(vm_t *vm, int x, int y)
+{
+    screen_t *s = scr(vm);
+    return vm->mem + s->buf + ((ucell)y * (ucell)s->cols + (ucell)x) * 2;
+}
+
+static void publish(vm_t *vm)
+{
+    screen_t *s = scr(vm);
+    sv_set(vm, SV_COLS, (ucell)s->cols);
+    sv_set(vm, SV_ROWS, (ucell)s->rows);
+    sv_set(vm, SV_VIDEOBUF, s->buf);
+}
+
+/* (re)allocate the buffer for cols x rows, keeping the overlapping text */
+static void screen_alloc(vm_t *vm, int cols, int rows)
+{
+    screen_t *s = scr(vm);
+    if (cols < 20) cols = 20;
+    if (rows < 5) rows = 5;
+    if (cols > 400) cols = 400;
+    if (rows > 200) rows = 200;
+    ucell nb = heap_alloc_block(vm, (ucell)(cols * rows * 2));
+    if (!nb) vm_throw(vm, E_RANGE, "No memory for the screen");
+    int attr = (int)sv(vm, SV_ATTRIB) & 0xFF;
+    for (int i = 0; i < cols * rows; i++) { vm->mem[nb + i * 2] = ' '; vm->mem[nb + i * 2 + 1] = (uint8_t)attr; }
+    if (s->buf) {
+        int ch = rows < s->rows ? rows : s->rows, cw = cols < s->cols ? cols : s->cols;
+        /* keep the bottom of the old screen if it shrank vertically */
+        int skip = s->rows > rows && s->y >= rows ? s->y - rows + 1 : 0;
+        for (int y = 0; y < ch && y + skip < s->rows; y++)
+            memcpy(vm->mem + nb + (ucell)(y * cols * 2),
+                   vm->mem + s->buf + (ucell)((y + skip) * s->cols * 2), (size_t)cw * 2);
+        s->y -= skip;
+        heap_free_block(vm, s->buf);
+    }
+    s->buf = nb;
+    s->cols = cols; s->rows = rows;
+    if (s->x >= cols) s->x = cols - 1;
+    if (s->y >= rows) s->y = rows - 1;
+    publish(vm);
+}
+
+void screen_init(vm_t *vm)
+{
+    int c = 80, r = 25;
+    if (vm->host->size) vm->host->size(vm->host, &c, &r);
+    screen_alloc(vm, c, r);
+}
+
+/* called by hosts (from a signal handler: just set a flag) */
+void screen_note_resize(vm_t *vm) { scr(vm)->pending_resize = 1; }
+
+/* apply a pending resize; run RESIZED. Returns 1 if the size changed. */
+int screen_check_resize(vm_t *vm)
+{
+    screen_t *s = scr(vm);
+    if (!s->pending_resize) return 0;
+    s->pending_resize = 0;
+    int c = s->cols, r = s->rows;
+    if (vm->host->size) vm->host->size(vm->host, &c, &r);
+    if (c == s->cols && r == s->rows) return 0;
+    screen_alloc(vm, c, r);
+    if (vm->host->refresh) vm->host->refresh(vm->host, vm, 1);
+    s->resize_key = 1;
+    ucell xt = vm->resized_xt;
+    if (xt) vm_execute(vm, xt);
+    return 1;
+}
+
+int screen_take_resize_key(vm_t *vm)
+{
+    screen_t *s = scr(vm);
+    if (!s->resize_key) return 0;
+    s->resize_key = 0;
+    return K_RESIZE;
+}
+
+void screen_unget_key(vm_t *vm, int k) { scr(vm)->unget = k; }
+int  screen_unget_take(vm_t *vm) { int k = scr(vm)->unget; scr(vm)->unget = 0; return k; }
+
+void screen_cursor(vm_t *vm, int *x, int *y) { *x = scr(vm)->x; *y = scr(vm)->y; }
+int  screen_cols(vm_t *vm) { return scr(vm)->cols; }
+int  screen_rows(vm_t *vm) { return scr(vm)->rows; }
+ucell screen_buf(vm_t *vm) { return scr(vm)->buf; }
+
+static void gotoxy(vm_t *vm, int x, int y)
+{
+    screen_t *s = scr(vm);
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x >= s->cols) x = s->cols - 1;
+    if (y >= s->rows) y = s->rows - 1;
+    s->x = x; s->y = y;
+    if (vm->host->gotoxy) vm->host->gotoxy(vm->host, x, y);
+}
+
+/* scroll the window (x1,y1)-(x2,y2) up by n lines (n = 0: clear) */
+static void scroll(vm_t *vm, int n, int attr, int x1, int y1, int x2, int y2, int down)
+{
+    screen_t *s = scr(vm);
+    if (x2 >= s->cols) x2 = s->cols - 1;
+    if (y2 >= s->rows) y2 = s->rows - 1;
+    if (x1 < 0) x1 = 0;
+    if (y1 < 0) y1 = 0;
+    if (x1 > x2 || y1 > y2) return;
+    int h = y2 - y1 + 1, w = x2 - x1 + 1;
+    if (n <= 0 || n > h) n = h;
+    for (int i = 0; i < h; i++) {
+        int dy = down ? y2 - i : y1 + i, sy = down ? dy - n : dy + n;
+        uint8_t *d = cellp(vm, x1, dy);
+        if ((down ? sy >= y1 : sy <= y2)) memmove(d, cellp(vm, x1, sy), (size_t)w * 2);
+        else for (int k = 0; k < w; k++) { d[k * 2] = ' '; d[k * 2 + 1] = (uint8_t)attr; }
+    }
+    if (vm->host->scrolled) vm->host->scrolled(vm->host, n, down);
+}
+
+/* BIOS TTY output at the cursor: CR LF BS BEL handled, wraps and scrolls */
+void screen_tty(vm_t *vm, int c)
+{
+    screen_t *s = scr(vm);
+    if (vm->host->tty) vm->host->tty(vm->host, c, (int)sv(vm, SV_ATTRIB));
+    switch (c) {
+    case 7: return;
+    case 8: if (s->x > 0) s->x--; return;
+    case 13: s->x = 0; return;
+    case 10:
+        if (++s->y >= s->rows) { scroll(vm, 1, cellp(vm, 0, s->rows - 1)[1], 0, 0, s->cols - 1, s->rows - 1, 0); s->y = s->rows - 1; }
+        return;
+    default:
+        cellp(vm, s->x, s->y)[0] = (uint8_t)c;
+        if (++s->x >= s->cols) {
+            s->x = 0;
+            if (++s->y >= s->rows) { scroll(vm, 1, cellp(vm, 0, s->rows - 1)[1], 0, 0, s->cols - 1, s->rows - 1, 0); s->y = s->rows - 1; }
+        }
+    }
+}
+
+/* write n chars at (x,y) with attr, clipped to the row; cursor not moved */
+void screen_put(vm_t *vm, int x, int y, const uint8_t *str, int n, int attr)
+{
+    screen_t *s = scr(vm);
+    if (y < 0 || y >= s->rows || x >= s->cols || n <= 0) return;
+    if (x < 0) { str -= x; n += x; x = 0; }
+    if (x + n > s->cols) n = s->cols - x;
+    uint8_t *p = cellp(vm, x, y);
+    for (int i = 0; i < n; i++) { p[i * 2] = str[i]; p[i * 2 + 1] = (uint8_t)attr; }
+    if (vm->host->put) vm->host->put(vm->host, x, y, str, (size_t)n, attr);
+}
+
+/* ---- primitives ---------------------------------------------------------- */
+void p_VIDEOBUF(vm_t *vm) { push(vm, scr(vm)->buf); }
+
+void p_VIDEOTYPE(vm_t *vm)                  /* ( a n -- ) at #OUT,#LINE */
+{
+    cell n = (cell)pop(vm);
+    ucell a = pop(vm);
+    if (n <= 0) return;
+    screen_t *s = scr(vm);
+    cell x = (cell)sv(vm, SV_OUT), y = (cell)sv(vm, SV_LINE);
+    if (y >= s->rows) y = s->rows - 1;
+    if (y < 0) y = 0;
+    sv_set(vm, SV_LINE, (ucell)y);
+    cell nx = x + n;
+    if (nx >= s->cols) nx = s->cols - 1;
+    sv_set(vm, SV_OUT, (ucell)nx);
+    screen_put(vm, x, y, vm_ptr(vm, a, (ucell)n), n, (int)sv(vm, SV_ATTRIB));
+    gotoxy(vm, nx, y);
+}
+
+void p_QVMODE(vm_t *vm)                     /* ( -- mode ) */
+{
+    screen_check_resize(vm);
+    publish(vm);
+    sv_set(vm, SV_CROWS, 7);
+    push(vm, 3);
+}
+
+/* BIOS-VIDEO ( ax bx cx dx -- ax bx cx dx )   INT 10h subset */
+void p_BIOSVIDEO(vm_t *vm)
+{
+    ucell dx = pop(vm), cx = pop(vm), bx = pop(vm), ax = pop(vm);
+    screen_t *s = scr(vm);
+    int ah = (ax >> 8) & 0xFF, al = ax & 0xFF;
+    switch (ah) {
+    case 0x00: break;                                       /* set mode */
+    case 0x01: sv_set(vm, SV_CURSOR, cx & 0xFFFF);          /* cursor shape */
+               if (vm->host->cursor_shape) vm->host->cursor_shape(vm->host, (int)(cx & 0xFFFF));
+               break;
+    case 0x02: gotoxy(vm, (int)(dx & 0xFF), (int)((dx >> 8) & 0xFF)); break;
+    case 0x03: dx = (ucell)(s->y << 8 | s->x); cx = sv(vm, SV_CURSOR); break;
+    case 0x06: case 0x07:                                   /* scroll up / down */
+        scroll(vm, al, (int)((bx >> 8) & 0xFF), (int)(cx & 0xFF), (int)((cx >> 8) & 0xFF),
+               (int)(dx & 0xFF), (int)((dx >> 8) & 0xFF), ah == 0x07);
+        break;
+    case 0x08: {                                            /* read char+attr */
+        uint8_t *p = cellp(vm, s->x, s->y);
+        ax = (ucell)(p[1] << 8 | p[0]);
+        break; }
+    case 0x09: case 0x0A: {                                 /* write char (+attr) n times */
+        int n = (int)(cx & 0xFFFF);
+        for (int i = 0; i < n && s->x + i < s->cols; i++) {
+            uint8_t *p = cellp(vm, s->x + i, s->y);
+            p[0] = (uint8_t)al;
+            if (ah == 0x09) p[1] = (uint8_t)bx;
+            if (vm->host->put) vm->host->put(vm->host, s->x + i, s->y, p, 1, p[1]);
+        }
+        break; }
+    case 0x0E: screen_tty(vm, al); break;                   /* teletype */
+    case 0x0F: ax = (ucell)(s->cols << 8 | 3); bx = 0; break; /* get mode */
+    case 0x10: break;                                       /* palette: ignored */
+    default: break;
+    }
+    push(vm, ax); push(vm, bx); push(vm, cx); push(vm, dx);
+}
+
+void p_ATXY(vm_t *vm)                       /* ( x y -- ) move the cursor */
+{
+    int y = (int)pop(vm), x = (int)pop(vm);
+    gotoxy(vm, x, y);
+}
+
+void p_GETXY(vm_t *vm)                      /* ( -- x y ) */
+{
+    push(vm, (ucell)scr(vm)->x);
+    push(vm, (ucell)scr(vm)->y);
+}
+
+void p_REFRESH(vm_t *vm)                    /* ( -- ) show the screen now */
+{
+    if (vm->host->refresh) vm->host->refresh(vm->host, vm, 0);
+    vm->host->flush(vm->host);
+}

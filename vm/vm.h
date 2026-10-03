@@ -70,7 +70,7 @@ enum {
     X(TICKTIB,"'TIB") X(ENDQ,"END?") X(TOINWORD,">IN_WORD")              \
     X(ATTRIB,"ATTRIB") X(BIOSCHAR,"BIOSCHAR") X(BIOSKEYVAL,"BIOSKEYVAL")   \
     X(COLS,"COLS") X(ROWS,"ROWS") X(CROWS,"CROWS") X(UP,"UP")            \
-    X(CURSOR,"CURSOR-SHAPE")
+    X(CURSOR,"CURSOR-SHAPE") X(VIDEOBUF,"VIDEO-BUF-VAR")
 /* these slots are VALUEs (code field DOVALUE), the rest VARIABLEs */
 #define SV_IS_VALUE(i) ((i) == SV_COLS || (i) == SV_ROWS || (i) == SV_CROWS)
 
@@ -120,10 +120,15 @@ typedef struct host {
     void (*tty)(struct host *h, int c, int attr);
     void (*size)(struct host *h, int *cols, int *rows);
     void (*suspend)(struct host *h, int on);   /* hand the terminal over */
+    void (*refresh)(struct host *h, struct vm *vm, int full); /* draw VIDEO-BUF */
+    void (*scrolled)(struct host *h, int n, int down);
+    void (*cursor_shape)(struct host *h, int shape);
+    int  (*shift)(struct host *h);             /* BIOS shift-state flags */
     void *priv;
 } host_t;
 
 host_t *host_batch_new(void);
+host_t *host_tty_new(void);
 
 /* ---- the VM ------------------------------------------------------------- */
 struct vm {
@@ -160,6 +165,8 @@ struct vm {
     void    *seed;                     /* seed interpreter state           */
     ucell    heap_free;                /* allocator free list (dos.c)      */
     void    *dos;                      /* DOS emulation state              */
+    void    *screen;                   /* virtual screen (screen.c)        */
+    ucell    resized_xt;               /* RESIZED, run after a resize      */
 };
 
 /* ---- memory access -------------------------------------------------------- */
@@ -238,6 +245,20 @@ enum { E_ABORT = -1, E_ABORTQ = -2, E_DSTACK_OVER = -3, E_DSTACK_UNDER = -4,
        E_RSTACK_OVER = -5, E_RSTACK_UNDER = -6, E_BADADDR = -9, E_DIV0 = -10,
        E_RANGE = -11, E_UNDEFINED = -13, E_COMPILE_ONLY = -14, E_INTERRUPT = -28,
        E_FILE = -38, E_BYE = -256 };
+
+/* screen.c */
+void  screen_init(vm_t *vm);
+void  screen_tty(vm_t *vm, int c);
+void  screen_put(vm_t *vm, int x, int y, const uint8_t *s, int n, int attr);
+void  screen_note_resize(vm_t *vm);
+int   screen_check_resize(vm_t *vm);
+int   screen_take_resize_key(vm_t *vm);
+void  screen_unget_key(vm_t *vm, int k);
+int   screen_unget_take(vm_t *vm);
+void  screen_cursor(vm_t *vm, int *x, int *y);
+int   screen_cols(vm_t *vm);
+int   screen_rows(vm_t *vm);
+ucell screen_buf(vm_t *vm);
 
 /* C-function primitives (defined in seed.c / io.c) */
 #define PRIM(id, name, flags)

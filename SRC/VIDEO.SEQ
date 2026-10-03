@@ -28,3 +28,17 @@ DEFER INITCOLOR ' NOOP IS INITCOLOR     \ FOR MONOCHROME AND COLOR
 \ CGA snow suppression is not needed.
 : BLANK.COLOR   ( --- ) ;
 : SHOW.COLOR    ( --- ) ;
+
+BUILTIN VIDEO-BUF       ( -- addr )     \ the screen: COLS*ROWS (char,attr) pairs
+\ Laid out like PC text video memory (row stride COLS 2*). It moves when the
+\ terminal is resized, so fetch it each time rather than keeping it.
+BUILTIN BIOS-VIDEO      ( ax bx cx dx -- ax bx cx dx )  \ INT 10h emulation
+BUILTIN AT-XY           ( x y -- )      \ move the cursor
+BUILTIN GET-XY          ( -- x y )      \ where the cursor is
+BUILTIN REFRESH         ( -- )          \ show screen changes now
+BUILTIN SHIFT-STATE     ( -- flags )    \ keyboard shift flags (INT 16h AH=2)
+
+DEFER RESIZED   ' NOOP IS RESIZED
+\ Run after the terminal (and so COLS ROWS VIDEO-BUF) changed size. Add to
+\ it to re-layout and redraw; KEY then returns K-RESIZE.
+255 CONSTANT K-RESIZE

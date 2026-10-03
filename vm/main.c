@@ -72,6 +72,7 @@ static int run_forth(vm_t *vm)
 {
     ucell cold = seed_find(vm, "COLD"), qerror = seed_find(vm, "?ERROR");
     ucell div0 = seed_find(vm, "DIV0FUNC"), warm = seed_find(vm, "WARM");
+    vm->resized_xt = seed_find(vm, "RESIZED");
     if (!cold || !qerror) { fprintf(stderr, "fpc: kernel has no COLD or ?ERROR\n"); return 2; }
     ucell next = cold;
     for (;;) {
@@ -110,6 +111,7 @@ int main(int argc, char **argv)
     if (!vm) { perror("fpc"); return 2; }
     the_vm = vm;
     seed_init(vm);
+    screen_init(vm);
     const char *env = getenv("FPC_PATH");
     if (env) {
         char *p = strdup(env), *s, *save = NULL;

@@ -218,11 +218,11 @@ static void int21(vm_t *vm, regs_t *r)
         vm->bye = 1; vm->exit_code = (int)AL(r);
         vm_throw(vm, E_BYE, NULL);
     case 0x02:                              /* display char DL */
-        vm->host->tty(vm->host, dl, (int)sv(vm, SV_ATTRIB));
+        screen_tty(vm, dl);
         SET_AL(r, dl);
         break;
     case 0x06:                              /* direct console I/O */
-        if (dl != 0xFF) { vm->host->tty(vm->host, dl, (int)sv(vm, SV_ATTRIB)); break; }
+        if (dl != 0xFF) { screen_tty(vm, dl); break; }
         __attribute__((fallthrough));      /* DL = FF: input */
     case 0x07: case 0x08: {                 /* character input */
         int k = vm->host->key(vm->host);
@@ -313,7 +313,7 @@ static void int21(vm_t *vm, regs_t *r)
         if (h >= MAXH || (d->fd[h] < 0 && h != 3 && h != 4)) FAIL(r, 6);
         if (h == 1 || h == 2) {             /* console: through the screen */
             const uint8_t *p = vm_ptr(vm, r->dx, n);
-            for (ucell i = 0; i < n; i++) vm->host->tty(vm->host, p[i], (int)sv(vm, SV_ATTRIB));
+            for (ucell i = 0; i < n; i++) screen_tty(vm, p[i]);
             r->ax = n;
             break;
         }
@@ -499,23 +499,45 @@ void p_SYSTEM(vm_t *vm)                     /* ( addr len -- rc ) */
     push(vm, (ucell)(rc < 0 ? 255 : WEXITSTATUS(rc)));
 }
 
-/* ---- BIOS keyboard ------------------------------------------------------------ */
+/* ---- BIOS keyboard ------------------------------------------------------------
+ * Values are BIOS style: scan code * 256 + ASCII. A terminal resize is
+ * delivered as K-RESIZE ($FF00) after RESIZED has run. host->key returns
+ * -1 at end of input and -2 when interrupted (e.g. by a resize). */
+static int next_key(vm_t *vm, int wait)
+{
+    for (;;) {
+        screen_check_resize(vm);
+        int rk = screen_take_resize_key(vm);
+        if (rk) return rk;
+        if (vm->host->refresh) vm->host->refresh(vm->host, vm, 0);
+        if (!wait) return vm->host->keyq(vm->host) ? 1 : 0;
+        int k = vm->host->key(vm->host);
+        if (k == -2) continue;
+        if (k < 0) { vm->bye = 1; vm_throw(vm, E_BYE, NULL); }
+        if (k == 0) continue;               /* ignore Control-Break (0) */
+        return k;
+    }
+}
+
 void p_BIOSKEYQ(vm_t *vm)
 {
-    int q = vm->host->keyq(vm->host);
+    int q = next_key(vm, 0);
+    if (q > 1) screen_unget_key(vm, q);     /* a resize: report it as a key */
     sv_set(vm, SV_BIOSCHAR, (ucell)q);
     push(vm, q ? TRUE_F : 0);
 }
 
 void p_BIOSKEY(vm_t *vm)
 {
-    int k;
-    do {
-        k = vm->host->key(vm->host);
-        if (k < 0) { vm->bye = 1; vm_throw(vm, E_BYE, NULL); }
-    } while (k == 0);                       /* ignore Control-Break (0) */
+    int k = screen_unget_take(vm);
+    if (!k) k = next_key(vm, 1);
     sv_set(vm, SV_BIOSKEYVAL, (ucell)k);
     push(vm, (ucell)k);
+}
+
+void p_SHIFTSTATE(vm_t *vm)                 /* ( -- flags ) as INT 16h AH=2 */
+{
+    push(vm, vm->host->shift ? (ucell)vm->host->shift(vm->host) : 0);
 }
 
 /* ---- heap allocator --------------------------------------------------------------
@@ -562,6 +584,8 @@ static ucell heap_alloc(vm_t *vm, ucell n)
     return 0;
 }
 
+ucell heap_alloc_block(vm_t *vm, ucell n) { return heap_alloc(vm, n); }
+
 static int heap_valid(vm_t *vm, ucell a)
 {
     return a >= vm->heap_base + HDR && a < vm->heap_end && (a & 15) == HDR % 16 && rd32(vm, a - 4) == 1;
@@ -575,6 +599,8 @@ void p_ALLOCATE(vm_t *vm)                   /* ( n -- addr ior ) */
     push(vm, a);
     push(vm, a ? 0 : (ucell)-59);
 }
+
+void heap_free_block(vm_t *vm, ucell a) { if (heap_valid(vm, a)) wr32(vm, a - 4, 0); }
 
 void p_FREE(vm_t *vm)                       /* ( addr -- ior ) */
 {
@@ -596,38 +622,6 @@ void p_RESIZE(vm_t *vm)                     /* ( addr n -- addr' ior ) */
     memset(vm->mem + b + have, 0, rd32(vm, b - HDR) - HDR - have);
     wr32(vm, a - 4, 0);
     push(vm, b); push(vm, 0);
-}
-
-/* ---- video ------------------------------------------------------------------------- */
-void p_QVMODE(vm_t *vm)                     /* ( -- mode ), sets COLS ROWS CROWS */
-{
-    int c = 80, r = 25;
-    if (vm->host->size) vm->host->size(vm->host, &c, &r);
-    sv_set(vm, SV_COLS, (ucell)c);
-    sv_set(vm, SV_ROWS, (ucell)r);
-    sv_set(vm, SV_CROWS, 7);
-    push(vm, 3);
-}
-
-void p_VIDEOTYPE(vm_t *vm)                  /* ( a n -- ) at #OUT,#LINE */
-{
-    cell n = (cell)pop(vm);
-    ucell a = pop(vm);
-    if (n <= 0) return;
-    cell cols = (cell)sv(vm, SV_COLS), rows = (cell)sv(vm, SV_ROWS);
-    cell x = (cell)sv(vm, SV_OUT), y = (cell)sv(vm, SV_LINE);
-    if (y >= rows) y = rows - 1;
-    if (y < 0) y = 0;
-    sv_set(vm, SV_LINE, (ucell)y);
-    cell nx = x + n;
-    if (nx >= cols) nx = cols - 1;
-    sv_set(vm, SV_OUT, (ucell)nx);
-    cell w = n;
-    if (x < cols && x >= 0) {
-        if (x + w > cols) w = cols - x;
-        vm->host->put(vm->host, x, y, vm_ptr(vm, a, (ucell)n), (size_t)w, (int)sv(vm, SV_ATTRIB));
-    }
-    vm->host->gotoxy(vm->host, (int)nx, (int)y);
 }
 
 void p_SETCURSOR(vm_t *vm) { sv_set(vm, SV_CURSOR, pop(vm)); }
