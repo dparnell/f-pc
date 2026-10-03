@@ -173,22 +173,22 @@ VARIABLE LIST-AT   VARIABLE FOUND
         DUP XHERE U< 0= IF DROP TRUE EXIT THEN
         LIST-START? ;
 
+: AMCODE? ( ct -- f )           \ an abstract-machine code token
+        CT-KIND 3 = ;
+
 : AMWORD? ( cfa -- f )          \ a CODE word: its ops follow its CFA
-        @ DUP FIRST-DOES-CT U<
-        IF      DROP FALSE
-        ELSE    DOES-PAIR 0=
-        THEN    ;
+        @ DUP AMCODE? SWAP CT-DATA 0= AND ;
 
 : ;CODE-DEF ( cfa -- defcfa | 0 ) \ the ;CODE defining word of a word
-        @ DUP FIRST-DOES-CT U< IF DROP 0 EXIT THEN
+        @ DUP AMCODE? OVER CT-DATA 0<> AND 0= IF DROP 0 EXIT THEN
         DOES-PAIR ?DUP 0= IF 0 EXIT THEN
         DUP ;CODE-PAIR? 0= IF DROP 0 EXIT THEN
         2 CELLS - LIST>CFA ;
 
 : >AMCODE ( cfa -- ops | 0 )    \ where the abstract-machine code of a
                                 \ CODE word or ;CODE child starts
-        DUP AMWORD? IF >BODY EXIT THEN
-        ;CODE-DEF DUP IF 2 CELLS + THEN ;
+        DUP @ AMCODE? 0= IF DROP 0 EXIT THEN
+        DUP @ CT-DATA ?DUP IF NIP ELSE >BODY THEN ;
 
 \ ---- the end of an op stream and its labels ------------------------------
 
@@ -201,7 +201,7 @@ $0A17 CONSTANT IP-RPUSH         $0A01 CONSTANT IP-LI
 $0A18 CONSTANT IP-RPOP
 
 : H>AT? ( a -- f )      \ is there an H> code field at a?
-        DUP @ FIRST-DOES-CT U< 0= SWAP CELL+ @ IP-RPOP = AND ;
+        DUP @ AMCODE? SWAP CELL+ @ IP-RPOP = AND ;
 
 : AM-END ( start limit -- end )
 \ Like the JIT's scan: stop after a NEXT or a BR that is past every
@@ -379,7 +379,7 @@ VARIABLE PC             \ the op being shown
         DUP @ CT-NEST <> IF DROP 0 EXIT THEN
         >BODY @ DUP BODY-END SWAP
         ?DO     I @ ['] (DOES>) =
-                IF      I CELL+ @ DUP FIRST-DOES-CT U< 0=
+                IF      I CELL+ @ DUP AMCODE?
                         IF      DOES-PAIR DUP I 2 CELLS + =
                                 IF      ;CODE-PAIR?
                                         IF      I UNDO EXIT
