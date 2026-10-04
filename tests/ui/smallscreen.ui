@@ -1,3 +1,3 @@
 # On a screen too small for the sign-on box, a compact sign-on is shown.
 size 50x16
-script wait:1;;expect:F-PC 3.60  native;;reject:FINAL RELEASE;;keys:2 3 + .\r;;expect:2 3 + . 5  ok
+script wait:1;;expect:F-PC 3.60  32-bit native Forth;;reject:Based on F-PC 3.6 by;;keys:2 3 + .\r;;expect:2 3 + . 5  ok

@@ -9,7 +9,8 @@ only forth also definitions hidden also
                 cols 64 - 2/ 0MAX spaces ;
 
 : <.SMALLHELLO> ( --- )       \ a screen too small for the box
-                cr ." \r F-PC" .fpcver# ." \0 native   based on F83" cr
+                cr ." \r F-PC" .fpcver# ." \0 32-bit native Forth" cr
+                ." based on F-PC 3.6 and F83" cr
                 ." Free: " LIMIT HERE - 1024 / (U.) TYPE ." k code" cr
                 ." F1 = help, ESC = menu bar" cr ;
 
@@ -18,14 +19,14 @@ only forth also definitions hidden also
                 cols 64 < rows 20 < or if <.smallhello> exit then
 ." \d\n\n\n" .hindent 26 spaces ." \r  F-PC  \n"
 cr .hindent ." ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÜ"
-cr .hindent ." ³ 80x8x Forth ÄÄÄ Version:" >attrib3 .fpcver# >norm
+cr .hindent ." ³ 32-bit Forth ÄÄ Version:" >attrib3 .fpcver# >norm
                                                 ." \0 Date:"
         decimal     cdate 2@ form-date  count type
         ."   Time:" ctime 2@ drop dtbuf off   build-hm
                                   dtbuf count type decimal    ."   Û"
 cr .hindent ." ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÛ"
-cr .hindent ." ³ Based on F83 by           ÄÄ Henry Laxen, Michael Perry,  Û"
-cr .hindent ." ³ ** F-PC FINAL RELEASE **  ÄÄ Tom Zimmer & Robert L. Smith Û"
+cr .hindent ." ³ Based on F-PC 3.6 by      ÄÄ Tom Zimmer & Robert L. Smith Û"
+cr .hindent ." ³ which was based on F83 by ÄÄ Henry Laxen & Michael Perry  Û"
 cr .hindent ." ÀÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÜÛ\n"
 cr cr .hindent 5 spaces >ATTRIB1 .FREE >NORM
 cr cr .hindent 10 spaces ." \1 Bewildered?   Press: \r F1 \1 for assistance "
